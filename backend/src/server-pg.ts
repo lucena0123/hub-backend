@@ -13,6 +13,7 @@ import { validateClientCreate, validateClientUpdate, prepareClientData } from '.
 import { ClientAudit } from './middleware/audit';
 import { MetricsService } from './services/metrics-service';
 import { BPMNTracker } from './services/bpmn-tracker';
+import { ReportGenerator } from './services/report-generator';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -35,6 +36,7 @@ const pool = new Pool({
 const clientAudit = new ClientAudit(pool);
 const metricsService = new MetricsService(pool);
 const bpmnTracker = new BPMNTracker(pool);
+const reportGenerator = new ReportGenerator(pool);
 
 // Redis Client
 const redis = createClient({
@@ -605,6 +607,105 @@ fastify.get('/api/bpmn/subprocess/:id/clients', async (request, reply) => {
     reply.status(500);
     return {
       error: 'Failed to fetch clients in subprocess',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ========================================
+// REPORTS ENDPOINTS
+// ========================================
+
+// Generate monthly report for a client
+fastify.post('/api/reports/generate/:clientId', async (request, reply) => {
+  try {
+    const { clientId } = request.params as { clientId: string };
+    const { month, year } = request.body as { month: number; year: number };
+
+    if (!month || !year) {
+      reply.status(400);
+      return {
+        error: 'Invalid request',
+        message: 'Month and year are required',
+      };
+    }
+
+    if (month < 1 || month > 12) {
+      reply.status(400);
+      return {
+        error: 'Invalid month',
+        message: 'Month must be between 1 and 12',
+      };
+    }
+
+    const report = await reportGenerator.generateMonthlyReport(clientId, month, year);
+
+    reply.status(201);
+    return report;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to generate report',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get report history for a client
+fastify.get('/api/reports/:clientId/history', async (request, reply) => {
+  try {
+    const { clientId } = request.params as { clientId: string };
+
+    const reports = await reportGenerator.getReportHistory(clientId);
+
+    return reports;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch report history',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Download a specific report PDF
+fastify.get('/api/reports/:reportId/download', async (request, reply) => {
+  try {
+    const { reportId } = request.params as { reportId: string };
+
+    const report = await reportGenerator.getReportById(reportId);
+
+    if (!report) {
+      reply.status(404);
+      return {
+        error: 'Report not found',
+        message: 'No report found with the given ID',
+      };
+    }
+
+    if (!report.filePath) {
+      reply.status(404);
+      return {
+        error: 'File not found',
+        message: 'PDF file not available for this report',
+      };
+    }
+
+    // Send PDF file
+    reply.type('application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="${report.title}.pdf"`);
+
+    const fs = require('fs');
+    const stream = fs.createReadStream(report.filePath);
+
+    return reply.send(stream);
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to download report',
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
