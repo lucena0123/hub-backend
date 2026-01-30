@@ -11,6 +11,8 @@ import { createClient } from 'redis';
 import { Pool } from 'pg';
 import { validateClientCreate, validateClientUpdate, prepareClientData } from './validators/client';
 import { ClientAudit } from './middleware/audit';
+import { MetricsService } from './services/metrics-service';
+import { BPMNTracker } from './services/bpmn-tracker';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -29,8 +31,10 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Audit helper
+// Services
 const clientAudit = new ClientAudit(pool);
+const metricsService = new MetricsService(pool);
+const bpmnTracker = new BPMNTracker(pool);
 
 // Redis Client
 const redis = createClient({
@@ -443,6 +447,164 @@ fastify.get('/api/campaigns', async (request, reply) => {
     reply.status(500);
     return {
       error: 'Failed to fetch campaigns',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ============================================================================
+// METRICS ENDPOINTS
+// ============================================================================
+
+// Get campaign metrics
+fastify.get('/api/campaigns/:id/metrics', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+    const { period, startDate, endDate, platform } = request.query as any;
+
+    const metrics = await metricsService.getCampaignMetrics(id, {
+      period,
+      startDate,
+      endDate,
+      platform,
+    });
+
+    return metrics;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch campaign metrics',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get campaign performance summary
+fastify.get('/api/campaigns/:id/performance-summary', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+    const { period, startDate, endDate } = request.query as any;
+
+    const summary = await metricsService.getPerformanceSummary(id, {
+      period,
+      startDate,
+      endDate,
+    });
+
+    return summary;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch performance summary',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get client performance summary (all campaigns)
+fastify.get('/api/clients/:id/performance-summary', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+    const { period, startDate, endDate } = request.query as any;
+
+    const summary = await metricsService.getClientPerformanceSummary(id, {
+      period,
+      startDate,
+      endDate,
+    });
+
+    return summary;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch client performance summary',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ============================================================================
+// BPMN TRACKING ENDPOINTS
+// ============================================================================
+
+// Get client BPMN progress
+fastify.get('/api/clients/:id/bpmn-progress', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+
+    const progress = await bpmnTracker.getProgress(id);
+
+    if (!progress) {
+      reply.status(404);
+      return { error: 'BPMN progress not found for this client' };
+    }
+
+    return progress;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch BPMN progress',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Initialize BPMN tracking for client
+fastify.post('/api/clients/:id/bpmn-progress', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+    const { startingSubprocess } = request.body as any;
+
+    const progress = await bpmnTracker.initializeProgress(id, startingSubprocess);
+
+    reply.status(201);
+    return progress;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to initialize BPMN progress',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Update client BPMN progress
+fastify.put('/api/clients/:id/bpmn-progress', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+    const updates = request.body as any;
+
+    const progress = await bpmnTracker.updateProgress(id, updates);
+
+    return progress;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to update BPMN progress',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get all clients in a specific subprocess
+fastify.get('/api/bpmn/subprocess/:id/clients', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+
+    const clients = await bpmnTracker.getClientsInSubprocess(id);
+
+    return clients;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch clients in subprocess',
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
