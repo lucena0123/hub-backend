@@ -9,6 +9,9 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { createClient } from 'redis';
 import { Pool } from 'pg';
+import { validateClientCreate, validateClientUpdate, prepareClientData } from './validators/client';
+import { ClientAudit } from './middleware/audit';
+import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
 const HOST = '0.0.0.0';
@@ -25,6 +28,9 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 });
+
+// Audit helper
+const clientAudit = new ClientAudit(pool);
 
 // Redis Client
 const redis = createClient({
@@ -166,6 +172,254 @@ fastify.get('/api/clients/:id', async (request, reply) => {
     reply.status(500);
     return {
       error: 'Failed to fetch client',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Create new client
+fastify.post('/api/clients', async (request, reply) => {
+  try {
+    // Validate request body
+    const validation = validateClientCreate(request.body);
+
+    if (!validation.valid) {
+      reply.status(400);
+      return {
+        error: 'Validation failed',
+        details: validation.errors,
+      };
+    }
+
+    // Check if email already exists
+    const existingClient = await pool.query(
+      'SELECT id FROM clients WHERE email = $1',
+      [(request.body as any).email.toLowerCase().trim()]
+    );
+
+    if (existingClient.rows.length > 0) {
+      reply.status(409);
+      return {
+        error: 'Email already exists',
+        message: 'A client with this email already exists',
+      };
+    }
+
+    // Prepare data for insertion
+    const clientData = prepareClientData(request.body as any);
+    const clientId = uuidv4();
+
+    // Insert into database
+    const result = await pool.query(
+      `INSERT INTO clients
+       (id, name, email, tier, status, budget, "contractStart", "contractEnd", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+       RETURNING *`,
+      [
+        clientId,
+        clientData.name,
+        clientData.email,
+        clientData.tier,
+        clientData.status,
+        clientData.budget,
+        clientData.contractStart,
+        clientData.contractEnd,
+      ]
+    );
+
+    const newClient = result.rows[0];
+
+    // Log audit trail
+    await clientAudit.logCreate(clientId, newClient);
+
+    reply.status(201);
+    return newClient;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to create client',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Update client
+fastify.put('/api/clients/:id', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+
+    // Validate request body
+    const validation = validateClientUpdate(request.body);
+
+    if (!validation.valid) {
+      reply.status(400);
+      return {
+        error: 'Validation failed',
+        details: validation.errors,
+      };
+    }
+
+    // Get existing client
+    const existingResult = await pool.query(
+      'SELECT * FROM clients WHERE id = $1',
+      [id]
+    );
+
+    if (existingResult.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Client not found' };
+    }
+
+    const existingClient = existingResult.rows[0];
+    const updateData = request.body as any;
+
+    // Check if email is being changed and if new email exists
+    if (updateData.email && updateData.email !== existingClient.email) {
+      const emailCheck = await pool.query(
+        'SELECT id FROM clients WHERE email = $1 AND id != $2',
+        [updateData.email.toLowerCase().trim(), id]
+      );
+
+      if (emailCheck.rows.length > 0) {
+        reply.status(409);
+        return {
+          error: 'Email already exists',
+          message: 'Another client with this email already exists',
+        };
+      }
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (updateData.name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      values.push(updateData.name.trim());
+    }
+    if (updateData.email !== undefined) {
+      updates.push(`email = $${paramIndex++}`);
+      values.push(updateData.email.toLowerCase().trim());
+    }
+    if (updateData.tier !== undefined) {
+      updates.push(`tier = $${paramIndex++}`);
+      values.push(updateData.tier);
+    }
+    if (updateData.status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      values.push(updateData.status);
+    }
+    if (updateData.budget !== undefined) {
+      updates.push(`budget = $${paramIndex++}`);
+      values.push(updateData.budget);
+
+      // Auto-update tier based on new budget if tier not explicitly provided
+      if (updateData.tier === undefined) {
+        const { calculateTier } = await import('./utils/validators');
+        const newTier = calculateTier(updateData.budget);
+        updates.push(`tier = $${paramIndex++}`);
+        values.push(newTier);
+      }
+    }
+    if (updateData.contractStart !== undefined) {
+      updates.push(`"contractStart" = $${paramIndex++}`);
+      values.push(updateData.contractStart);
+    }
+    if (updateData.contractEnd !== undefined) {
+      updates.push(`"contractEnd" = $${paramIndex++}`);
+      values.push(updateData.contractEnd);
+    }
+
+    if (updates.length === 0) {
+      reply.status(400);
+      return { error: 'No valid fields to update' };
+    }
+
+    // Always update updatedAt
+    updates.push(`"updatedAt" = NOW()`);
+    values.push(id);
+
+    const updateQuery = `
+      UPDATE clients
+      SET ${updates.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `;
+
+    const result = await pool.query(updateQuery, values);
+    const updatedClient = result.rows[0];
+
+    // Log audit trail
+    await clientAudit.logUpdate(id, existingClient, updatedClient);
+
+    return updatedClient;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to update client',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Delete client (soft delete)
+fastify.delete('/api/clients/:id', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+
+    // Get existing client
+    const clientResult = await pool.query(
+      'SELECT * FROM clients WHERE id = $1',
+      [id]
+    );
+
+    if (clientResult.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Client not found' };
+    }
+
+    const client = clientResult.rows[0];
+
+    // Check if client has running processes
+    const runningProcesses = await pool.query(
+      'SELECT COUNT(*) as count FROM process_instances WHERE "clientId" = $1 AND status = $2',
+      [id, 'running']
+    );
+
+    if (parseInt(runningProcesses.rows[0].count) > 0) {
+      reply.status(409);
+      return {
+        error: 'Cannot delete client',
+        message: 'Client has running processes. Please complete or cancel them first.',
+      };
+    }
+
+    // Soft delete - set status to inactive
+    const result = await pool.query(
+      `UPDATE clients
+       SET status = 'inactive', "updatedAt" = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    const deletedClient = result.rows[0];
+
+    // Log audit trail
+    await clientAudit.logDelete(id, client);
+
+    return {
+      message: 'Client deleted successfully',
+      client: deletedClient,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to delete client',
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
