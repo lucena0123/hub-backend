@@ -1,0 +1,256 @@
+// This is your Prisma schema file for BPMN System
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CLIENTES
+// ============================================================================
+
+model Client {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  tier         String   // "premium", "standard", "basic"
+  status       String   // "active", "suspended", "churned"
+  contractStart DateTime
+  contractEnd   DateTime?
+  budget       Float
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relações
+  processes    ProcessInstance[]
+  campaigns    Campaign[]
+  metrics      Metric[]
+
+  @@map("clients")
+}
+
+// ============================================================================
+// PROCESSOS BPMN
+// ============================================================================
+
+model ProcessInstance {
+  id              String   @id @default(uuid())
+  processId       String   // "5.2", "6.1", etc
+  version         String   // "1.0.0"
+  status          String   // "running", "completed", "failed", "paused"
+  priority        Int      @default(5)
+
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id])
+
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  expectedSla     String   // "2h", "1d", etc
+  slaBreached     Boolean  @default(false)
+
+  // State da execução
+  currentPhase    String?
+  currentTask     String?
+  state           Json     // Estado atual do processo
+
+  // Relações
+  tasks           Task[]
+
+  @@map("process_instances")
+  @@index([clientId])
+  @@index([status])
+  @@index([processId])
+}
+
+// ============================================================================
+// TAREFAS
+// ============================================================================
+
+model Task {
+  id              String   @id @default(uuid())
+  taskId          String   // ID da task no BPMN
+  name            String
+  lane            String   // Responsável
+  status          String   // "pending", "in_progress", "completed", "failed"
+  priority        Int      @default(5)
+
+  processInstanceId String
+  processInstance   ProcessInstance @relation(fields: [processInstanceId], references: [id])
+
+  assignedTo      String?  // userId
+  startedAt       DateTime?
+  completedAt     DateTime?
+  durationMs      Int?
+
+  input           Json?    // Dados de entrada
+  output          Json?    // Dados de saída
+  error           String?
+
+  @@map("tasks")
+  @@index([processInstanceId])
+  @@index([status])
+  @@index([assignedTo])
+}
+
+// ============================================================================
+// CAMPANHAS (META/GOOGLE ADS)
+// ============================================================================
+
+model Campaign {
+  id              String   @id @default(uuid())
+  externalId      String   @unique // ID do Meta/Google
+  platform        String   // "meta", "google"
+  name            String
+  status          String   // "active", "paused", "archived"
+
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id])
+
+  budget          Float
+  spent           Float    @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relações
+  metrics         Metric[]
+
+  @@map("campaigns")
+  @@index([clientId])
+  @@index([platform])
+}
+
+// ============================================================================
+// MÉTRICAS DIÁRIAS
+// ============================================================================
+
+model Metric {
+  id              String   @id @default(uuid())
+  date            DateTime
+
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id])
+
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
+
+  // Métricas
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  conversions     Int      @default(0)
+  spent           Float    @default(0)
+  revenue         Float    @default(0)
+
+  // Calculados
+  ctr             Float?   // Click-through rate
+  cpc             Float?   // Cost per click
+  cpa             Float?   // Cost per acquisition
+  roas            Float?   // Return on ad spend
+
+  createdAt       DateTime @default(now())
+
+  @@map("metrics")
+  @@unique([clientId, campaignId, date])
+  @@index([clientId])
+  @@index([date])
+}
+
+// ============================================================================
+// AUDIT TRAIL
+// ============================================================================
+
+model AuditEvent {
+  id              String   @id @default(uuid())
+  eventType       String
+
+  processId       String?
+  clientId        String
+  userId          String
+  userRole        String
+
+  resource        Json     // { type, id, name }
+  action          String
+  changes         Json?    // { before, after }
+
+  metadata        Json     // { ipAddress, userAgent, etc }
+  complianceFlags Json     // { gdpr, lgpd, etc }
+
+  timestamp       DateTime @default(now())
+
+  @@map("audit_events")
+  @@index([clientId])
+  @@index([eventType])
+  @@index([timestamp])
+}
+
+// ============================================================================
+// USUÁRIOS DO SISTEMA
+// ============================================================================
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  name            String
+  role            String   // "admin", "gestor_trafego", "cs", etc
+  passwordHash    String
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ============================================================================
+// LOCKS DISTRIBUÍDOS
+// ============================================================================
+
+model Lock {
+  id              String   @id @default(uuid())
+  resourceType    String   // "campaign", "client", etc
+  resourceId      String
+  clientId        String
+  holderId        String   // process_X.Y_instance_NNN
+  holderType      String   // "optimization", "offboarding", etc
+
+  priority        Int
+  status          String   // "active", "expired", "released"
+
+  acquiredAt      DateTime @default(now())
+  expiresAt       DateTime
+
+  @@map("locks")
+  @@unique([resourceType, resourceId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// VERSÕES DE PROCESSOS
+// ============================================================================
+
+model ProcessVersion {
+  id              String   @id @default(uuid())
+  processId       String   // "5.2", "6.1", etc
+  version         String   // "1.0.0", "2.0.0", etc
+  status          String   // "active", "deprecated", "archived"
+
+  description     String
+  breaking        Boolean  @default(false)
+  rollbackVersion String?
+
+  deployedAt      DateTime @default(now())
+  deprecatedAt    DateTime?
+
+  metadata        Json     // { author, changelog, testsPass, approvedBy }
+
+  @@map("process_versions")
+  @@unique([processId, version])
+  @@index([processId])
+  @@index([status])
+}
