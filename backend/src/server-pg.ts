@@ -10,12 +10,21 @@ import helmet from '@fastify/helmet';
 import { createClient } from 'redis';
 import { Pool } from 'pg';
 import { validateClientCreate, validateClientUpdate, prepareClientData } from './validators/client';
+import { validateCampaignCreate, validateCampaignUpdate } from './validators/campaign';
+import { validateBpmnInit, validateBpmnUpdate } from './validators/bpmn';
+import { validateReportGenerate } from './validators/report';
+import { validateMetricsImport, validateMetricUpsert } from './validators/metrics-import';
+import { validateRegister, validateLogin } from './validators/auth';
 import { ClientAudit } from './middleware/audit';
+import { authenticate } from './middleware/auth';
+import jwt from '@fastify/jwt';
+import bcrypt from 'bcryptjs';
 import { MetricsService } from './services/metrics-service';
 import { BPMNTracker } from './services/bpmn-tracker';
 import { ReportGenerator } from './services/report-generator';
 import { DashboardService } from './services/dashboard-service';
 import { CacheService } from './services/cache-service';
+import { MetaAdsService } from './services/meta-ads-service';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -71,6 +80,137 @@ fastify.register(cors, {
 
 fastify.register(helmet, {
   contentSecurityPolicy: false,
+});
+
+// JWT Authentication
+const JWT_SECRET = process.env.JWT_SECRET || 'bpmn-system-dev-secret-change-in-production';
+fastify.register(jwt, {
+  secret: JWT_SECRET,
+  sign: { expiresIn: '24h' },
+});
+
+// Type augmentation for Fastify JWT
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: { id: string; email: string; name: string; role: string };
+    user: { id: string; email: string; name: string; role: string };
+  }
+}
+
+// ============================================================================
+// AUTH ROUTES (public)
+// ============================================================================
+
+// Register new user
+fastify.post('/api/auth/register', async (request, reply) => {
+  try {
+    const validation = validateRegister(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const { name, email, password, role } = validation.data!;
+
+    // Check if email exists
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (existing.rows.length > 0) {
+      reply.status(409);
+      return { error: 'Email already registered' };
+    }
+
+    const id = uuidv4();
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(
+      `INSERT INTO users (id, name, email, role, "passwordHash", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       RETURNING id, name, email, role, "createdAt"`,
+      [id, name, email.toLowerCase(), role, passwordHash]
+    );
+
+    const user = result.rows[0];
+    const token = fastify.jwt.sign({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
+
+    reply.status(201);
+    return { user, token };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return { error: 'Registration failed', message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Login
+fastify.post('/api/auth/login', async (request, reply) => {
+  try {
+    const validation = validateLogin(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const { email, password } = validation.data!;
+
+    const result = await pool.query(
+      'SELECT id, name, email, role, "passwordHash" FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (result.rows.length === 0) {
+      reply.status(401);
+      return { error: 'Invalid credentials' };
+    }
+
+    const user = result.rows[0];
+    const validPassword = await bcrypt.compare(password, user.passwordHash);
+
+    if (!validPassword) {
+      reply.status(401);
+      return { error: 'Invalid credentials' };
+    }
+
+    const token = fastify.jwt.sign({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      token,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return { error: 'Login failed', message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+// Get current user (protected)
+fastify.get('/api/auth/me', { preHandler: [authenticate] }, async (request) => {
+  const { id } = request.user;
+  const result = await pool.query(
+    'SELECT id, name, email, role, "createdAt" FROM users WHERE id = $1',
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return { error: 'User not found' };
+  }
+
+  return result.rows[0];
 });
 
 // ============================================================================
@@ -548,21 +688,19 @@ fastify.get('/api/campaigns/:id', async (request, reply) => {
 // Create new campaign
 fastify.post('/api/campaigns', async (request, reply) => {
   try {
-    const body = request.body as {
-      clientId: string;
-      name: string;
-      platform: string;
-      budget: number;
-      externalId?: string;
-      status?: string;
-    };
-
-    if (!body.clientId || !body.name || !body.platform || body.budget === undefined) {
+    const validation = validateCampaignCreate(request.body);
+    if (!validation.valid) {
       reply.status(400);
-      return {
-        error: 'Missing required fields',
-        message: 'clientId, name, platform, and budget are required',
-      };
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const body = validation.data!;
+
+    // Verify client exists
+    const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [body.clientId]);
+    if (clientCheck.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Client not found', message: 'The specified clientId does not exist' };
     }
 
     const id = uuidv4();
@@ -572,7 +710,7 @@ fastify.post('/api/campaigns', async (request, reply) => {
       `INSERT INTO campaigns (id, "clientId", name, platform, budget, spent, status, "externalId", "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, 0, $6, $7, NOW(), NOW())
        RETURNING *`,
-      [id, body.clientId, body.name, body.platform, body.budget, body.status || 'active', externalId]
+      [id, body.clientId, body.name, body.platform, body.budget, body.status, externalId]
     );
 
     // Invalidate campaigns cache
@@ -596,13 +734,14 @@ fastify.post('/api/campaigns', async (request, reply) => {
 fastify.put('/api/campaigns/:id', async (request, reply) => {
   try {
     const { id } = request.params as { id: string };
-    const body = request.body as {
-      name?: string;
-      platform?: string;
-      budget?: number;
-      status?: string;
-      spent?: number;
-    };
+
+    const validation = validateCampaignUpdate(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const body = validation.data!;
 
     const existing = await pool.query('SELECT id FROM campaigns WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
@@ -633,11 +772,6 @@ fastify.put('/api/campaigns/:id', async (request, reply) => {
     if (body.spent !== undefined) {
       updates.push(`spent = $${paramIndex++}`);
       params.push(body.spent);
-    }
-
-    if (updates.length === 0) {
-      reply.status(400);
-      return { error: 'No fields to update' };
     }
 
     updates.push(`"updatedAt" = NOW()`);
@@ -766,6 +900,395 @@ fastify.get('/api/clients/:id/performance-summary', async (request, reply) => {
 });
 
 // ============================================================================
+// META ADS SYNC ENDPOINTS
+// ============================================================================
+
+const syncMetaAdsHandler = async (request: any, reply: any) => {
+  try {
+    const body = (request.body || {}) as {
+      since?: string;
+      until?: string;
+      accountId?: string;
+      dryRun?: boolean;
+    };
+
+    const accessToken = process.env.META_ACCESS_TOKEN;
+    const adAccountId = body.accountId || process.env.META_AD_ACCOUNT_ID;
+
+    if (!accessToken || !adAccountId) {
+      reply.status(400);
+      return {
+        error: 'Missing Meta Ads credentials',
+        message: 'Set META_ACCESS_TOKEN and META_AD_ACCOUNT_ID environment variables',
+      };
+    }
+
+    const resolveDateRange = (since?: string, until?: string) => {
+      if (since && until) {
+        return { since, until };
+      }
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 7);
+      return {
+        since: start.toISOString().split('T')[0],
+        until: end.toISOString().split('T')[0],
+      };
+    };
+
+    const { since, until } = resolveDateRange(body.since, body.until);
+
+    const metaService = new MetaAdsService({
+      accessToken,
+      adAccountId,
+      apiVersion: process.env.META_API_VERSION,
+    });
+
+    const insights = await metaService.fetchCampaignInsights({ since, until });
+
+    if (insights.length === 0) {
+      return {
+        success: true,
+        message: 'No insights returned for the selected period',
+        totalInsights: 0,
+        mapped: 0,
+        unmapped: 0,
+        since,
+        until,
+      };
+    }
+
+    const campaignsResult = await pool.query(
+      'SELECT id, "externalId" FROM campaigns WHERE platform = $1',
+      ['meta']
+    );
+    const campaignMap = new Map<string, string>(
+      campaignsResult.rows.map((row) => [row.externalId, row.id])
+    );
+
+    const parseNumber = (value?: string) => (value ? Number(value) : 0);
+    const sumActions = (rows: Array<{ action_type: string; value: string }> | undefined, types: string[]) => {
+      if (!rows) return 0;
+      return rows
+        .filter((row) => types.includes(row.action_type))
+        .reduce((sum, row) => sum + parseNumber(row.value), 0);
+    };
+
+    const purchaseTypes = [
+      'purchase',
+      'offsite_conversion.purchase',
+      'omni_purchase',
+      'onsite_conversion.purchase',
+      'web_purchase',
+      'mobile_purchase',
+    ];
+    const leadTypes = ['lead', 'leadgen', 'omni_lead'];
+
+    const mappedMetrics: Array<{
+      campaignId: string;
+      date: string;
+      impressions: number;
+      clicks: number;
+      spend: number;
+      conversions: number;
+      revenue: number;
+      leads: number;
+    }> = [];
+    const unmapped = new Set<string>();
+
+    for (const row of insights) {
+      const campaignId = campaignMap.get(row.campaign_id);
+      if (!campaignId) {
+        unmapped.add(row.campaign_id);
+        continue;
+      }
+
+      const impressions = Math.round(parseNumber(row.impressions));
+      const clicks = Math.round(parseNumber(row.clicks));
+      const spend = parseNumber(row.spend);
+      const purchases = sumActions(row.actions, purchaseTypes);
+      const leads = sumActions(row.actions, leadTypes);
+      const revenue = sumActions(row.action_values, purchaseTypes);
+      const conversions = purchases > 0 ? purchases : leads;
+
+      mappedMetrics.push({
+        campaignId,
+        date: row.date_start,
+        impressions,
+        clicks,
+        spend,
+        conversions,
+        revenue,
+        leads,
+      });
+    }
+
+    if (body.dryRun) {
+      return {
+        success: true,
+        dryRun: true,
+        totalInsights: insights.length,
+        mapped: mappedMetrics.length,
+        unmapped: Array.from(unmapped),
+        since,
+        until,
+      };
+    }
+
+    let updated = 0;
+    for (const entry of mappedMetrics) {
+      const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
+      const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
+      const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
+      const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
+      const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
+
+      await pool.query(
+        `INSERT INTO campaign_metrics
+         (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         ON CONFLICT (campaign_id, date, platform)
+         DO UPDATE SET
+           impressions = EXCLUDED.impressions,
+           clicks = EXCLUDED.clicks,
+           spend = EXCLUDED.spend,
+           conversions = EXCLUDED.conversions,
+           revenue = EXCLUDED.revenue,
+           leads = EXCLUDED.leads,
+           ctr = EXCLUDED.ctr,
+           cpc = EXCLUDED.cpc,
+           cpl = EXCLUDED.cpl,
+           cpa = EXCLUDED.cpa,
+           roas = EXCLUDED.roas`,
+        [
+          uuidv4(),
+          entry.campaignId,
+          entry.date,
+          entry.impressions,
+          entry.clicks,
+          entry.spend,
+          entry.conversions,
+          entry.revenue,
+          entry.leads,
+          ctr,
+          cpc,
+          cpl,
+          cpa,
+          roas,
+          'meta',
+        ]
+      );
+      updated++;
+    }
+
+    if (cacheService) {
+      await cacheService.invalidatePattern('dashboard:*');
+      await cacheService.invalidatePattern('campaigns:*');
+    }
+
+    return {
+      success: true,
+      totalInsights: insights.length,
+      mapped: mappedMetrics.length,
+      updated,
+      unmapped: Array.from(unmapped),
+      since,
+      until,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to sync Meta Ads metrics',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+};
+
+fastify.post('/api/metrics/sync/meta', syncMetaAdsHandler);
+fastify.post('/api/metrics/sync', syncMetaAdsHandler);
+
+// ============================================================================
+// METRICS IMPORT ENDPOINTS
+// ============================================================================
+
+// Import metrics in batch (for manual data entry or CSV import)
+fastify.post('/api/metrics/import', async (request, reply) => {
+  try {
+    const validation = validateMetricsImport(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const { metrics, overwrite } = validation.data!;
+
+    // Verify all campaign IDs exist and get their platforms
+    const campaignIds = [...new Set(metrics.map(m => m.campaignId))];
+    const campaignCheck = await pool.query(
+      `SELECT id, platform FROM campaigns WHERE id = ANY($1)`,
+      [campaignIds]
+    );
+    const campaignMap = new Map(campaignCheck.rows.map(r => [r.id, r.platform]));
+    const missingIds = campaignIds.filter(id => !campaignMap.has(id));
+
+    if (missingIds.length > 0) {
+      reply.status(400);
+      return {
+        error: 'Invalid campaign IDs',
+        message: `Campaign(s) not found: ${missingIds.join(', ')}`,
+      };
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    let updated = 0;
+
+    for (const entry of metrics) {
+      const platform = campaignMap.get(entry.campaignId) || 'other';
+
+      // Calculate derived metrics
+      const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
+      const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
+      const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
+      const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
+      const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
+
+      if (overwrite) {
+        // Upsert: insert or update on conflict
+        await pool.query(
+          `INSERT INTO campaign_metrics
+           (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (campaign_id, date, platform)
+           DO UPDATE SET
+             impressions = EXCLUDED.impressions,
+             clicks = EXCLUDED.clicks,
+             spend = EXCLUDED.spend,
+             conversions = EXCLUDED.conversions,
+             revenue = EXCLUDED.revenue,
+             leads = EXCLUDED.leads,
+             ctr = EXCLUDED.ctr,
+             cpc = EXCLUDED.cpc,
+             cpl = EXCLUDED.cpl,
+             cpa = EXCLUDED.cpa,
+             roas = EXCLUDED.roas`,
+          [uuidv4(), entry.campaignId, entry.date, entry.impressions, entry.clicks,
+           entry.spend, entry.conversions, entry.revenue, entry.leads,
+           ctr, cpc, cpl, cpa, roas, platform]
+        );
+        updated++;
+      } else {
+        // Insert only, skip on conflict
+        const result = await pool.query(
+          `INSERT INTO campaign_metrics
+           (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (campaign_id, date, platform) DO NOTHING`,
+          [uuidv4(), entry.campaignId, entry.date, entry.impressions, entry.clicks,
+           entry.spend, entry.conversions, entry.revenue, entry.leads,
+           ctr, cpc, cpl, cpa, roas, platform]
+        );
+        if (result.rowCount && result.rowCount > 0) {
+          imported++;
+        } else {
+          skipped++;
+        }
+      }
+    }
+
+    // Invalidate dashboard cache after import
+    if (cacheService) {
+      await cacheService.invalidatePattern('dashboard:*');
+      await cacheService.invalidatePattern('campaigns:*');
+    }
+
+    reply.status(201);
+    return {
+      success: true,
+      total: metrics.length,
+      imported,
+      updated,
+      skipped,
+      message: overwrite
+        ? `${updated} metrics imported/updated`
+        : `${imported} new metrics imported, ${skipped} duplicates skipped`,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to import metrics',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Add single metric entry
+fastify.post('/api/metrics/entry', async (request, reply) => {
+  try {
+    const validation = validateMetricUpsert(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const entry = validation.data!;
+
+    // Verify campaign exists and get platform
+    const campaignCheck = await pool.query('SELECT id, platform FROM campaigns WHERE id = $1', [entry.campaignId]);
+    if (campaignCheck.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Campaign not found' };
+    }
+
+    const platform = campaignCheck.rows[0].platform || 'other';
+    const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
+    const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
+    const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
+    const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
+    const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
+
+    const result = await pool.query(
+      `INSERT INTO campaign_metrics
+       (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       ON CONFLICT (campaign_id, date, platform)
+       DO UPDATE SET
+         impressions = EXCLUDED.impressions,
+         clicks = EXCLUDED.clicks,
+         spend = EXCLUDED.spend,
+         conversions = EXCLUDED.conversions,
+         revenue = EXCLUDED.revenue,
+         leads = EXCLUDED.leads,
+         ctr = EXCLUDED.ctr,
+         cpc = EXCLUDED.cpc,
+         cpl = EXCLUDED.cpl,
+         cpa = EXCLUDED.cpa,
+         roas = EXCLUDED.roas
+       RETURNING *`,
+      [uuidv4(), entry.campaignId, entry.date, entry.impressions, entry.clicks,
+       entry.spend, entry.conversions, entry.revenue, entry.leads,
+       ctr, cpc, cpl, cpa, roas, platform]
+    );
+
+    if (cacheService) {
+      await cacheService.invalidatePattern('dashboard:*');
+    }
+
+    reply.status(201);
+    return result.rows[0];
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to save metric',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ============================================================================
 // BPMN TRACKING ENDPOINTS
 // ============================================================================
 
@@ -796,8 +1319,14 @@ fastify.get('/api/clients/:id/bpmn-progress', async (request, reply) => {
 fastify.post('/api/clients/:id/bpmn-progress', async (request, reply) => {
   try {
     const { id } = request.params as { id: string };
-    const { startingSubprocess } = request.body as any;
 
+    const validation = validateBpmnInit(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const { startingSubprocess } = validation.data!;
     const progress = await bpmnTracker.initializeProgress(id, startingSubprocess);
 
     reply.status(201);
@@ -816,8 +1345,14 @@ fastify.post('/api/clients/:id/bpmn-progress', async (request, reply) => {
 fastify.put('/api/clients/:id/bpmn-progress', async (request, reply) => {
   try {
     const { id } = request.params as { id: string };
-    const updates = request.body as any;
 
+    const validation = validateBpmnUpdate(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const updates = validation.data!;
     const progress = await bpmnTracker.updateProgress(id, updates);
 
     return progress;
@@ -907,22 +1442,20 @@ fastify.get('/api/alerts', async (request, reply) => {
 fastify.post('/api/reports/generate/:clientId', async (request, reply) => {
   try {
     const { clientId } = request.params as { clientId: string };
-    const { month, year } = request.body as { month: number; year: number };
 
-    if (!month || !year) {
+    const validation = validateReportGenerate(request.body);
+    if (!validation.valid) {
       reply.status(400);
-      return {
-        error: 'Invalid request',
-        message: 'Month and year are required',
-      };
+      return { error: 'Validation failed', details: validation.errors };
     }
 
-    if (month < 1 || month > 12) {
-      reply.status(400);
-      return {
-        error: 'Invalid month',
-        message: 'Month must be between 1 and 12',
-      };
+    const { month, year } = validation.data!;
+
+    // Verify client exists
+    const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (clientCheck.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Client not found' };
     }
 
     const report = await reportGenerator.generateMonthlyReport(clientId, month, year);
