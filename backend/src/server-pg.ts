@@ -14,6 +14,7 @@ import { ClientAudit } from './middleware/audit';
 import { MetricsService } from './services/metrics-service';
 import { BPMNTracker } from './services/bpmn-tracker';
 import { ReportGenerator } from './services/report-generator';
+import { DashboardService } from './services/dashboard-service';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -37,6 +38,7 @@ const clientAudit = new ClientAudit(pool);
 const metricsService = new MetricsService(pool);
 const bpmnTracker = new BPMNTracker(pool);
 const reportGenerator = new ReportGenerator(pool);
+const dashboardService = new DashboardService(pool);
 
 // Redis Client
 const redis = createClient({
@@ -607,6 +609,45 @@ fastify.get('/api/bpmn/subprocess/:id/clients', async (request, reply) => {
     reply.status(500);
     return {
       error: 'Failed to fetch clients in subprocess',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ========================================
+// DASHBOARD & ALERTS ENDPOINTS
+// ========================================
+
+// Dashboard overview - consolidated data for main page
+fastify.get('/api/dashboard/overview', async (request, reply) => {
+  try {
+    const overview = await dashboardService.getOverview();
+    return overview;
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch dashboard overview',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Performance alerts - check all campaigns for issues
+fastify.get('/api/alerts', async (request, reply) => {
+  try {
+    const alerts = await dashboardService.getPerformanceAlerts();
+    return {
+      total: alerts.length,
+      critical: alerts.filter(a => a.type === 'critical').length,
+      warning: alerts.filter(a => a.type === 'warning').length,
+      alerts,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch alerts',
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
