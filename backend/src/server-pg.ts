@@ -26,6 +26,7 @@ import { ReportGenerator } from './services/report-generator';
 import { DashboardService } from './services/dashboard-service';
 import { CacheService } from './services/cache-service';
 import { MetaAdsService } from './services/meta-ads-service';
+import { SyncHistoryService } from './services/sync-history-service';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -50,6 +51,7 @@ const metricsService = new MetricsService(pool);
 const bpmnTracker = new BPMNTracker(pool);
 const reportGenerator = new ReportGenerator(pool);
 const dashboardService = new DashboardService(pool);
+const syncHistoryService = new SyncHistoryService(pool);
 let cacheService: CacheService;
 
 // Redis Client
@@ -906,6 +908,7 @@ fastify.get('/api/clients/:id/performance-summary', async (request, reply) => {
 
 const syncMetaAdsHandler = async (request: any, reply: any) => {
   const startTime = Date.now();
+  let syncId: string | null = null;
 
   try {
     // Validate request body
@@ -944,7 +947,17 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
     const { since, until } = resolveDateRange(body.since, body.until);
 
-    fastify.log.info({ since, until, accountId: adAccountId, dryRun: body.dryRun }, 'Starting Meta Ads sync');
+    // Create sync history record
+    syncId = await syncHistoryService.createSyncRecord({
+      platform: 'meta',
+      accountId: adAccountId,
+      dateRangeStart: since,
+      dateRangeEnd: until,
+      dryRun: body.dryRun,
+      triggeredBy: 'manual',
+    });
+
+    fastify.log.info({ since, until, accountId: adAccountId, dryRun: body.dryRun, syncId }, 'Starting Meta Ads sync');
 
     const metaService = new MetaAdsService({
       accessToken,
@@ -1038,7 +1051,20 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
     if (body.dryRun) {
       const duration = Date.now() - startTime;
+
+      // Save dry-run to sync history
+      if (syncId) {
+        await syncHistoryService.completeSyncSuccess(syncId, {
+          totalInsights: insights.length,
+          mappedCampaigns: mappedMetrics.length,
+          updatedMetrics: 0, // Dry-run doesn't update
+          unmappedCampaigns: Array.from(unmapped),
+          durationMs: duration,
+        });
+      }
+
       fastify.log.info({
+        syncId,
         totalInsights: insights.length,
         mapped: mappedMetrics.length,
         unmapped: unmapped.size,
@@ -1047,6 +1073,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       return {
         success: true,
         dryRun: true,
+        syncId,
         totalInsights: insights.length,
         mapped: mappedMetrics.length,
         unmapped: Array.from(unmapped),
@@ -1056,32 +1083,27 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       };
     }
 
+    // Batch insert - build VALUES clause for all metrics
     let updated = 0;
-    for (const entry of mappedMetrics) {
-      const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
-      const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
-      const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
-      const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
-      const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
+    if (mappedMetrics.length > 0) {
+      const values: any[] = [];
+      const placeholders: string[] = [];
+      let paramIndex = 1;
 
-      await pool.query(
-        `INSERT INTO campaign_metrics
-         (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-         ON CONFLICT (campaign_id, date, platform)
-         DO UPDATE SET
-           impressions = EXCLUDED.impressions,
-           clicks = EXCLUDED.clicks,
-           spend = EXCLUDED.spend,
-           conversions = EXCLUDED.conversions,
-           revenue = EXCLUDED.revenue,
-           leads = EXCLUDED.leads,
-           ctr = EXCLUDED.ctr,
-           cpc = EXCLUDED.cpc,
-           cpl = EXCLUDED.cpl,
-           cpa = EXCLUDED.cpa,
-           roas = EXCLUDED.roas`,
-        [
+      for (const entry of mappedMetrics) {
+        const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
+        const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
+        const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
+        const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
+        const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
+
+        const rowPlaceholders: string[] = [];
+        for (let i = 0; i < 15; i++) {
+          rowPlaceholders.push(`$${paramIndex++}`);
+        }
+        placeholders.push(`(${rowPlaceholders.join(', ')})`);
+
+        values.push(
           uuidv4(),
           entry.campaignId,
           entry.date,
@@ -1096,10 +1118,30 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
           cpl,
           cpa,
           roas,
-          'meta',
-        ]
+          'meta'
+        );
+      }
+
+      const result = await pool.query(
+        `INSERT INTO campaign_metrics
+         (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+         VALUES ${placeholders.join(', ')}
+         ON CONFLICT (campaign_id, date, platform)
+         DO UPDATE SET
+           impressions = EXCLUDED.impressions,
+           clicks = EXCLUDED.clicks,
+           spend = EXCLUDED.spend,
+           conversions = EXCLUDED.conversions,
+           revenue = EXCLUDED.revenue,
+           leads = EXCLUDED.leads,
+           ctr = EXCLUDED.ctr,
+           cpc = EXCLUDED.cpc,
+           cpl = EXCLUDED.cpl,
+           cpa = EXCLUDED.cpa,
+           roas = EXCLUDED.roas`,
+        values
       );
-      updated++;
+      updated = result.rowCount || mappedMetrics.length;
     }
 
     if (cacheService) {
@@ -1108,7 +1150,20 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
     }
 
     const duration = Date.now() - startTime;
+
+    // Save sync history
+    if (syncId) {
+      await syncHistoryService.completeSyncSuccess(syncId, {
+        totalInsights: insights.length,
+        mappedCampaigns: mappedMetrics.length,
+        updatedMetrics: updated,
+        unmappedCampaigns: Array.from(unmapped),
+        durationMs: duration,
+      });
+    }
+
     fastify.log.info({
+      syncId,
       totalInsights: insights.length,
       mapped: mappedMetrics.length,
       updated,
@@ -1118,6 +1173,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
     return {
       success: true,
+      syncId,
       totalInsights: insights.length,
       mapped: mappedMetrics.length,
       updated,
@@ -1128,7 +1184,14 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
     };
   } catch (error) {
     const duration = Date.now() - startTime;
+
+    // Save failure to sync history
+    if (syncId && error instanceof Error) {
+      await syncHistoryService.completeSyncFailure(syncId, error, duration);
+    }
+
     fastify.log.error({
+      syncId,
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
       duration
@@ -1145,6 +1208,86 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
 fastify.post('/api/metrics/sync/meta', syncMetaAdsHandler);
 fastify.post('/api/metrics/sync', syncMetaAdsHandler);
+
+// Get sync history
+fastify.get('/api/metrics/sync/history', async (request, reply) => {
+  try {
+    const { platform, accountId, limit, offset } = request.query as {
+      platform?: string;
+      accountId?: string;
+      limit?: string;
+      offset?: string;
+    };
+
+    const history = await syncHistoryService.getSyncHistory({
+      platform: platform || 'meta',
+      accountId,
+      limit: limit ? parseInt(limit) : 20,
+      offset: offset ? parseInt(offset) : 0,
+    });
+
+    // Get last successful sync timestamp
+    const lastSuccess = await syncHistoryService.getLastSuccessfulSync(
+      platform || 'meta',
+      accountId
+    );
+
+    return {
+      history,
+      lastSuccessfulSync: lastSuccess,
+      total: history.length,
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch sync history',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get single sync details
+fastify.get('/api/metrics/sync/history/:id', async (request, reply) => {
+  try {
+    const { id } = request.params as { id: string };
+
+    const result = await pool.query(
+      `SELECT
+         id, platform, account_id as "accountId",
+         date_range_start as "dateRangeStart",
+         date_range_end as "dateRangeEnd",
+         status, total_insights as "totalInsights",
+         mapped_campaigns as "mappedCampaigns",
+         updated_metrics as "updatedMetrics",
+         unmapped_campaigns as "unmappedCampaigns",
+         duration_ms as "durationMs",
+         started_at as "startedAt",
+         completed_at as "completedAt",
+         error_message as "errorMessage",
+         error_stack as "errorStack",
+         dry_run as "dryRun",
+         triggered_by as "triggeredBy"
+       FROM sync_history
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      reply.status(404);
+      return { error: 'Sync record not found' };
+    }
+
+    return result.rows[0];
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500);
+    return {
+      error: 'Failed to fetch sync details',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
 
 // ============================================================================
 // METRICS IMPORT ENDPOINTS

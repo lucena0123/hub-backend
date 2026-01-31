@@ -82,6 +82,36 @@ export class MetaAdsService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /**
+   * Retry with exponential backoff
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries;
+        const isRetryable = error instanceof Error &&
+          (error.message.includes('timeout') ||
+           error.message.includes('500') ||
+           error.message.includes('503'));
+
+        if (isLastAttempt || !isRetryable) {
+          throw error;
+        }
+
+        const delayMs = baseDelay * Math.pow(2, attempt);
+        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delayMs}ms`);
+        await this.delay(delayMs);
+      }
+    }
+    throw new Error('Retry logic error'); // Should never reach here
+  }
+
   async fetchCampaignInsights(params: MetaInsightsParams): Promise<MetaInsightRow[]> {
     const { since, until, limit = 500 } = params;
 
@@ -119,15 +149,20 @@ export class MetaAdsService {
         await this.delay(this.requestDelay);
       }
 
-      const response = await this.fetchWithTimeout(nextUrl);
-      const payload = (await response.json()) as MetaInsightsResponse;
+      // Use retry logic for each request
+      const payload = await this.retryWithBackoff(async () => {
+        const res = await this.fetchWithTimeout(nextUrl!);
+        const data = (await res.json()) as MetaInsightsResponse;
 
-      if (!response.ok) {
-        const errorMsg = payload.error?.message || 'Meta API request failed';
-        const errorCode = payload.error?.code || response.status;
-        const traceId = payload.error?.fbtrace_id || 'N/A';
-        throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
-      }
+        if (!res.ok) {
+          const errorMsg = data.error?.message || 'Meta API request failed';
+          const errorCode = data.error?.code || res.status;
+          const traceId = data.error?.fbtrace_id || 'N/A';
+          throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+        }
+
+        return data;
+      });
 
       if (payload.data?.length) {
         allRows.push(...payload.data);
