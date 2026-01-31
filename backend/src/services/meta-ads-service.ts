@@ -17,6 +17,29 @@ export type MetaInsightRow = {
   action_values?: Array<{ action_type: string; value: string }>;
 };
 
+export type MetaAdAccount = {
+  id: string;
+  account_id: string;
+  name: string;
+  account_status: number;
+  currency: string;
+  timezone_name: string;
+  business_name?: string;
+  spend_cap?: string;
+  amount_spent?: string;
+};
+
+export type MetaCampaign = {
+  id: string;
+  name: string;
+  status: string;
+  objective?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  created_time?: string;
+  updated_time?: string;
+};
+
 type MetaInsightsResponse = {
   data: MetaInsightRow[];
   paging?: {
@@ -177,5 +200,71 @@ export class MetaAdsService {
     }
 
     return allRows;
+  }
+
+  /**
+   * Fetch user's ad accounts (uses "me" endpoint)
+   */
+  async fetchAdAccounts(): Promise<MetaAdAccount[]> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/me/adaccounts?fields=id,account_id,name,account_status,currency,timezone_name,business_name,spend_cap,amount_spent&limit=100`;
+
+    const response = await this.retryWithBackoff(async () => {
+      const res = await this.fetchWithTimeout(url);
+      const data = (await res.json()) as any;
+
+      if (!res.ok) {
+        const errorMsg = data.error?.message || 'Failed to fetch ad accounts';
+        const errorCode = data.error?.code || res.status;
+        throw new Error(`Meta API Error ${errorCode}: ${errorMsg}`);
+      }
+
+      return data;
+    });
+
+    return (response as any).data || [];
+  }
+
+  /**
+   * Fetch campaigns for a specific ad account
+   */
+  async fetchCampaigns(): Promise<MetaCampaign[]> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,created_time,updated_time&limit=100`;
+
+    const response = await this.retryWithBackoff(async () => {
+      const res = await this.fetchWithTimeout(url);
+      const data = (await res.json()) as any;
+
+      if (!res.ok) {
+        const errorMsg = data.error?.message || 'Failed to fetch campaigns';
+        const errorCode = data.error?.code || res.status;
+        throw new Error(`Meta API Error ${errorCode}: ${errorMsg}`);
+      }
+
+      return data;
+    });
+
+    return (response as any).data || [];
+  }
+
+  /**
+   * Fetch single ad account details
+   */
+  async fetchAdAccountDetails(): Promise<MetaAdAccount> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}?fields=id,account_id,name,account_status,currency,timezone_name,business_name,spend_cap,amount_spent`;
+
+    const response = await this.retryWithBackoff(async () => {
+      const res = await this.fetchWithTimeout(url);
+      const data = (await res.json()) as any;
+
+      if (!res.ok) {
+        const errorMsg = data.error?.message || 'Failed to fetch account details';
+        const errorCode = data.error?.code || res.status;
+        throw new Error(`Meta API Error ${errorCode}: ${errorMsg}`);
+      }
+
+      return data;
+    });
+
+    return response as MetaAdAccount;
   }
 }

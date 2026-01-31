@@ -139,7 +139,11 @@ export class MetricsService {
         SUM(conversions) as total_conversions,
         SUM(spend) as total_spend,
         SUM(revenue) as total_revenue,
-        SUM(leads) as total_leads
+        SUM(leads) as total_leads,
+        SUM(messaging_conversations) as total_messaging_conversations,
+        SUM(messaging_first_reply) as total_messaging_first_reply,
+        SUM(link_clicks) as total_link_clicks,
+        SUM(landing_page_views) as total_landing_page_views
       FROM campaign_metrics
       WHERE campaign_id = $1
         AND date >= $2
@@ -154,6 +158,10 @@ export class MetricsService {
     const totalSpend = parseFloat(metrics.total_spend) || 0;
     const totalRevenue = parseFloat(metrics.total_revenue) || 0;
     const totalLeads = parseInt(metrics.total_leads) || 0;
+    const totalMessagingConversations = parseInt(metrics.total_messaging_conversations) || 0;
+    const totalMessagingFirstReply = parseInt(metrics.total_messaging_first_reply) || 0;
+    const totalLinkClicks = parseInt(metrics.total_link_clicks) || 0;
+    const totalLandingPageViews = parseInt(metrics.total_landing_page_views) || 0;
 
     // Calculate averages
     const avgCtr = this.calculateCTR(totalClicks, totalImpressions);
@@ -192,6 +200,10 @@ export class MetricsService {
       totalConversions,
       totalSpend,
       totalRevenue,
+      totalMessagingConversations,
+      totalMessagingFirstReply,
+      totalLinkClicks,
+      totalLandingPageViews,
       avgCtr,
       avgCpc,
       avgCpl,
@@ -254,8 +266,22 @@ export class MetricsService {
         conversions: acc.conversions + perf.totalConversions,
         spend: acc.spend + perf.totalSpend,
         revenue: acc.revenue + perf.totalRevenue,
+        messagingConversations: acc.messagingConversations + perf.totalMessagingConversations,
+        messagingFirstReply: acc.messagingFirstReply + perf.totalMessagingFirstReply,
+        linkClicks: acc.linkClicks + perf.totalLinkClicks,
+        landingPageViews: acc.landingPageViews + perf.totalLandingPageViews,
       }),
-      { impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0 }
+      {
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        spend: 0,
+        revenue: 0,
+        messagingConversations: 0,
+        messagingFirstReply: 0,
+        linkClicks: 0,
+        landingPageViews: 0,
+      }
     );
 
     // Calculate overall averages
@@ -277,6 +303,10 @@ export class MetricsService {
       totalConversions: totals.conversions,
       totalSpend: totals.spend,
       totalRevenue: totals.revenue,
+      totalMessagingConversations: totals.messagingConversations,
+      totalMessagingFirstReply: totals.messagingFirstReply,
+      totalLinkClicks: totals.linkClicks,
+      totalLandingPageViews: totals.landingPageViews,
       avgCtr,
       avgCpl,
       avgRoas,

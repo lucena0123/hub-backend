@@ -106,6 +106,12 @@ export interface PerformanceSummary {
   totalSpend: number;
   totalRevenue: number;
 
+  // Lead Generation Metrics (for service businesses)
+  totalMessagingConversations: number;
+  totalMessagingFirstReply: number;
+  totalLinkClicks: number;
+  totalLandingPageViews: number;
+
   // Averages
   avgCtr: number;
   avgCpc: number;
@@ -160,6 +166,12 @@ export interface ClientPerformanceSummary {
   totalConversions: number;
   totalSpend: number;
   totalRevenue: number;
+
+  // Lead Generation Metrics (aggregated)
+  totalMessagingConversations: number;
+  totalMessagingFirstReply: number;
+  totalLinkClicks: number;
+  totalLandingPageViews: number;
 
   // Overall performance
   avgCtr: number;

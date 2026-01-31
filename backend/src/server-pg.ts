@@ -27,6 +27,7 @@ import { DashboardService } from './services/dashboard-service';
 import { CacheService } from './services/cache-service';
 import { MetaAdsService } from './services/meta-ads-service';
 import { SyncHistoryService } from './services/sync-history-service';
+import { LeadTrackingService } from './services/lead-tracking-service';
 import { v4 as uuidv4 } from 'uuid';
 
 const PORT = parseInt(process.env.PORT || '3001');
@@ -52,6 +53,7 @@ const bpmnTracker = new BPMNTracker(pool);
 const reportGenerator = new ReportGenerator(pool);
 const dashboardService = new DashboardService(pool);
 const syncHistoryService = new SyncHistoryService(pool);
+const leadTrackingService = new LeadTrackingService(pool);
 let cacheService: CacheService;
 
 // Redis Client
@@ -1009,6 +1011,16 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       'mobile_purchase',
     ];
     const leadTypes = ['lead', 'leadgen', 'omni_lead'];
+    const messagingConversationTypes = [
+      'onsite_conversion.messaging_conversation_started_7d',
+      'messaging_conversation_started_7d',
+    ];
+    const messagingReplyTypes = [
+      'onsite_conversion.messaging_first_reply',
+      'messaging_first_reply',
+    ];
+    const linkClickTypes = ['link_click'];
+    const landingPageViewTypes = ['landing_page_view'];
 
     const mappedMetrics: Array<{
       campaignId: string;
@@ -1019,6 +1031,10 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       conversions: number;
       revenue: number;
       leads: number;
+      messagingConversations: number;
+      messagingFirstReply: number;
+      linkClicks: number;
+      landingPageViews: number;
     }> = [];
     const unmapped = new Set<string>();
 
@@ -1034,8 +1050,14 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       const spend = parseNumber(row.spend);
       const purchases = sumActions(row.actions, purchaseTypes);
       const leads = sumActions(row.actions, leadTypes);
+      const messagingConversations = sumActions(row.actions, messagingConversationTypes);
+      const messagingFirstReply = sumActions(row.actions, messagingReplyTypes);
+      const linkClicks = sumActions(row.actions, linkClickTypes);
+      const landingPageViews = sumActions(row.actions, landingPageViewTypes);
       const revenue = sumActions(row.action_values, purchaseTypes);
-      const conversions = purchases > 0 ? purchases : leads;
+
+      // For lead gen campaigns, use messaging_conversations as primary conversion metric
+      const conversions = purchases > 0 ? purchases : (messagingConversations > 0 ? messagingConversations : leads);
 
       mappedMetrics.push({
         campaignId,
@@ -1046,6 +1068,10 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
         conversions,
         revenue,
         leads,
+        messagingConversations,
+        messagingFirstReply,
+        linkClicks,
+        landingPageViews,
       });
     }
 
@@ -1098,7 +1124,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
         const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
 
         const rowPlaceholders: string[] = [];
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 19; i++) {
           rowPlaceholders.push(`$${paramIndex++}`);
         }
         placeholders.push(`(${rowPlaceholders.join(', ')})`);
@@ -1118,13 +1144,17 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
           cpl,
           cpa,
           roas,
-          'meta'
+          'meta',
+          entry.messagingConversations,
+          entry.messagingFirstReply,
+          entry.linkClicks,
+          entry.landingPageViews
         );
       }
 
       const result = await pool.query(
         `INSERT INTO campaign_metrics
-         (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform)
+         (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform, messaging_conversations, messaging_first_reply, link_clicks, landing_page_views)
          VALUES ${placeholders.join(', ')}
          ON CONFLICT (campaign_id, date, platform)
          DO UPDATE SET
@@ -1138,7 +1168,11 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
            cpc = EXCLUDED.cpc,
            cpl = EXCLUDED.cpl,
            cpa = EXCLUDED.cpa,
-           roas = EXCLUDED.roas`,
+           roas = EXCLUDED.roas,
+           messaging_conversations = EXCLUDED.messaging_conversations,
+           messaging_first_reply = EXCLUDED.messaging_first_reply,
+           link_clicks = EXCLUDED.link_clicks,
+           landing_page_views = EXCLUDED.landing_page_views`,
         values
       );
       updated = result.rowCount || mappedMetrics.length;
@@ -1806,6 +1840,314 @@ fastify.get('/api/tasks', async (request, reply) => {
     reply.status(500);
     return {
       error: 'Failed to fetch tasks',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// ============================================================================
+// META ADS DISCOVERY ENDPOINTS
+// ============================================================================
+
+// Test Meta API connection
+fastify.get('/api/meta/test', async (request, reply) => {
+  try {
+    const accessToken = process.env.META_ACCESS_TOKEN;
+
+    if (!accessToken) {
+      reply.status(400);
+      return { error: 'META_ACCESS_TOKEN not configured in .env' };
+    }
+
+    // Test with a simple "me" endpoint
+    const testUrl = 'https://graph.facebook.com/v20.0/me?fields=id,name';
+    const response = await fetch(testUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      reply.status(response.status);
+      return {
+        error: 'Meta API connection failed',
+        message: data.error?.message || 'Unknown error',
+        code: data.error?.code,
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Meta API connection successful',
+      user: data,
+    };
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to test Meta API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// List all ad accounts accessible by the user
+fastify.get('/api/meta/accounts', async (request, reply) => {
+  try {
+    const accessToken = process.env.META_ACCESS_TOKEN;
+
+    if (!accessToken) {
+      reply.status(400);
+      return { error: 'META_ACCESS_TOKEN not configured in .env' };
+    }
+
+    const metaService = new MetaAdsService({
+      accessToken,
+      adAccountId: '0', // Not needed for this call
+    });
+
+    const accounts = await metaService.fetchAdAccounts();
+
+    return {
+      total: accounts.length,
+      accounts: accounts.map(acc => ({
+        id: acc.id,
+        accountId: acc.account_id,
+        name: acc.name,
+        status: acc.account_status,
+        currency: acc.currency,
+        timezone: acc.timezone_name,
+        businessName: acc.business_name,
+        amountSpent: acc.amount_spent,
+        spendCap: acc.spend_cap,
+      })),
+    };
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to fetch Meta ad accounts',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get specific ad account details
+fastify.get<{ Params: { accountId: string } }>(
+  '/api/meta/accounts/:accountId/info',
+  async (request, reply) => {
+    try {
+      const { accountId } = request.params;
+      const accessToken = process.env.META_ACCESS_TOKEN;
+
+      if (!accessToken) {
+        reply.status(400);
+        return { error: 'META_ACCESS_TOKEN not configured in .env' };
+      }
+
+      const metaService = new MetaAdsService({
+        accessToken,
+        adAccountId: accountId,
+      });
+
+      const accountInfo = await metaService.fetchAdAccountDetails();
+
+      return {
+        id: accountInfo.id,
+        accountId: accountInfo.account_id,
+        name: accountInfo.name,
+        status: accountInfo.account_status,
+        currency: accountInfo.currency,
+        timezone: accountInfo.timezone_name,
+        businessName: accountInfo.business_name,
+        amountSpent: accountInfo.amount_spent,
+        spendCap: accountInfo.spend_cap,
+      };
+    } catch (error) {
+      reply.status(500);
+      return {
+        error: 'Failed to fetch ad account details',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+);
+
+// List campaigns for a specific ad account
+fastify.get<{ Params: { accountId: string } }>(
+  '/api/meta/accounts/:accountId/campaigns',
+  async (request, reply) => {
+    try {
+      const { accountId } = request.params;
+      const accessToken = process.env.META_ACCESS_TOKEN;
+
+      if (!accessToken) {
+        reply.status(400);
+        return { error: 'META_ACCESS_TOKEN not configured in .env' };
+      }
+
+      const metaService = new MetaAdsService({
+        accessToken,
+        adAccountId: accountId,
+      });
+
+      const campaigns = await metaService.fetchCampaigns();
+
+      return {
+        accountId,
+        total: campaigns.length,
+        campaigns: campaigns.map(camp => ({
+          id: camp.id,
+          name: camp.name,
+          status: camp.status,
+          objective: camp.objective,
+          dailyBudget: camp.daily_budget,
+          lifetimeBudget: camp.lifetime_budget,
+          createdTime: camp.created_time,
+          updatedTime: camp.updated_time,
+        })),
+      };
+    } catch (error) {
+      reply.status(500);
+      return {
+        error: 'Failed to fetch campaigns',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+);
+
+// ============================================================================
+// LEAD TRACKING ENDPOINTS (Manual funnel data for service businesses)
+// ============================================================================
+
+// Upsert lead tracking data for a campaign
+fastify.post<{
+  Body: {
+    campaignId: string;
+    date: string;
+    qualifiedLeads?: number;
+    contractsClosed?: number;
+    averageTicket?: number;
+    revenueGenerated?: number;
+    leadsResponded?: number;
+    responseTimeHours?: number;
+    notes?: string;
+  };
+}>('/api/lead-tracking', async (request, reply) => {
+  try {
+    const result = await leadTrackingService.upsertLeadTracking(request.body);
+
+    // Invalidate dashboard cache
+    if (cacheService) {
+      await cacheService.invalidatePattern('dashboard:*');
+      await cacheService.invalidatePattern(`campaigns:${request.body.campaignId}:*`);
+    }
+
+    return result;
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to save lead tracking data',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get lead tracking data for a campaign
+fastify.get<{
+  Params: { campaignId: string };
+  Querystring: {
+    startDate?: string;
+    endDate?: string;
+    limit?: string;
+    offset?: string;
+  };
+}>('/api/campaigns/:campaignId/lead-tracking', async (request, reply) => {
+  try {
+    const { campaignId } = request.params;
+    const { startDate, endDate, limit, offset } = request.query;
+
+    const result = await leadTrackingService.getLeadTracking(campaignId, {
+      startDate,
+      endDate,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
+
+    return result;
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to fetch lead tracking data',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Get lead tracking summary for a campaign (period aggregation)
+fastify.get<{
+  Params: { campaignId: string };
+  Querystring: {
+    startDate: string;
+    endDate: string;
+  };
+}>('/api/campaigns/:campaignId/lead-summary', async (request, reply) => {
+  try {
+    const { campaignId } = request.params;
+    const { startDate, endDate } = request.query;
+
+    if (!startDate || !endDate) {
+      reply.status(400);
+      return { error: 'startDate and endDate are required' };
+    }
+
+    const summary = await leadTrackingService.getLeadTrackingSummary(
+      campaignId,
+      startDate,
+      endDate
+    );
+
+    return summary;
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to fetch lead summary',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// Delete lead tracking record
+fastify.delete<{
+  Params: { campaignId: string };
+  Querystring: { date: string };
+}>('/api/campaigns/:campaignId/lead-tracking', async (request, reply) => {
+  try {
+    const { campaignId } = request.params;
+    const { date } = request.query;
+
+    if (!date) {
+      reply.status(400);
+      return { error: 'date query parameter is required' };
+    }
+
+    const deleted = await leadTrackingService.deleteLeadTracking(campaignId, date);
+
+    if (!deleted) {
+      reply.status(404);
+      return { error: 'Lead tracking record not found' };
+    }
+
+    // Invalidate cache
+    if (cacheService) {
+      await cacheService.invalidatePattern('dashboard:*');
+      await cacheService.invalidatePattern(`campaigns:${campaignId}:*`);
+    }
+
+    return { success: true, message: 'Lead tracking record deleted' };
+  } catch (error) {
+    reply.status(500);
+    return {
+      error: 'Failed to delete lead tracking record',
       message: error instanceof Error ? error.message : 'Unknown error',
     };
   }
