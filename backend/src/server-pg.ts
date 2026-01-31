@@ -15,6 +15,7 @@ import { validateBpmnInit, validateBpmnUpdate } from './validators/bpmn';
 import { validateReportGenerate } from './validators/report';
 import { validateMetricsImport, validateMetricUpsert } from './validators/metrics-import';
 import { validateRegister, validateLogin } from './validators/auth';
+import { validateMetaSync } from './validators/meta-sync';
 import { ClientAudit } from './middleware/audit';
 import { authenticate } from './middleware/auth';
 import jwt from '@fastify/jwt';
@@ -904,13 +905,17 @@ fastify.get('/api/clients/:id/performance-summary', async (request, reply) => {
 // ============================================================================
 
 const syncMetaAdsHandler = async (request: any, reply: any) => {
+  const startTime = Date.now();
+
   try {
-    const body = (request.body || {}) as {
-      since?: string;
-      until?: string;
-      accountId?: string;
-      dryRun?: boolean;
-    };
+    // Validate request body
+    const validation = validateMetaSync(request.body);
+    if (!validation.valid) {
+      reply.status(400);
+      return { error: 'Validation failed', details: validation.errors };
+    }
+
+    const body = validation.data!;
 
     const accessToken = process.env.META_ACCESS_TOKEN;
     const adAccountId = body.accountId || process.env.META_AD_ACCOUNT_ID;
@@ -923,6 +928,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       };
     }
 
+    // Resolve date range with defaults (last 7 days)
     const resolveDateRange = (since?: string, until?: string) => {
       if (since && until) {
         return { since, until };
@@ -938,6 +944,8 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
     const { since, until } = resolveDateRange(body.since, body.until);
 
+    fastify.log.info({ since, until, accountId: adAccountId, dryRun: body.dryRun }, 'Starting Meta Ads sync');
+
     const metaService = new MetaAdsService({
       accessToken,
       adAccountId,
@@ -946,7 +954,11 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
 
     const insights = await metaService.fetchCampaignInsights({ since, until });
 
+    fastify.log.info({ insightsCount: insights.length }, 'Fetched insights from Meta API');
+
     if (insights.length === 0) {
+      const duration = Date.now() - startTime;
+      fastify.log.info({ duration }, 'Meta sync completed - no insights found');
       return {
         success: true,
         message: 'No insights returned for the selected period',
@@ -955,6 +967,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
         unmapped: 0,
         since,
         until,
+        duration,
       };
     }
 
@@ -1024,6 +1037,13 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
     }
 
     if (body.dryRun) {
+      const duration = Date.now() - startTime;
+      fastify.log.info({
+        totalInsights: insights.length,
+        mapped: mappedMetrics.length,
+        unmapped: unmapped.size,
+        duration
+      }, 'Meta sync dry-run completed');
       return {
         success: true,
         dryRun: true,
@@ -1032,6 +1052,7 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
         unmapped: Array.from(unmapped),
         since,
         until,
+        duration,
       };
     }
 
@@ -1086,6 +1107,15 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       await cacheService.invalidatePattern('campaigns:*');
     }
 
+    const duration = Date.now() - startTime;
+    fastify.log.info({
+      totalInsights: insights.length,
+      mapped: mappedMetrics.length,
+      updated,
+      unmapped: unmapped.size,
+      duration
+    }, 'Meta sync completed successfully');
+
     return {
       success: true,
       totalInsights: insights.length,
@@ -1094,13 +1124,21 @@ const syncMetaAdsHandler = async (request: any, reply: any) => {
       unmapped: Array.from(unmapped),
       since,
       until,
+      duration,
     };
   } catch (error) {
-    fastify.log.error(error);
+    const duration = Date.now() - startTime;
+    fastify.log.error({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      duration
+    }, 'Meta sync failed');
+
     reply.status(500);
     return {
       error: 'Failed to sync Meta Ads metrics',
       message: error instanceof Error ? error.message : 'Unknown error',
+      duration,
     };
   }
 };
