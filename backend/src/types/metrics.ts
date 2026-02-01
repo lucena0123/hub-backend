@@ -112,6 +112,14 @@ export interface PerformanceSummary {
   totalLinkClicks: number;
   totalLandingPageViews: number;
 
+  // Campaign Health Metrics
+  totalReach: number;
+  avgFrequency: number;
+  avgCpm: number;
+  qualityRanking?: string | null;
+  engagementRateRanking?: string | null;
+  conversionRateRanking?: string | null;
+
   // Averages
   avgCtr: number;
   avgCpc: number;
@@ -172,6 +180,11 @@ export interface ClientPerformanceSummary {
   totalMessagingFirstReply: number;
   totalLinkClicks: number;
   totalLandingPageViews: number;
+
+  // Campaign Health Metrics (aggregated)
+  totalReach: number;
+  avgFrequency: number;
+  avgCpm: number;
 
   // Overall performance
   avgCtr: number;

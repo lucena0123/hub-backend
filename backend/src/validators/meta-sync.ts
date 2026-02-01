@@ -25,6 +25,9 @@ export const metaSyncSchema = z.object({
   dryRun: z.boolean()
     .optional()
     .default(false),
+  syncLevel: z.enum(['campaign', 'adset', 'ad', 'full'])
+    .optional()
+    .default('campaign'),
 }).refine(
   (data) => {
     // If both dates provided, validate since < until

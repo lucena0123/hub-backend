@@ -13,6 +13,12 @@ export type MetaInsightRow = {
   spend?: string;
   ctr?: string;
   cpc?: string;
+  reach?: string;
+  frequency?: string;
+  cpm?: string;
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
   actions?: Array<{ action_type: string; value: string }>;
   action_values?: Array<{ action_type: string; value: string }>;
 };
@@ -40,6 +46,54 @@ export type MetaCampaign = {
   updated_time?: string;
 };
 
+export type MetaAdSetInsightRow = {
+  campaign_id: string;
+  adset_id: string;
+  adset_name?: string;
+  date_start: string;
+  date_stop: string;
+  impressions?: string;
+  reach?: string;
+  clicks?: string;
+  spend?: string;
+  ctr?: string;
+  cpc?: string;
+  cpm?: string;
+  frequency?: string;
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
+  actions?: Array<{ action_type: string; value: string }>;
+  action_values?: Array<{ action_type: string; value: string }>;
+};
+
+export type MetaAdInsightRow = {
+  campaign_id: string;
+  adset_id?: string;
+  ad_id: string;
+  ad_name?: string;
+  date_start: string;
+  date_stop: string;
+  impressions?: string;
+  reach?: string;
+  clicks?: string;
+  spend?: string;
+  ctr?: string;
+  cpc?: string;
+  cpm?: string;
+  frequency?: string;
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
+  actions?: Array<{ action_type: string; value: string }>;
+  action_values?: Array<{ action_type: string; value: string }>;
+  video_thruplay_actions?: Array<{ action_type: string; value: string }>;
+  video_p25_watched_actions?: Array<{ action_type: string; value: string }>;
+  video_p50_watched_actions?: Array<{ action_type: string; value: string }>;
+  video_p75_watched_actions?: Array<{ action_type: string; value: string }>;
+  video_p100_watched_actions?: Array<{ action_type: string; value: string }>;
+};
+
 type MetaInsightsResponse = {
   data: MetaInsightRow[];
   paging?: {
@@ -59,11 +113,20 @@ type MetaInsightsParams = {
   limit?: number;
 };
 
+type PaginatedFetchOptions = {
+  fields: string[];
+  level: string;
+  since: string;
+  until: string;
+  limit: number;
+  breakdowns?: string[];
+};
+
 export class MetaAdsService {
   private accessToken: string;
   private adAccountId: string;
   private apiVersion: string;
-  private requestDelay: number = 100; // Rate limiting: 100ms between requests
+  private requestDelay: number = 100;
 
   constructor(options: { accessToken: string; adAccountId: string; apiVersion?: string }) {
     this.accessToken = options.accessToken;
@@ -71,9 +134,6 @@ export class MetaAdsService {
     this.apiVersion = options.apiVersion || 'v20.0';
   }
 
-  /**
-   * Fetch with timeout support
-   */
   private async fetchWithTimeout(url: string, timeoutMs: number = 30000): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -98,16 +158,10 @@ export class MetaAdsService {
     }
   }
 
-  /**
-   * Rate limiting delay
-   */
   private async delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  /**
-   * Retry with exponential backoff
-   */
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
     maxRetries: number = 3,
@@ -132,47 +186,41 @@ export class MetaAdsService {
         await this.delay(delayMs);
       }
     }
-    throw new Error('Retry logic error'); // Should never reach here
+    throw new Error('Retry logic error');
   }
 
-  async fetchCampaignInsights(params: MetaInsightsParams): Promise<MetaInsightRow[]> {
-    const { since, until, limit = 500 } = params;
+  /**
+   * Generic paginated fetch for Meta Insights API.
+   * All insight methods delegate to this to avoid duplicating the pagination loop.
+   */
+  private async fetchPaginatedInsights<T>(options: PaginatedFetchOptions): Promise<T[]> {
+    const { fields, level, since, until, limit, breakdowns } = options;
 
     const baseUrl = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/insights`;
     const searchParams = new URLSearchParams({
-      fields: [
-        'campaign_id',
-        'campaign_name',
-        'date_start',
-        'date_stop',
-        'impressions',
-        'clicks',
-        'spend',
-        'ctr',
-        'cpc',
-        'actions',
-        'action_values',
-      ].join(','),
-      level: 'campaign',
+      fields: fields.join(','),
+      level,
       time_increment: '1',
       limit: String(limit),
     });
+
+    if (breakdowns && breakdowns.length > 0) {
+      searchParams.set('breakdowns', breakdowns.join(','));
+    }
 
     searchParams.append('time_range[since]', since);
     searchParams.append('time_range[until]', until);
 
     let nextUrl: string | undefined = `${baseUrl}?${searchParams.toString()}`;
-    const allRows: MetaInsightRow[] = [];
+    const allRows: T[] = [];
     let requestCount = 0;
-    const maxRequests = 100; // Safety limit to prevent infinite loops
+    const maxRequests = 100;
 
     while (nextUrl && requestCount < maxRequests) {
-      // Rate limiting: wait between requests (except first)
       if (requestCount > 0) {
         await this.delay(this.requestDelay);
       }
 
-      // Use retry logic for each request
       const payload = await this.retryWithBackoff(async () => {
         const res = await this.fetchWithTimeout(nextUrl!);
         const data = (await res.json()) as MetaInsightsResponse;
@@ -188,7 +236,7 @@ export class MetaAdsService {
       });
 
       if (payload.data?.length) {
-        allRows.push(...payload.data);
+        allRows.push(...(payload.data as unknown as T[]));
       }
 
       nextUrl = payload.paging?.next;
@@ -202,9 +250,68 @@ export class MetaAdsService {
     return allRows;
   }
 
-  /**
-   * Fetch user's ad accounts (uses "me" endpoint)
-   */
+  async fetchCampaignInsights(params: MetaInsightsParams): Promise<MetaInsightRow[]> {
+    return this.fetchPaginatedInsights<MetaInsightRow>({
+      fields: [
+        'campaign_id', 'campaign_name', 'date_start', 'date_stop',
+        'impressions', 'clicks', 'spend', 'ctr', 'cpc', 'reach',
+        'frequency', 'cpm', 'quality_ranking', 'engagement_rate_ranking',
+        'conversion_rate_ranking', 'actions', 'action_values',
+      ],
+      level: 'campaign',
+      since: params.since,
+      until: params.until,
+      limit: params.limit || 500,
+    });
+  }
+
+  async fetchAdSetInsights(params: MetaInsightsParams): Promise<MetaAdSetInsightRow[]> {
+    return this.fetchPaginatedInsights<MetaAdSetInsightRow>({
+      fields: [
+        'campaign_id', 'adset_id', 'adset_name', 'date_start', 'date_stop',
+        'impressions', 'reach', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
+        'frequency', 'quality_ranking', 'engagement_rate_ranking',
+        'conversion_rate_ranking', 'actions', 'action_values',
+      ],
+      level: 'adset',
+      since: params.since,
+      until: params.until,
+      limit: params.limit || 500,
+    });
+  }
+
+  async fetchBreakdownInsights(params: MetaInsightsParams & { breakdowns: string[] }): Promise<any[]> {
+    return this.fetchPaginatedInsights<any>({
+      fields: [
+        'campaign_id', 'date_start', 'date_stop',
+        'impressions', 'clicks', 'spend', 'reach', 'actions',
+      ],
+      level: 'campaign',
+      since: params.since,
+      until: params.until,
+      limit: params.limit || 500,
+      breakdowns: params.breakdowns,
+    });
+  }
+
+  async fetchAdInsights(params: MetaInsightsParams): Promise<MetaAdInsightRow[]> {
+    return this.fetchPaginatedInsights<MetaAdInsightRow>({
+      fields: [
+        'campaign_id', 'adset_id', 'ad_id', 'ad_name', 'date_start', 'date_stop',
+        'impressions', 'reach', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
+        'frequency', 'quality_ranking', 'engagement_rate_ranking',
+        'conversion_rate_ranking', 'actions', 'action_values',
+        'video_thruplay_actions', 'video_p25_watched_actions',
+        'video_p50_watched_actions', 'video_p75_watched_actions',
+        'video_p100_watched_actions',
+      ],
+      level: 'ad',
+      since: params.since,
+      until: params.until,
+      limit: params.limit || 500,
+    });
+  }
+
   async fetchAdAccounts(): Promise<MetaAdAccount[]> {
     const url = `https://graph.facebook.com/${this.apiVersion}/me/adaccounts?fields=id,account_id,name,account_status,currency,timezone_name,business_name,spend_cap,amount_spent&limit=100`;
 
@@ -224,9 +331,6 @@ export class MetaAdsService {
     return (response as any).data || [];
   }
 
-  /**
-   * Fetch campaigns for a specific ad account
-   */
   async fetchCampaigns(): Promise<MetaCampaign[]> {
     const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,created_time,updated_time&limit=100`;
 
@@ -246,9 +350,6 @@ export class MetaAdsService {
     return (response as any).data || [];
   }
 
-  /**
-   * Fetch single ad account details
-   */
   async fetchAdAccountDetails(): Promise<MetaAdAccount> {
     const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}?fields=id,account_id,name,account_status,currency,timezone_name,business_name,spend_cap,amount_spent`;
 

@@ -56,6 +56,14 @@ export class MetricsService {
   }
 
   /**
+   * Calculate CPM (Cost Per Mille / 1000 impressions)
+   */
+  calculateCPM(spend: number, impressions: number): number {
+    if (impressions === 0) return 0;
+    return Number(((spend / impressions) * 1000).toFixed(2));
+  }
+
+  /**
    * Get campaign metrics for a specific period
    */
   async getCampaignMetrics(
@@ -143,13 +151,27 @@ export class MetricsService {
         SUM(messaging_conversations) as total_messaging_conversations,
         SUM(messaging_first_reply) as total_messaging_first_reply,
         SUM(link_clicks) as total_link_clicks,
-        SUM(landing_page_views) as total_landing_page_views
+        SUM(landing_page_views) as total_landing_page_views,
+        SUM(reach) as total_reach,
+        AVG(frequency) as avg_frequency,
+        AVG(cpm) as avg_cpm
       FROM campaign_metrics
       WHERE campaign_id = $1
         AND date >= $2
         AND date <= $3`,
       [campaignId, dates.start, dates.end]
     );
+
+    // Get most recent quality rankings
+    const rankingsResult = await this.pool.query(
+      `SELECT quality_ranking, engagement_rate_ranking, conversion_rate_ranking
+       FROM campaign_metrics
+       WHERE campaign_id = $1 AND date >= $2 AND date <= $3
+         AND quality_ranking IS NOT NULL
+       ORDER BY date DESC LIMIT 1`,
+      [campaignId, dates.start, dates.end]
+    );
+    const rankings = rankingsResult.rows[0] || {};
 
     const metrics = metricsResult.rows[0];
     const totalImpressions = parseInt(metrics.total_impressions) || 0;
@@ -162,6 +184,9 @@ export class MetricsService {
     const totalMessagingFirstReply = parseInt(metrics.total_messaging_first_reply) || 0;
     const totalLinkClicks = parseInt(metrics.total_link_clicks) || 0;
     const totalLandingPageViews = parseInt(metrics.total_landing_page_views) || 0;
+    const totalReach = parseInt(metrics.total_reach) || 0;
+    const avgFrequency = parseFloat(metrics.avg_frequency) || 0;
+    const avgCpm = parseFloat(metrics.avg_cpm) || 0;
 
     // Calculate averages
     const avgCtr = this.calculateCTR(totalClicks, totalImpressions);
@@ -204,6 +229,12 @@ export class MetricsService {
       totalMessagingFirstReply,
       totalLinkClicks,
       totalLandingPageViews,
+      totalReach,
+      avgFrequency: Number(avgFrequency.toFixed(2)),
+      avgCpm: Number(avgCpm.toFixed(2)),
+      qualityRanking: rankings.quality_ranking || null,
+      engagementRateRanking: rankings.engagement_rate_ranking || null,
+      conversionRateRanking: rankings.conversion_rate_ranking || null,
       avgCtr,
       avgCpc,
       avgCpl,
@@ -270,6 +301,7 @@ export class MetricsService {
         messagingFirstReply: acc.messagingFirstReply + perf.totalMessagingFirstReply,
         linkClicks: acc.linkClicks + perf.totalLinkClicks,
         landingPageViews: acc.landingPageViews + perf.totalLandingPageViews,
+        reach: acc.reach + perf.totalReach,
       }),
       {
         impressions: 0,
@@ -281,6 +313,7 @@ export class MetricsService {
         messagingFirstReply: 0,
         linkClicks: 0,
         landingPageViews: 0,
+        reach: 0,
       }
     );
 
@@ -307,6 +340,11 @@ export class MetricsService {
       totalMessagingFirstReply: totals.messagingFirstReply,
       totalLinkClicks: totals.linkClicks,
       totalLandingPageViews: totals.landingPageViews,
+      totalReach: totals.reach,
+      avgFrequency: totals.impressions > 0 && totals.reach > 0
+        ? Number((totals.impressions / totals.reach).toFixed(2))
+        : 0,
+      avgCpm: this.calculateCPM(totals.spend, totals.impressions),
       avgCtr,
       avgCpl,
       avgRoas,
