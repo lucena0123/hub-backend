@@ -71,6 +71,10 @@ Hub/
 | 6 | Customer Success | 6.1, 6.2, 6.3, 6.4 | Paralelo |
 | 7 | Gestao Financeira | 7.1, 7.2, 7.3 | Paralelo |
 
+## Contexto (ler primeiro)
+
+- **[docs/CONTEXT.md](docs/CONTEXT.md)** - Estado atual do projeto, o que funciona, o que falta, decisoes tomadas, divida tecnica
+
 ## Documentacao Detalhada
 
 - [docs/architecture.md](docs/architecture.md) - Processos, fluxos, dependencias e dados compartilhados
