@@ -17,13 +17,14 @@ export interface SyncHistoryRecord {
   mappedCampaigns: number;
   updatedMetrics: number;
   unmappedCampaigns: string[];
-  durationMs: number;
+  durationMs: number | null;
   startedAt: Date;
-  completedAt: Date;
+  completedAt: Date | null;
   errorMessage?: string;
   errorStack?: string;
   dryRun: boolean;
   triggeredBy?: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export class SyncHistoryService {
@@ -39,13 +40,14 @@ export class SyncHistoryService {
     dateRangeEnd: string;
     dryRun: boolean;
     triggeredBy?: string;
+    metadata?: Record<string, unknown> | null;
   }): Promise<string> {
     const id = uuidv4();
     await this.pool.query(
       `INSERT INTO sync_history
        (id, platform, account_id, date_range_start, date_range_end,
-        status, started_at, dry_run, triggered_by)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
+        status, started_at, dry_run, triggered_by, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9)`,
       [
         id,
         data.platform,
@@ -55,9 +57,19 @@ export class SyncHistoryService {
         'success', // Will be updated later
         data.dryRun,
         data.triggeredBy || 'manual',
+        data.metadata ?? null,
       ]
     );
     return id;
+  }
+
+  async updateSyncMetadata(syncId: string, metadata: Record<string, unknown> | null): Promise<void> {
+    await this.pool.query(
+      `UPDATE sync_history
+       SET metadata = $1
+       WHERE id = $2`,
+      [metadata ? JSON.stringify(metadata) : null, syncId]
+    );
   }
 
   /**
@@ -134,25 +146,27 @@ export class SyncHistoryService {
       conditions.push(`account_id = $${params.length}`);
     }
 
-    const result = await this.pool.query(
-      `SELECT
-         id, platform, account_id as "accountId",
-         date_range_start as "dateRangeStart",
-         date_range_end as "dateRangeEnd",
-         status, total_insights as "totalInsights",
-         mapped_campaigns as "mappedCampaigns",
-         updated_metrics as "updatedMetrics",
-         unmapped_campaigns as "unmappedCampaigns",
-         duration_ms as "durationMs",
-         started_at as "startedAt",
-         completed_at as "completedAt",
-         error_message as "errorMessage",
-         dry_run as "dryRun",
-         triggered_by as "triggeredBy"
-       FROM sync_history
-       WHERE ${conditions.join(' AND ')}
-       ORDER BY started_at DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+     const result = await this.pool.query(
+       `SELECT
+          id, platform, account_id as "accountId",
+          date_range_start as "dateRangeStart",
+          date_range_end as "dateRangeEnd",
+          status, total_insights as "totalInsights",
+          mapped_campaigns as "mappedCampaigns",
+          updated_metrics as "updatedMetrics",
+          unmapped_campaigns as "unmappedCampaigns",
+          duration_ms as "durationMs",
+          started_at as "startedAt",
+          completed_at as "completedAt",
+          error_message as "errorMessage",
+          error_stack as "errorStack",
+          dry_run as "dryRun",
+          triggered_by as "triggeredBy",
+          metadata
+        FROM sync_history
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY started_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     );
 

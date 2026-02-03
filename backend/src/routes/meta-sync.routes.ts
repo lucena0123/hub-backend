@@ -53,6 +53,15 @@ const MAX_BATCH_ROWS = 1000;
 const getBatchSize = (columnsPerRow: number) =>
   Math.max(1, Math.min(MAX_BATCH_ROWS, Math.floor(MAX_PG_PARAMS / columnsPerRow)));
 
+type RunningMetaSyncJob = {
+  syncId: string;
+  accountId: string;
+  startedAt: number;
+  promise: Promise<void>;
+};
+
+const runningMetaSyncJobsByAccount = new Map<string, RunningMetaSyncJob>();
+
 const stableStringify = (value: unknown): string => {
   if (value === null || value === undefined) return 'null';
   if (typeof value !== 'object') return JSON.stringify(value);
@@ -218,6 +227,7 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
   const syncMetaAdsHandler = async (request: any, reply: any) => {
     const startTime = Date.now();
     let syncId: string | null = null;
+    let syncMetadata: Record<string, unknown> | null = null;
 
     try {
       const validation = validateMetaSync(request.body);
@@ -256,6 +266,33 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
       const chunkDays = getMetaSyncChunkDays();
       const dateChunks = splitDateRange(since, until, chunkDays);
 
+      const shouldRunAsync =
+        body.async || body.syncLevel === 'full' || (body.since && body.until && dateChunks.length > 1);
+
+      if (shouldRunAsync) {
+        const existing = runningMetaSyncJobsByAccount.get(adAccountId);
+        if (existing) {
+          reply.status(202);
+          return {
+            success: true,
+            async: true,
+            alreadyRunning: true,
+            syncId: existing.syncId,
+            message: 'Já existe uma sincronização em andamento para esta conta.',
+            totalInsights: 0,
+            mapped: 0,
+          };
+        }
+      }
+
+      const breakdownUnits = body.syncLevel === 'full' ? dateChunks.length * 3 : 0;
+      const adUnits = body.syncLevel === 'ad' || body.syncLevel === 'full' ? dateChunks.length + 1 : 0; // +1 = creative metadata linking
+      const totalUnits =
+        dateChunks.length + // campaign metrics always
+        (body.syncLevel === 'adset' || body.syncLevel === 'full' ? dateChunks.length : 0) +
+        adUnits +
+        breakdownUnits;
+
       syncId = await syncHistoryService.createSyncRecord({
         platform: 'meta',
         accountId: adAccountId,
@@ -263,7 +300,56 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         dateRangeEnd: until,
         dryRun: body.dryRun,
         triggeredBy: 'manual',
+        metadata: {
+          state: 'running',
+          syncLevel: body.syncLevel,
+          chunkDays,
+          chunksTotal: dateChunks.length,
+          progress: {
+            overallTotal: totalUnits,
+            overallCompleted: 0,
+            stage: 'campaign',
+            stageTotal: dateChunks.length,
+            stageCompleted: 0,
+            currentSince: null,
+            currentUntil: null,
+            message: 'Preparando sincronização...',
+            updatedAt: new Date().toISOString(),
+          },
+        },
       });
+
+      syncMetadata = {
+        state: 'running',
+        syncLevel: body.syncLevel,
+        chunkDays,
+        chunksTotal: dateChunks.length,
+        progress: {
+          overallTotal: totalUnits,
+          overallCompleted: 0,
+          stage: 'campaign',
+          stageTotal: dateChunks.length,
+          stageCompleted: 0,
+          currentSince: null,
+          currentUntil: null,
+          message: 'Preparando sincronização...',
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      const updateProgress = async (next: Partial<Record<string, unknown>>) => {
+        if (!syncId || !syncMetadata) return;
+        const currentProgress = (syncMetadata.progress as Record<string, unknown>) || {};
+        syncMetadata = {
+          ...syncMetadata,
+          progress: {
+            ...currentProgress,
+            ...next,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+      };
 
       fastify.log.info({ since, until, accountId: adAccountId, dryRun: body.dryRun, syncId }, 'Starting Meta Ads sync');
       fastify.log.info({ chunks: dateChunks.length, chunkDays }, 'Meta sync will run in chunks');
@@ -273,6 +359,32 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         adAccountId,
         apiVersion: process.env.META_API_VERSION,
       });
+
+      const runSyncWork = async () => {
+        let overallCompleted = 0;
+        let stageCompleted = 0;
+
+        const setStage = async (stage: string, stageTotal: number, message: string) => {
+          stageCompleted = 0;
+          await updateProgress({
+            stage,
+            stageTotal,
+            stageCompleted,
+            message,
+          });
+        };
+
+        const completeUnit = async (currentSince: string | null, currentUntil: string | null, message?: string) => {
+          overallCompleted += 1;
+          stageCompleted += 1;
+          await updateProgress({
+            overallCompleted,
+            stageCompleted,
+            currentSince,
+            currentUntil,
+            ...(message ? { message } : {}),
+          });
+        };
 
       // Auto-import campaigns if clientId is provided
       if (body.clientId) {
@@ -317,6 +429,9 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
           fastify.log.error({ error: campError }, 'Failed to auto-import campaigns (non-fatal)');
         }
       }
+
+      // NOTE: Everything below can take minutes. If shouldRunAsync=true, we run this work
+      // in the background and respond immediately. Otherwise, we await it and return the result.
 
       const campaignsResult = await pool.query(
         'SELECT id, "externalId" FROM campaigns WHERE platform = $1',
@@ -470,6 +585,8 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         return totalUpdated;
       };
 
+      await setStage('campaign', dateChunks.length, 'Sincronizando métricas de campanhas...');
+
       for (const chunk of dateChunks) {
         const insights = await metaService.fetchCampaignInsights(chunk);
         totalInsights += insights.length;
@@ -479,63 +596,65 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
           'Fetched insights from Meta API'
         );
 
-        if (insights.length === 0) continue;
+        if (insights.length > 0) {
+          const mappedMetrics: MappedCampaignMetric[] = [];
 
-        const mappedMetrics: MappedCampaignMetric[] = [];
+          for (const row of insights) {
+            const campaignId = campaignMap.get(row.campaign_id);
+            if (!campaignId) {
+              unmapped.add(row.campaign_id);
+              continue;
+            }
 
-        for (const row of insights) {
-          const campaignId = campaignMap.get(row.campaign_id);
-          if (!campaignId) {
-            unmapped.add(row.campaign_id);
-            continue;
+            const impressions = Math.round(parseNumber(row.impressions));
+            const clicks = Math.round(parseNumber(row.clicks));
+            const spend = parseNumber(row.spend);
+            const purchases = sumActions(row.actions, purchaseTypes);
+            const leads = sumActions(row.actions, leadTypes);
+            const messagingConversations = sumActions(row.actions, messagingConversationTypes);
+            const messagingFirstReply = sumActions(row.actions, messagingReplyTypes);
+            const linkClicks = sumActions(row.actions, linkClickTypes);
+            const landingPageViews = sumActions(row.actions, landingPageViewTypes);
+            const revenue = sumActions(row.action_values, purchaseTypes);
+            const reach = Math.round(parseNumber(row.reach));
+            const frequency = parseNumber(row.frequency);
+            const cpm = parseNumber(row.cpm);
+            const qualityRanking = row.quality_ranking || null;
+            const engagementRateRanking = row.engagement_rate_ranking || null;
+            const conversionRateRanking = row.conversion_rate_ranking || null;
+
+            const conversions = purchases > 0 ? purchases : (messagingConversations > 0 ? messagingConversations : leads);
+
+            mappedMetrics.push({
+              campaignId,
+              date: row.date_start,
+              impressions,
+              clicks,
+              spend,
+              conversions,
+              revenue,
+              leads,
+              messagingConversations,
+              messagingFirstReply,
+              linkClicks,
+              landingPageViews,
+              reach,
+              frequency,
+              cpm,
+              qualityRanking,
+              engagementRateRanking,
+              conversionRateRanking,
+            });
           }
 
-          const impressions = Math.round(parseNumber(row.impressions));
-          const clicks = Math.round(parseNumber(row.clicks));
-          const spend = parseNumber(row.spend);
-          const purchases = sumActions(row.actions, purchaseTypes);
-          const leads = sumActions(row.actions, leadTypes);
-          const messagingConversations = sumActions(row.actions, messagingConversationTypes);
-          const messagingFirstReply = sumActions(row.actions, messagingReplyTypes);
-          const linkClicks = sumActions(row.actions, linkClickTypes);
-          const landingPageViews = sumActions(row.actions, landingPageViewTypes);
-          const revenue = sumActions(row.action_values, purchaseTypes);
-          const reach = Math.round(parseNumber(row.reach));
-          const frequency = parseNumber(row.frequency);
-          const cpm = parseNumber(row.cpm);
-          const qualityRanking = row.quality_ranking || null;
-          const engagementRateRanking = row.engagement_rate_ranking || null;
-          const conversionRateRanking = row.conversion_rate_ranking || null;
+          mappedTotal += mappedMetrics.length;
 
-          const conversions = purchases > 0 ? purchases : (messagingConversations > 0 ? messagingConversations : leads);
-
-          mappedMetrics.push({
-            campaignId,
-            date: row.date_start,
-            impressions,
-            clicks,
-            spend,
-            conversions,
-            revenue,
-            leads,
-            messagingConversations,
-            messagingFirstReply,
-            linkClicks,
-            landingPageViews,
-            reach,
-            frequency,
-            cpm,
-            qualityRanking,
-            engagementRateRanking,
-            conversionRateRanking,
-          });
+          if (!body.dryRun && mappedMetrics.length > 0) {
+            updated += await upsertCampaignMetrics(mappedMetrics);
+          }
         }
 
-        mappedTotal += mappedMetrics.length;
-
-        if (!body.dryRun && mappedMetrics.length > 0) {
-          updated += await upsertCampaignMetrics(mappedMetrics);
-        }
+        await completeUnit(chunk.since, chunk.until);
       }
 
       if (totalInsights === 0) {
@@ -549,6 +668,24 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
             unmappedCampaigns: [],
             durationMs: duration,
           });
+        }
+
+        if (syncId && syncMetadata) {
+          const progress = (syncMetadata.progress as Record<string, unknown>) || {};
+          syncMetadata = {
+            ...syncMetadata,
+            state: 'success',
+            progress: {
+              ...progress,
+              overallCompleted: totalUnits,
+              stageCompleted: progress.stageTotal ?? progress.stageCompleted ?? 0,
+              currentSince: null,
+              currentUntil: null,
+              message: 'Concluído (nenhum insight no período).',
+              updatedAt: new Date().toISOString(),
+            },
+          };
+          await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
         }
 
         fastify.log.info({ syncId, duration }, 'Meta sync completed - no insights found');
@@ -577,6 +714,24 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
+        if (syncId && syncMetadata) {
+          const progress = (syncMetadata.progress as Record<string, unknown>) || {};
+          syncMetadata = {
+            ...syncMetadata,
+            state: unmapped.size > 0 ? 'partial' : 'success',
+            progress: {
+              ...progress,
+              overallCompleted: totalUnits,
+              stageCompleted: progress.stageTotal ?? progress.stageCompleted ?? 0,
+              currentSince: null,
+              currentUntil: null,
+              message: 'Concluído (dry-run).',
+              updatedAt: new Date().toISOString(),
+            },
+          };
+          await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+        }
+
         fastify.log.info({
           syncId,
           totalInsights,
@@ -600,6 +755,7 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
       // Sync ad set metrics if requested
       if (body.syncLevel === 'adset' || body.syncLevel === 'full') {
         try {
+          await setStage('adset', dateChunks.length, 'Sincronizando métricas de conjuntos de anúncios...');
           let totalAdsetInsights = 0;
           const adsetBatchSize = getBatchSize(20);
 
@@ -607,7 +763,10 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
             const adsetInsights = await metaService.fetchAdSetInsights(chunk);
             totalAdsetInsights += adsetInsights.length;
 
-            if (adsetInsights.length === 0) continue;
+            if (adsetInsights.length === 0) {
+              await completeUnit(chunk.since, chunk.until);
+              continue;
+            }
 
             for (let offset = 0; offset < adsetInsights.length; offset += adsetBatchSize) {
               const batch = adsetInsights.slice(offset, offset + adsetBatchSize);
@@ -694,6 +853,8 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
                 );
               }
             }
+
+            await completeUnit(chunk.since, chunk.until);
           }
 
           fastify.log.info({ adsetInsights: totalAdsetInsights }, 'Ad set metrics synced');
@@ -705,6 +866,7 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
       // Sync ad/creative metrics if requested
       if (body.syncLevel === 'ad' || body.syncLevel === 'full') {
         try {
+          await setStage('ad', dateChunks.length + 1, 'Sincronizando métricas de anúncios/criativos...');
           let totalAdInsights = 0;
           const syncedAdIds = new Set<string>();
 
@@ -718,7 +880,10 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
             const adInsights = await metaService.fetchAdInsights(chunk);
             totalAdInsights += adInsights.length;
 
-            if (adInsights.length === 0) continue;
+            if (adInsights.length === 0) {
+              await completeUnit(chunk.since, chunk.until);
+              continue;
+            }
 
             for (let offset = 0; offset < adInsights.length; offset += adBatchSize) {
               const batch = adInsights.slice(offset, offset + adBatchSize);
@@ -818,6 +983,8 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
                 );
               }
             }
+
+            await completeUnit(chunk.since, chunk.until);
           }
 
           // Persist creative metadata snapshots and link them to ad metrics (non-fatal)
@@ -947,6 +1114,8 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
             }
           }
 
+          await completeUnit(null, null, 'Criativos: snapshots e vínculo');
+
           if (totalAdInsights > 0) {
             fastify.log.info({ adInsights: totalAdInsights }, 'Ad creative metrics synced');
           } else {
@@ -970,69 +1139,81 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
             { type: 'device', breakdowns: ['device_platform'] },
           ];
 
+          await setStage(
+            'breakdowns',
+            dateChunks.length * breakdownTypes.length,
+            'Sincronizando breakdowns (público, posicionamento, dispositivo)...'
+          );
+
           for (const chunk of dateChunks) {
             for (const bd of breakdownTypes) {
-              await syncDelay(200);
-              const bdInsights = await metaService.fetchBreakdownInsights({
-                since: chunk.since,
-                until: chunk.until,
-                breakdowns: bd.breakdowns,
-              });
+              try {
+                await syncDelay(200);
+                const bdInsights = await metaService.fetchBreakdownInsights({
+                  since: chunk.since,
+                  until: chunk.until,
+                  breakdowns: bd.breakdowns,
+                });
 
-              const grouped = new Map<string, any[]>();
-              for (const row of bdInsights) {
-                const cId = campaignMap.get(row.campaign_id);
-                if (!cId) continue;
+                const grouped = new Map<string, any[]>();
+                for (const row of bdInsights) {
+                  const cId = campaignMap.get(row.campaign_id);
+                  if (!cId) continue;
 
-                const key = `${cId}:${row.date_start}`;
-                if (!grouped.has(key)) grouped.set(key, []);
+                  const key = `${cId}:${row.date_start}`;
+                  if (!grouped.has(key)) grouped.set(key, []);
 
-                const segment: any = {
-                  impressions: Math.round(parseNumber(row.impressions)),
-                  clicks: Math.round(parseNumber(row.clicks)),
-                  spend: parseNumber(row.spend),
-                  reach: Math.round(parseNumber(row.reach)),
-                };
+                  const segment: any = {
+                    impressions: Math.round(parseNumber(row.impressions)),
+                    clicks: Math.round(parseNumber(row.clicks)),
+                    spend: parseNumber(row.spend),
+                    reach: Math.round(parseNumber(row.reach)),
+                  };
 
-                if (row.age) segment.age = row.age;
-                if (row.gender) segment.gender = row.gender;
-                if (row.publisher_platform) segment.publisher_platform = row.publisher_platform;
-                if (row.platform_position) segment.platform_position = row.platform_position;
-                if (row.device_platform) segment.device_platform = row.device_platform;
+                  if (row.age) segment.age = row.age;
+                  if (row.gender) segment.gender = row.gender;
+                  if (row.publisher_platform) segment.publisher_platform = row.publisher_platform;
+                  if (row.platform_position) segment.platform_position = row.platform_position;
+                  if (row.device_platform) segment.device_platform = row.device_platform;
 
-                if (bd.type === 'age_gender') {
-                  segment.label = `${row.age || '?'} ${row.gender || '?'}`;
-                } else if (bd.type === 'platform_position') {
-                  segment.label = `${row.publisher_platform || '?'} - ${row.platform_position || '?'}`;
-                } else {
-                  segment.label = row.device_platform || '?';
+                  if (bd.type === 'age_gender') {
+                    segment.label = `${row.age || '?'} ${row.gender || '?'}`;
+                  } else if (bd.type === 'platform_position') {
+                    segment.label = `${row.publisher_platform || '?'} - ${row.platform_position || '?'}`;
+                  } else {
+                    segment.label = row.device_platform || '?';
+                  }
+
+                  const conversations = sumActions(row.actions, messagingConversationTypes);
+                  segment.messaging_conversations = conversations;
+
+                  grouped.get(key)!.push(segment);
                 }
 
-                const conversations = sumActions(row.actions, messagingConversationTypes);
-                segment.messaging_conversations = conversations;
+                for (const [key, segments] of grouped.entries()) {
+                  const [cId, date] = key.split(':');
+                  const totalSpend = segments.reduce((s: number, seg: any) => s + seg.spend, 0);
+                  const totalImpressions = segments.reduce((s: number, seg: any) => s + seg.impressions, 0);
+                  const totalConversions = segments.reduce((s: number, seg: any) => s + (seg.messaging_conversations || 0), 0);
 
-                grouped.get(key)!.push(segment);
-              }
+                  await pool.query(
+                    `INSERT INTO metrics_breakdowns (id, campaign_id, date, breakdown_type, breakdown_data, total_spend, total_impressions, total_conversions, platform)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'meta')
+                     ON CONFLICT (campaign_id, date, breakdown_type, platform)
+                     DO UPDATE SET breakdown_data = $5, total_spend = $6, total_impressions = $7, total_conversions = $8`,
+                    [uuidv4(), cId, date, bd.type, JSON.stringify(segments), totalSpend, totalImpressions, totalConversions]
+                  );
+                }
 
-              for (const [key, segments] of grouped.entries()) {
-                const [cId, date] = key.split(':');
-                const totalSpend = segments.reduce((s: number, seg: any) => s + seg.spend, 0);
-                const totalImpressions = segments.reduce((s: number, seg: any) => s + seg.impressions, 0);
-                const totalConversions = segments.reduce((s: number, seg: any) => s + (seg.messaging_conversations || 0), 0);
-
-                await pool.query(
-                  `INSERT INTO metrics_breakdowns (id, campaign_id, date, breakdown_type, breakdown_data, total_spend, total_impressions, total_conversions, platform)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'meta')
-                   ON CONFLICT (campaign_id, date, breakdown_type, platform)
-                   DO UPDATE SET breakdown_data = $5, total_spend = $6, total_impressions = $7, total_conversions = $8`,
-                  [uuidv4(), cId, date, bd.type, JSON.stringify(segments), totalSpend, totalImpressions, totalConversions]
+                fastify.log.info(
+                  { type: bd.type, since: chunk.since, until: chunk.until, rows: bdInsights.length },
+                  'Breakdown synced'
                 );
+              } catch (error) {
+                fastify.log.error({ error, breakdownType: bd.type }, 'Breakdown sync failed (non-fatal)');
+              } finally {
+                await completeUnit(chunk.since, chunk.until, `Breakdown: ${bd.type}`);
               }
-
-              fastify.log.info(
-                { type: bd.type, since: chunk.since, until: chunk.until, rows: bdInsights.length },
-                'Breakdown synced'
-              );
             }
           }
         } catch (bdError) {
@@ -1066,6 +1247,14 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         duration
       }, 'Meta sync completed successfully');
 
+      if (syncId && syncMetadata) {
+        syncMetadata = {
+          ...syncMetadata,
+          state: unmapped.size > 0 ? 'partial' : 'success',
+        };
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+      }
+
       return {
         success: true,
         syncId,
@@ -1077,11 +1266,81 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         until,
         duration,
       };
+      };
+
+      if (shouldRunAsync) {
+        const accountKey = adAccountId;
+        const startedAt = Date.now();
+
+        const jobPromise: Promise<void> = (async () => {
+          try {
+            await runSyncWork();
+          } catch (error) {
+            const duration = Date.now() - startTime;
+
+            if (syncId && error instanceof Error) {
+              await syncHistoryService.completeSyncFailure(syncId, error, duration);
+            }
+
+            if (syncId && syncMetadata) {
+              syncMetadata = {
+                ...syncMetadata,
+                state: 'failed',
+                error: error instanceof Error ? error.message : 'Unknown error',
+              };
+              await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+            }
+
+            fastify.log.error(
+              {
+                syncId,
+                error: error instanceof Error ? error.message : error,
+                stack: error instanceof Error ? error.stack : undefined,
+                duration,
+              },
+              'Meta sync failed (async)'
+            );
+          } finally {
+            const running = runningMetaSyncJobsByAccount.get(accountKey);
+            if (running && running.startedAt === startedAt) {
+              runningMetaSyncJobsByAccount.delete(accountKey);
+            }
+          }
+        })();
+
+        runningMetaSyncJobsByAccount.set(accountKey, {
+          syncId,
+          accountId: accountKey,
+          startedAt,
+          promise: jobPromise,
+        });
+
+        reply.status(202);
+        return {
+          success: true,
+          async: true,
+          syncId,
+          message: 'Sincronização iniciada. Acompanhe o progresso no histórico de sync.',
+          totalInsights: 0,
+          mapped: 0,
+        };
+      }
+
+      return await runSyncWork();
     } catch (error) {
       const duration = Date.now() - startTime;
 
       if (syncId && error instanceof Error) {
         await syncHistoryService.completeSyncFailure(syncId, error, duration);
+      }
+
+      if (syncId && syncMetadata) {
+        syncMetadata = {
+          ...syncMetadata,
+          state: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
       }
 
       fastify.log.error({
@@ -1125,10 +1384,15 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         accountId
       );
 
+      const historyWithState = history.map((record: any) => ({
+        ...record,
+        state: record.completedAt ? record.status : 'running',
+      }));
+
       return {
-        history,
+        history: historyWithState,
         lastSuccessfulSync: lastSuccess,
-        total: history.length,
+        total: historyWithState.length,
       };
     } catch (error) {
       fastify.log.error(error);
@@ -1160,9 +1424,10 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
            error_message as "errorMessage",
            error_stack as "errorStack",
            dry_run as "dryRun",
-           triggered_by as "triggeredBy"
-         FROM sync_history
-         WHERE id = $1`,
+           triggered_by as "triggeredBy",
+           metadata
+          FROM sync_history
+          WHERE id = $1`,
         [id]
       );
 
@@ -1171,7 +1436,9 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
         return { error: 'Sync record not found' };
       }
 
-      return result.rows[0];
+      const row = result.rows[0];
+      const state = row.completedAt ? row.status : 'running';
+      return { ...row, state };
     } catch (error) {
       fastify.log.error(error);
       reply.status(500);

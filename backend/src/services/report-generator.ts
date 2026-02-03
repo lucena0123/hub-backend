@@ -6,7 +6,7 @@ import * as path from 'path';
 import { MetricsService } from './metrics-service';
 import { MonthlyReport, ClientPerformanceSummary, AIReportContent } from '../types/metrics';
 import { generateReportHTML } from './report-template';
-import { generateClientReportContent } from './report-analysis';
+import { generateClientReportContent, generateClientWeeklyReportContent } from './report-analysis';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -91,13 +91,67 @@ export class ReportGenerator {
     return this.mapReportRow(result.rows[0]);
   }
 
+  async generateWeeklyReport(clientId: string, startDate: string, endDate: string): Promise<MonthlyReport> {
+    const performanceData = await this.metricsService.getClientPerformanceSummary(clientId, {
+      startDate,
+      endDate,
+    });
+
+    const aiContent = await generateClientWeeklyReportContent(performanceData);
+
+    const reportId = uuidv4();
+    const title = `Relatório Semanal - ${startDate} a ${endDate}`;
+
+    const summaryData = {
+      performance: performanceData,
+      aiContent,
+    };
+
+    const reportsDir = path.join(process.cwd(), 'reports');
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+
+    const fileName = `${clientId}_weekly_${startDate}_${endDate}_${reportId}.pdf`;
+    const filePath = path.join(reportsDir, fileName);
+
+    await this.generatePDF(performanceData, aiContent, filePath, title, {
+      recommendationsHeading: 'Recomendações para a Próxima Semana',
+    });
+
+    const fileSize = fs.statSync(filePath).size;
+
+    const result = await this.pool.query(
+      `INSERT INTO monthly_reports
+       (id, client_id, report_type, period_start, period_end, title, summary_data,
+       file_path, file_size, status, generated_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), NOW())
+       RETURNING *`,
+      [
+        reportId,
+        clientId,
+        'weekly',
+        startDate,
+        endDate,
+        title,
+        JSON.stringify(summaryData),
+        filePath,
+        fileSize,
+        'generated',
+      ]
+    );
+
+    return this.mapReportRow(result.rows[0]);
+  }
+
   private async generatePDF(
     performance: ClientPerformanceSummary,
     aiContent: AIReportContent,
     outputPath: string,
-    title: string
+    title: string,
+    options?: { recommendationsHeading?: string }
   ): Promise<void> {
-    const html = generateReportHTML(performance, aiContent, title);
+    const html = generateReportHTML(performance, aiContent, title, options);
 
     const browser = await puppeteer.launch({
       headless: true,

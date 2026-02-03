@@ -9,8 +9,10 @@ const formatNumber = (value: number) =>
 export function generateReportHTML(
   performance: ClientPerformanceSummary,
   aiContent: AIReportContent,
-  title: string
+  title: string,
+  options?: { recommendationsHeading?: string }
 ): string {
+  const recommendationsHeading = options?.recommendationsHeading ?? 'Recomendações para o Próximo Mês';
   const bestCampaign = performance.campaigns.reduce((best, current) =>
     current.totalConversions > best.totalConversions ? current : best
     , performance.campaigns[0] || { campaignName: 'N/A' });
@@ -218,7 +220,7 @@ export function generateReportHTML(
 
   <!-- 7. RECOMENDAÇÕES -->
   <div class="section" style="page-break-inside: avoid;">
-    <h2 class="section-title">7. Recomendações para o Próximo Mês</h2>
+    <h2 class="section-title">7. ${recommendationsHeading}</h2>
     <ul class="custom-list recommendation-list">
       ${aiContent.recommendations.map(item => `<li>${item}</li>`).join('')}
     </ul>

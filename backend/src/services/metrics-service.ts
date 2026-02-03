@@ -266,11 +266,7 @@ export class MetricsService {
     clientId: string,
     query: MetricsQuery = {}
   ): Promise<ClientPerformanceSummary> {
-    // Get client info
-    const clientResult = await this.pool.query(
-      'SELECT name FROM clients WHERE id = $1',
-      [clientId]
-    );
+    const clientResult = await this.pool.query('SELECT name FROM clients WHERE id = $1', [clientId]);
 
     if (clientResult.rows.length === 0) {
       throw new Error('Client not found');
@@ -278,28 +274,283 @@ export class MetricsService {
 
     const client = clientResult.rows[0];
     const dates = this.getDateRange(query.period || '30d', query.startDate, query.endDate);
+    const platform = query.platform;
 
-    // Get all campaigns for this client
     const campaignsResult = await this.pool.query(
-      'SELECT id, status FROM campaigns WHERE "clientId" = $1',
+      'SELECT id, name, platform, budget, status FROM campaigns WHERE "clientId" = $1',
       [clientId]
     );
 
-    const allCampaigns = campaignsResult.rows;
-    const activeCampaigns = allCampaigns.filter((c) => c.status === 'active');
+    const campaigns = campaignsResult.rows as Array<{
+      id: string;
+      name: string;
+      platform: string;
+      budget: string | number | null;
+      status: string;
+    }>;
 
-    // Get performance for each campaign
-    const campaignsPerformance: PerformanceSummary[] = [];
-    for (const campaign of allCampaigns) {
-      try {
-        const performance = await this.getPerformanceSummary(campaign.id, query);
-        campaignsPerformance.push(performance);
-      } catch (error) {
-        console.error(`Error getting performance for campaign ${campaign.id}:`, error);
-      }
+    if (campaigns.length === 0) {
+      return {
+        clientId,
+        clientName: client.name,
+        period: { start: dates.start, end: dates.end },
+        totalCampaigns: 0,
+        activeCampaigns: 0,
+        totalImpressions: 0,
+        totalClicks: 0,
+        totalConversions: 0,
+        totalSpend: 0,
+        totalRevenue: 0,
+        totalLeads: 0,
+        totalMessagingConversations: 0,
+        totalMessagingFirstReply: 0,
+        totalLinkClicks: 0,
+        totalLandingPageViews: 0,
+        totalReach: 0,
+        avgFrequency: 0,
+        avgCpm: 0,
+        avgCtr: 0,
+        avgCpl: 0,
+        avgCpa: 0,
+        avgRoas: 0,
+        campaigns: [],
+        dailyMetrics: [],
+      };
     }
 
-    // Aggregate totals
+    const activeCampaigns = campaigns.filter((c) => c.status === 'active');
+
+    const baseParams: Array<string> = [clientId, dates.start, dates.end];
+    const platformFilter = platform ? 'AND cm.platform = $4' : '';
+    const params = platform ? [...baseParams, platform] : baseParams;
+
+    const aggregatedResult = await this.pool.query(
+      `SELECT
+        cm.campaign_id as "campaignId",
+        COALESCE(SUM(cm.impressions), 0) as total_impressions,
+        COALESCE(SUM(cm.clicks), 0) as total_clicks,
+        COALESCE(SUM(cm.conversions), 0) as total_conversions,
+        COALESCE(SUM(cm.spend), 0) as total_spend,
+        COALESCE(SUM(cm.revenue), 0) as total_revenue,
+        COALESCE(SUM(cm.leads), 0) as total_leads,
+        COALESCE(SUM(cm.messaging_conversations), 0) as total_messaging_conversations,
+        COALESCE(SUM(cm.messaging_first_reply), 0) as total_messaging_first_reply,
+        COALESCE(SUM(cm.link_clicks), 0) as total_link_clicks,
+        COALESCE(SUM(cm.landing_page_views), 0) as total_landing_page_views,
+        COALESCE(SUM(cm.reach), 0) as total_reach,
+        COALESCE(AVG(cm.frequency), 0) as avg_frequency,
+        COALESCE(AVG(cm.cpm), 0) as avg_cpm
+      FROM campaign_metrics cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c."clientId" = $1
+        AND cm.date >= $2
+        AND cm.date <= $3
+        ${platformFilter}
+      GROUP BY cm.campaign_id`,
+      params
+    );
+
+    const aggregatedByCampaign = new Map<
+      string,
+      {
+        totalImpressions: number;
+        totalClicks: number;
+        totalConversions: number;
+        totalSpend: number;
+        totalRevenue: number;
+        totalLeads: number;
+        totalMessagingConversations: number;
+        totalMessagingFirstReply: number;
+        totalLinkClicks: number;
+        totalLandingPageViews: number;
+        totalReach: number;
+        avgFrequency: number;
+        avgCpm: number;
+      }
+    >();
+
+    aggregatedResult.rows.forEach((row: any) => {
+      aggregatedByCampaign.set(row.campaignId, {
+        totalImpressions: parseInt(row.total_impressions) || 0,
+        totalClicks: parseInt(row.total_clicks) || 0,
+        totalConversions: parseInt(row.total_conversions) || 0,
+        totalSpend: parseFloat(row.total_spend) || 0,
+        totalRevenue: parseFloat(row.total_revenue) || 0,
+        totalLeads: parseInt(row.total_leads) || 0,
+        totalMessagingConversations: parseInt(row.total_messaging_conversations) || 0,
+        totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
+        totalLinkClicks: parseInt(row.total_link_clicks) || 0,
+        totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
+        totalReach: parseInt(row.total_reach) || 0,
+        avgFrequency: parseFloat(row.avg_frequency) || 0,
+        avgCpm: parseFloat(row.avg_cpm) || 0,
+      });
+    });
+
+    const rankingsResult = await this.pool.query(
+      `SELECT DISTINCT ON (cm.campaign_id)
+        cm.campaign_id as "campaignId",
+        cm.quality_ranking as "qualityRanking",
+        cm.engagement_rate_ranking as "engagementRateRanking",
+        cm.conversion_rate_ranking as "conversionRateRanking"
+       FROM campaign_metrics cm
+       JOIN campaigns c ON c.id = cm.campaign_id
+       WHERE c."clientId" = $1
+         AND cm.date >= $2
+         AND cm.date <= $3
+         ${platformFilter}
+         AND cm.quality_ranking IS NOT NULL
+       ORDER BY cm.campaign_id, cm.date DESC`,
+      params
+    );
+
+    const rankingsByCampaign = new Map<
+      string,
+      {
+        qualityRanking: string | null;
+        engagementRateRanking: string | null;
+        conversionRateRanking: string | null;
+      }
+    >();
+
+    rankingsResult.rows.forEach((row: any) => {
+      rankingsByCampaign.set(row.campaignId, {
+        qualityRanking: row.qualityRanking || null,
+        engagementRateRanking: row.engagementRateRanking || null,
+        conversionRateRanking: row.conversionRateRanking || null,
+      });
+    });
+
+    const dailyResult = await this.pool.query(
+      `SELECT
+        cm.campaign_id as "campaignId",
+        cm.date as date,
+        COALESCE(SUM(cm.impressions), 0) as impressions,
+        COALESCE(SUM(cm.clicks), 0) as clicks,
+        COALESCE(SUM(cm.conversions), 0) as conversions,
+        COALESCE(SUM(cm.messaging_conversations), 0) as messaging_conversations,
+        COALESCE(SUM(cm.messaging_first_reply), 0) as messaging_first_reply,
+        COALESCE(SUM(cm.link_clicks), 0) as link_clicks,
+        COALESCE(SUM(cm.landing_page_views), 0) as landing_page_views,
+        COALESCE(SUM(cm.spend), 0) as spend,
+        COALESCE(SUM(cm.revenue), 0) as revenue,
+        COALESCE(AVG(cm.ctr), 0) as ctr,
+        COALESCE(AVG(cm.cpc), 0) as cpc,
+        COALESCE(AVG(cm.cpl), 0) as cpl,
+        COALESCE(AVG(cm.roas), 0) as roas
+      FROM campaign_metrics cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c."clientId" = $1
+        AND cm.date >= $2
+        AND cm.date <= $3
+        ${platformFilter}
+      GROUP BY cm.campaign_id, cm.date
+      ORDER BY cm.campaign_id ASC, cm.date ASC`,
+      params
+    );
+
+    const dailyByCampaign = new Map<string, DailyMetric[]>();
+
+    dailyResult.rows.forEach((row: any) => {
+      const campaignId = row.campaignId as string;
+      const date = row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date).split('T')[0];
+      const metric: DailyMetric = {
+        date,
+        impressions: parseInt(row.impressions) || 0,
+        clicks: parseInt(row.clicks) || 0,
+        conversions: parseInt(row.conversions) || 0,
+        messagingConversations: parseInt(row.messaging_conversations) || 0,
+        messagingFirstReply: parseInt(row.messaging_first_reply) || 0,
+        linkClicks: parseInt(row.link_clicks) || 0,
+        landingPageViews: parseInt(row.landing_page_views) || 0,
+        spend: parseFloat(row.spend) || 0,
+        revenue: parseFloat(row.revenue) || 0,
+        ctr: parseFloat(row.ctr) || 0,
+        cpc: parseFloat(row.cpc) || 0,
+        cpl: parseFloat(row.cpl) || 0,
+        roas: parseFloat(row.roas) || 0,
+      };
+
+      if (!dailyByCampaign.has(campaignId)) dailyByCampaign.set(campaignId, []);
+      dailyByCampaign.get(campaignId)!.push(metric);
+    });
+
+    const campaignsPerformance: PerformanceSummary[] = campaigns.map((campaign) => {
+      const aggregated =
+        aggregatedByCampaign.get(campaign.id) ??
+        ({
+          totalImpressions: 0,
+          totalClicks: 0,
+          totalConversions: 0,
+          totalSpend: 0,
+          totalRevenue: 0,
+          totalLeads: 0,
+          totalMessagingConversations: 0,
+          totalMessagingFirstReply: 0,
+          totalLinkClicks: 0,
+          totalLandingPageViews: 0,
+          totalReach: 0,
+          avgFrequency: 0,
+          avgCpm: 0,
+        } satisfies ReturnType<typeof aggregatedByCampaign.get>);
+
+      const rankings = rankingsByCampaign.get(campaign.id);
+
+      const avgCtr = this.calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
+      const avgCpc = this.calculateCPC(aggregated.totalSpend, aggregated.totalClicks);
+      const avgCpl = this.calculateCPL(aggregated.totalSpend, aggregated.totalLeads);
+      const avgCpa = this.calculateCPA(aggregated.totalSpend, aggregated.totalConversions);
+      const roas = this.calculateROAS(aggregated.totalRevenue, aggregated.totalSpend);
+
+      const budget = parseFloat(String(campaign.budget ?? 0)) || 0;
+      const budgetUsed = aggregated.totalSpend;
+      const budgetRemaining = budget - budgetUsed;
+      const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
+
+      const dailyMetrics = dailyByCampaign.get(campaign.id) ?? [];
+
+      const status = this.determinePerformanceStatus({
+        roas,
+        cpl: avgCpl,
+        ctr: avgCtr,
+        budgetUtilization,
+      });
+
+      return {
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        platform: campaign.platform,
+        period: { start: dates.start, end: dates.end },
+        totalImpressions: aggregated.totalImpressions,
+        totalClicks: aggregated.totalClicks,
+        totalConversions: aggregated.totalConversions,
+        totalSpend: aggregated.totalSpend,
+        totalRevenue: aggregated.totalRevenue,
+        totalLeads: aggregated.totalLeads,
+        totalMessagingConversations: aggregated.totalMessagingConversations,
+        totalMessagingFirstReply: aggregated.totalMessagingFirstReply,
+        totalLinkClicks: aggregated.totalLinkClicks,
+        totalLandingPageViews: aggregated.totalLandingPageViews,
+        totalReach: aggregated.totalReach,
+        avgFrequency: Number(aggregated.avgFrequency.toFixed(2)),
+        avgCpm: Number(aggregated.avgCpm.toFixed(2)),
+        qualityRanking: rankings?.qualityRanking ?? null,
+        engagementRateRanking: rankings?.engagementRateRanking ?? null,
+        conversionRateRanking: rankings?.conversionRateRanking ?? null,
+        avgCtr,
+        avgCpc,
+        avgCpl,
+        avgCpa,
+        roas,
+        budget,
+        budgetUsed,
+        budgetRemaining,
+        budgetUtilization: Number(budgetUtilization.toFixed(2)),
+        dailyMetrics,
+        status,
+      };
+    });
+
     const totals = campaignsPerformance.reduce(
       (acc, perf) => ({
         impressions: acc.impressions + perf.totalImpressions,
@@ -307,7 +558,7 @@ export class MetricsService {
         conversions: acc.conversions + perf.totalConversions,
         spend: acc.spend + perf.totalSpend,
         revenue: acc.revenue + perf.totalRevenue,
-        leads: acc.leads + perf.totalLeads, // Added leads
+        leads: acc.leads + perf.totalLeads,
         messagingConversations: acc.messagingConversations + perf.totalMessagingConversations,
         messagingFirstReply: acc.messagingFirstReply + perf.totalMessagingFirstReply,
         linkClicks: acc.linkClicks + perf.totalLinkClicks,
@@ -320,7 +571,7 @@ export class MetricsService {
         conversions: 0,
         spend: 0,
         revenue: 0,
-        leads: 0, // Init leads
+        leads: 0,
         messagingConversations: 0,
         messagingFirstReply: 0,
         linkClicks: 0,
@@ -329,24 +580,27 @@ export class MetricsService {
       }
     );
 
-    // Calculate overall averages
-
     const avgCtr = this.calculateCTR(totals.clicks, totals.impressions);
     const avgCpl = this.calculateCPL(totals.spend, totals.leads || totals.conversions);
     const avgCpa = this.calculateCPA(totals.spend, totals.conversions);
     const avgRoas = this.calculateROAS(totals.revenue, totals.spend);
 
-    // Aggregate daily metrics across all campaigns using REAL revenue
     const dailyMap = new Map<string, DailyMetric>();
-
-    // Helper to init daily metric
     const initMetric = (date: string): DailyMetric => ({
-      date, impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0,
-      ctr: 0, cpc: 0, cpl: 0, roas: 0
+      date,
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
+      spend: 0,
+      revenue: 0,
+      ctr: 0,
+      cpc: 0,
+      cpl: 0,
+      roas: 0,
     });
 
-    campaignsPerformance.forEach(camp => {
-      camp.dailyMetrics.forEach(day => {
+    campaignsPerformance.forEach((camp) => {
+      camp.dailyMetrics.forEach((day) => {
         if (!dailyMap.has(day.date)) {
           dailyMap.set(day.date, initMetric(day.date));
         }
@@ -355,28 +609,25 @@ export class MetricsService {
         acc.clicks += day.clicks;
         acc.conversions += day.conversions;
         acc.spend += day.spend;
-        acc.revenue += day.revenue || 0; // Use real revenue
+        acc.revenue += day.revenue || 0;
       });
     });
 
     const finalDailyMetrics: DailyMetric[] = Array.from(dailyMap.values())
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map(d => ({
+      .map((d) => ({
         ...d,
         ctr: this.calculateCTR(d.clicks, d.impressions),
         cpc: this.calculateCPC(d.spend, d.clicks),
         cpl: this.calculateCPL(d.spend, d.conversions),
-        roas: this.calculateROAS(d.revenue, d.spend)
+        roas: this.calculateROAS(d.revenue, d.spend),
       }));
 
     return {
       clientId,
       clientName: client.name,
-      period: {
-        start: dates.start,
-        end: dates.end,
-      },
-      totalCampaigns: allCampaigns.length,
+      period: { start: dates.start, end: dates.end },
+      totalCampaigns: campaigns.length,
       activeCampaigns: activeCampaigns.length,
       totalImpressions: totals.impressions,
       totalClicks: totals.clicks,
@@ -389,9 +640,7 @@ export class MetricsService {
       totalLinkClicks: totals.linkClicks,
       totalLandingPageViews: totals.landingPageViews,
       totalReach: totals.reach,
-      avgFrequency: totals.impressions > 0 && totals.reach > 0
-        ? Number((totals.impressions / totals.reach).toFixed(2))
-        : 0,
+      avgFrequency: totals.impressions > 0 && totals.reach > 0 ? Number((totals.impressions / totals.reach).toFixed(2)) : 0,
       avgCpm: this.calculateCPM(totals.spend, totals.impressions),
       avgCtr,
       avgCpl,

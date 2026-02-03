@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { validateReportGenerate } from '../validators/report';
+import { validateReportGenerate, validateWeeklyReportGenerate } from '../validators/report';
 
 const reportRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify;
@@ -33,6 +33,39 @@ const reportRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(500);
       return {
         error: 'Failed to generate report',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Generate weekly report for a client (custom date range)
+  fastify.post('/api/reports/generate-weekly/:clientId', async (request, reply) => {
+    try {
+      const { clientId } = request.params as { clientId: string };
+
+      const validation = validateWeeklyReportGenerate(request.body);
+      if (!validation.valid) {
+        reply.status(400);
+        return { error: 'Validation failed', details: validation.errors };
+      }
+
+      const { startDate, endDate } = validation.data!;
+
+      const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+      if (clientCheck.rows.length === 0) {
+        reply.status(404);
+        return { error: 'Client not found' };
+      }
+
+      const report = await reportGenerator.generateWeeklyReport(clientId, startDate, endDate);
+
+      reply.status(201);
+      return report;
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500);
+      return {
+        error: 'Failed to generate weekly report',
         message: error instanceof Error ? error.message : 'Unknown error',
       };
     }
