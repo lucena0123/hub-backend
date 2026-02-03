@@ -10,6 +10,7 @@ export interface LeadTrackingInput {
   campaignId: string;
   date: string;
   qualifiedLeads?: number;
+  disqualificationReasons?: Record<string, number>;
   contractsClosed?: number;
   averageTicket?: number;
   revenueGenerated?: number;
@@ -30,6 +31,20 @@ export interface LeadTrackingRecord extends LeadTrackingInput {
 
 export class LeadTrackingService {
   constructor(private pool: Pool) {}
+
+  private normalizeDisqualificationReasons(
+    reasons?: Record<string, number>
+  ): Record<string, number> | null {
+    if (!reasons) return null;
+
+    const normalizedEntries = Object.entries(reasons)
+      .map(([key, value]) => [key.trim(), value] as const)
+      .filter(([key, value]) => key.length > 0 && Number.isFinite(value) && value > 0)
+      .map(([key, value]) => [key, Math.floor(value)] as const);
+
+    if (normalizedEntries.length === 0) return null;
+    return Object.fromEntries(normalizedEntries);
+  }
 
   /**
    * Upsert lead tracking data for a campaign/date
@@ -56,6 +71,7 @@ export class LeadTrackingService {
     const qualifiedLeads = data.qualifiedLeads || 0;
     const contractsClosed = data.contractsClosed || 0;
     const revenueGenerated = data.revenueGenerated || 0;
+    const disqualificationReasons = this.normalizeDisqualificationReasons(data.disqualificationReasons);
 
     const leadQualificationRate = totalLeads > 0 ? (qualifiedLeads / totalLeads) * 100 : null;
     const closingRate = qualifiedLeads > 0 ? (contractsClosed / qualifiedLeads) * 100 : null;
@@ -66,10 +82,10 @@ export class LeadTrackingService {
       `INSERT INTO campaign_lead_tracking (
         id, campaign_id, date,
         qualified_leads, contracts_closed, average_ticket, revenue_generated,
-        leads_responded, response_time_hours, notes,
+        leads_responded, response_time_hours, notes, disqualification_reasons,
         lead_qualification_rate, closing_rate, roi, cost_per_contract
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15)
       ON CONFLICT (campaign_id, date)
       DO UPDATE SET
         qualified_leads = EXCLUDED.qualified_leads,
@@ -79,6 +95,7 @@ export class LeadTrackingService {
         leads_responded = EXCLUDED.leads_responded,
         response_time_hours = EXCLUDED.response_time_hours,
         notes = EXCLUDED.notes,
+        disqualification_reasons = EXCLUDED.disqualification_reasons,
         lead_qualification_rate = EXCLUDED.lead_qualification_rate,
         closing_rate = EXCLUDED.closing_rate,
         roi = EXCLUDED.roi,
@@ -96,6 +113,7 @@ export class LeadTrackingService {
         data.leadsResponded || 0,
         data.responseTimeHours || null,
         data.notes || null,
+        disqualificationReasons ? JSON.stringify(disqualificationReasons) : null,
         leadQualificationRate,
         closingRate,
         roi,
@@ -202,11 +220,19 @@ export class LeadTrackingService {
   }
 
   private mapRow(row: any): LeadTrackingRecord {
+    const disqualificationReasons =
+      row.disqualification_reasons == null
+        ? null
+        : typeof row.disqualification_reasons === 'string'
+          ? JSON.parse(row.disqualification_reasons)
+          : row.disqualification_reasons;
+
     return {
       id: row.id,
       campaignId: row.campaign_id,
       date: row.date,
       qualifiedLeads: row.qualified_leads,
+      disqualificationReasons,
       contractsClosed: row.contracts_closed,
       averageTicket: parseFloat(row.average_ticket || 0),
       revenueGenerated: parseFloat(row.revenue_generated || 0),

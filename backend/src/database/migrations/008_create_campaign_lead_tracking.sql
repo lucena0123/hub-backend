@@ -31,9 +31,9 @@ CREATE TABLE IF NOT EXISTS campaign_lead_tracking (
 );
 
 -- Indexes for common queries
-CREATE INDEX idx_lead_tracking_campaign ON campaign_lead_tracking(campaign_id);
-CREATE INDEX idx_lead_tracking_date ON campaign_lead_tracking(date DESC);
-CREATE INDEX idx_lead_tracking_campaign_date ON campaign_lead_tracking(campaign_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_tracking_campaign ON campaign_lead_tracking(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_lead_tracking_date ON campaign_lead_tracking(date DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_tracking_campaign_date ON campaign_lead_tracking(campaign_id, date DESC);
 
 -- Comments
 COMMENT ON TABLE campaign_lead_tracking IS 'Manual tracking of lead quality and conversion funnel for service businesses';

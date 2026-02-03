@@ -1,4 +1,4 @@
-import { ClientPerformanceSummary, AIReportContent } from '../types/metrics';
+import { ClientPerformanceSummary, AIReportContent, ClientLeadFunnelSummary } from '../types/metrics';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -6,16 +6,44 @@ const formatCurrency = (value: number) =>
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('pt-BR').format(value);
 
+const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+
+const DISQUALIFICATION_LABELS: Record<string, string> = {
+  curioso: 'Curioso / sem intenção',
+  fora_tema: 'Fora do tema',
+  sem_perfil: 'Sem perfil',
+  sem_verba: 'Sem verba',
+  ja_tem_advogado: 'Já tem advogado / já resolveu',
+  nao_respondeu: 'Não respondeu',
+  outros: 'Outros',
+};
+
 export function generateReportHTML(
   performance: ClientPerformanceSummary,
   aiContent: AIReportContent,
   title: string,
-  options?: { recommendationsHeading?: string }
+  options?: { recommendationsHeading?: string; leadFunnel?: ClientLeadFunnelSummary | null }
 ): string {
   const recommendationsHeading = options?.recommendationsHeading ?? 'Recomendações para o Próximo Mês';
-  const bestCampaign = performance.campaigns.reduce((best, current) =>
-    current.totalConversions > best.totalConversions ? current : best
-    , performance.campaigns[0] || { campaignName: 'N/A' });
+  const preferMessaging = (performance.totalMessagingConversations || 0) > 0;
+  const bestCampaign = performance.campaigns.reduce((best, current) => {
+    const bestScore = preferMessaging ? best.totalMessagingConversations : best.totalConversions;
+    const currentScore = preferMessaging ? current.totalMessagingConversations : current.totalConversions;
+    return currentScore > bestScore ? current : best;
+  }, performance.campaigns[0] || ({ campaignName: 'N/A', totalMessagingConversations: 0, totalConversions: 0 } as any));
+
+  const totalContacts =
+    performance.totalMessagingConversations || performance.totalLeads || performance.totalConversions;
+  const costPerContact = totalContacts > 0 ? performance.totalSpend / totalContacts : performance.avgCpl;
+
+  const leadFunnel = options?.leadFunnel ?? null;
+  const leadFunnelReasons = leadFunnel?.disqualificationReasons ?? {};
+  const leadFunnelTopReasons = Object.entries(leadFunnelReasons)
+    .filter(([, count]) => Number.isFinite(count) && count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, count]) => `${DISQUALIFICATION_LABELS[key] ?? key.replaceAll('_', ' ')} (${count})`)
+    .join(', ');
 
   return `
 <!DOCTYPE html>
@@ -180,18 +208,44 @@ export function generateReportHTML(
         <div class="number-value">${formatCurrency(performance.totalSpend)}</div>
       </div>
       <div class="number-card">
-        <div class="number-label">Pessoas Interessadas (Leads)</div>
-        <div class="number-value highlight-value">${formatNumber(performance.totalLeads || performance.totalConversions)}</div>
+        <div class="number-label">Contatos (Conversas Iniciadas)</div>
+        <div class="number-value highlight-value">${formatNumber(totalContacts)}</div>
       </div>
       <div class="number-card">
-        <div class="number-label">Custo por Interessado (CPL)</div>
-        <div class="number-value">${formatCurrency(performance.avgCpl)}</div>
+        <div class="number-label">Custo por Contato</div>
+        <div class="number-value">${formatCurrency(costPerContact)}</div>
       </div>
       <div class="number-card">
-        <div class="number-label">Campanha de Topo</div>
+        <div class="number-label">Campanha de Destaque</div>
         <div class="number-value" style="font-size: 20px; padding-top: 5px;">${bestCampaign.campaignName}</div>
       </div>
     </div>
+
+    ${leadFunnel && leadFunnel.recordsCount > 0 ? `
+    <div style="margin-top: 22px;">
+      <div class="section-title" style="font-size: 14px; margin-bottom: 10px;">Qualificação dos Contatos (WhatsApp)</div>
+      <div class="numbers-grid">
+        <div class="number-card">
+          <div class="number-label">Contatos Qualificados</div>
+          <div class="number-value highlight-value">${formatNumber(leadFunnel.totalQualifiedLeads)}</div>
+        </div>
+        <div class="number-card">
+          <div class="number-label">Percentual de Interesse</div>
+          <div class="number-value">${leadFunnel.qualificationRate != null ? formatPercent(leadFunnel.qualificationRate) : '-'}</div>
+        </div>
+        <div class="number-card">
+          <div class="number-label">Custo por Interessado Real</div>
+          <div class="number-value">${leadFunnel.costPerQualifiedLead != null ? formatCurrency(leadFunnel.costPerQualifiedLead) : '-'}</div>
+        </div>
+        <div class="number-card">
+          <div class="number-label">Motivos mais comuns</div>
+          <div class="number-value" style="font-size: 14px; font-weight: 600; line-height: 1.3; padding-top: 2px;">
+            ${leadFunnelTopReasons || '-'}
+          </div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
   </div>
 
   <!-- 4. INTERPRETAÇÃO DOS RESULTADOS -->

@@ -9,6 +9,7 @@ const leadTrackingRoutes: FastifyPluginAsync = async (fastify) => {
       campaignId: string;
       date: string;
       qualifiedLeads?: number;
+      disqualificationReasons?: Record<string, number>;
       contractsClosed?: number;
       averageTicket?: number;
       revenueGenerated?: number;

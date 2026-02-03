@@ -263,6 +263,7 @@ export interface MonthlyReport {
   summaryData: {
     performance: ClientPerformanceSummary;
     aiContent?: AIReportContent;
+    leadFunnel?: ClientLeadFunnelSummary | null;
     insights?: string[];
     recommendations?: string[];
     highlights?: string[];
@@ -290,6 +291,16 @@ export interface AIReportContent {
   positives: string[];
   improvements: string[];
   recommendations: string[];
+}
+
+export interface ClientLeadFunnelSummary {
+  recordsCount: number;
+  totalQualifiedLeads: number;
+  totalContractsClosed: number;
+  totalRevenueGenerated: number;
+  qualificationRate: number | null; // % of qualified over total contacts (conversations)
+  costPerQualifiedLead: number | null; // Spend / totalQualifiedLeads
+  disqualificationReasons: Record<string, number>;
 }
 
 // Utility Types
