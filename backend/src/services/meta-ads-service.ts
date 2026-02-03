@@ -87,11 +87,39 @@ export type MetaAdInsightRow = {
   conversion_rate_ranking?: string;
   actions?: Array<{ action_type: string; value: string }>;
   action_values?: Array<{ action_type: string; value: string }>;
-  video_thruplay_actions?: Array<{ action_type: string; value: string }>;
+  video_thruplay_watched_actions?: Array<{ action_type: string; value: string }>;
   video_p25_watched_actions?: Array<{ action_type: string; value: string }>;
   video_p50_watched_actions?: Array<{ action_type: string; value: string }>;
   video_p75_watched_actions?: Array<{ action_type: string; value: string }>;
   video_p100_watched_actions?: Array<{ action_type: string; value: string }>;
+};
+
+export type MetaAdCreative = {
+  id: string;
+  name?: string;
+  object_story_spec?: any;
+  asset_feed_spec?: any;
+  body?: string;
+  title?: string;
+  description?: string;
+  call_to_action_type?: string;
+  link_url?: string;
+  image_url?: string;
+  thumbnail_url?: string;
+  video_id?: string;
+  object_type?: string;
+  instagram_permalink_url?: string;
+};
+
+export type MetaAd = {
+  id: string;
+  name?: string;
+  adset_id?: string;
+  campaign_id?: string;
+  status?: string;
+  effective_status?: string;
+  updated_time?: string;
+  creative?: MetaAdCreative;
 };
 
 type MetaInsightsResponse = {
@@ -106,6 +134,17 @@ type MetaInsightsResponse = {
     fbtrace_id?: string;
   };
 };
+
+type MetaGraphObjectError = {
+  error?: {
+    message?: string;
+    type?: string;
+    code?: number;
+    fbtrace_id?: string;
+  };
+};
+
+type MetaGraphIdMapResponse<T> = Record<string, T | MetaGraphObjectError>;
 
 type MetaInsightsParams = {
   since: string;
@@ -301,7 +340,7 @@ export class MetaAdsService {
         'impressions', 'reach', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
         'frequency', 'quality_ranking', 'engagement_rate_ranking',
         'conversion_rate_ranking', 'actions', 'action_values',
-        'video_thruplay_actions', 'video_p25_watched_actions',
+        'video_thruplay_watched_actions', 'video_p25_watched_actions',
         'video_p50_watched_actions', 'video_p75_watched_actions',
         'video_p100_watched_actions',
       ],
@@ -367,5 +406,73 @@ export class MetaAdsService {
     });
 
     return response as MetaAdAccount;
+  }
+
+  /**
+   * Fetch Ad objects by ID (non-insights endpoint) to retrieve creative details.
+   * Uses the Graph API `/?ids=...` pattern with a batch of IDs per request.
+   */
+  async fetchAdsByIds(adIds: string[]): Promise<MetaAd[]> {
+    if (!adIds.length) return [];
+
+    const fields = [
+      'id',
+      'name',
+      'adset_id',
+      'campaign_id',
+      'status',
+      'effective_status',
+      'updated_time',
+      'creative{id,name,object_story_spec,asset_feed_spec,body,title,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_type}',
+    ];
+
+    const chunkSize = 50;
+    const allAds: MetaAd[] = [];
+
+    for (let offset = 0; offset < adIds.length; offset += chunkSize) {
+      if (offset > 0) {
+        await this.delay(this.requestDelay);
+      }
+
+      const batch = adIds.slice(offset, offset + chunkSize);
+      const searchParams = new URLSearchParams({
+        ids: batch.join(','),
+        fields: fields.join(','),
+      });
+
+      const url = `https://graph.facebook.com/${this.apiVersion}/?${searchParams.toString()}`;
+
+      const payload = await this.retryWithBackoff(async () => {
+        const res = await this.fetchWithTimeout(url);
+        const data = (await res.json()) as MetaGraphIdMapResponse<MetaAd> & MetaGraphObjectError;
+
+        if (!res.ok) {
+          const errorMsg = (data as MetaGraphObjectError).error?.message || 'Meta API request failed';
+          const errorCode = (data as MetaGraphObjectError).error?.code || res.status;
+          const traceId = (data as MetaGraphObjectError).error?.fbtrace_id || 'N/A';
+          throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+        }
+
+        return data;
+      });
+
+      if ((payload as MetaGraphObjectError).error) {
+        const errorMsg = (payload as MetaGraphObjectError).error?.message || 'Meta API request failed';
+        const errorCode = (payload as MetaGraphObjectError).error?.code || 0;
+        const traceId = (payload as MetaGraphObjectError).error?.fbtrace_id || 'N/A';
+        throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+      }
+
+      for (const [key, value] of Object.entries(payload)) {
+        if (key === 'error') continue;
+        if (!value || typeof value !== 'object') continue;
+        const maybeError = value as MetaGraphObjectError;
+        if (maybeError.error) continue;
+        if (typeof (value as any).id !== 'string') continue;
+        allAds.push(value as MetaAd);
+      }
+    }
+
+    return allAds;
   }
 }

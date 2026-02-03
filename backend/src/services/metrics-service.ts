@@ -5,7 +5,6 @@
 
 import { Pool } from 'pg';
 import type {
-  CampaignMetrics,
   DailyMetric,
   PerformanceSummary,
   ClientPerformanceSummary,
@@ -13,7 +12,7 @@ import type {
 } from '../types/metrics';
 
 export class MetricsService {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) { }
 
   /**
    * Calculate CPL (Cost Per Lead)
@@ -89,7 +88,12 @@ export class MetricsService {
         SUM(impressions) as impressions,
         SUM(clicks) as clicks,
         SUM(conversions) as conversions,
+        SUM(messaging_conversations) as messaging_conversations,
+        SUM(messaging_first_reply) as messaging_first_reply,
+        SUM(link_clicks) as link_clicks,
+        SUM(landing_page_views) as landing_page_views,
         SUM(spend) as spend,
+        SUM(revenue) as revenue,
         AVG(ctr) as ctr,
         AVG(cpc) as cpc,
         AVG(cpl) as cpl,
@@ -109,7 +113,12 @@ export class MetricsService {
       impressions: parseInt(row.impressions) || 0,
       clicks: parseInt(row.clicks) || 0,
       conversions: parseInt(row.conversions) || 0,
+      messagingConversations: parseInt(row.messaging_conversations) || 0,
+      messagingFirstReply: parseInt(row.messaging_first_reply) || 0,
+      linkClicks: parseInt(row.link_clicks) || 0,
+      landingPageViews: parseInt(row.landing_page_views) || 0,
       spend: parseFloat(row.spend) || 0,
+      revenue: parseFloat(row.revenue) || 0, // Now using real revenue
       ctr: parseFloat(row.ctr) || 0,
       cpc: parseFloat(row.cpc) || 0,
       cpl: parseFloat(row.cpl) || 0,
@@ -225,6 +234,7 @@ export class MetricsService {
       totalConversions,
       totalSpend,
       totalRevenue,
+      totalLeads,
       totalMessagingConversations,
       totalMessagingFirstReply,
       totalLinkClicks,
@@ -297,6 +307,7 @@ export class MetricsService {
         conversions: acc.conversions + perf.totalConversions,
         spend: acc.spend + perf.totalSpend,
         revenue: acc.revenue + perf.totalRevenue,
+        leads: acc.leads + perf.totalLeads, // Added leads
         messagingConversations: acc.messagingConversations + perf.totalMessagingConversations,
         messagingFirstReply: acc.messagingFirstReply + perf.totalMessagingFirstReply,
         linkClicks: acc.linkClicks + perf.totalLinkClicks,
@@ -309,6 +320,7 @@ export class MetricsService {
         conversions: 0,
         spend: 0,
         revenue: 0,
+        leads: 0, // Init leads
         messagingConversations: 0,
         messagingFirstReply: 0,
         linkClicks: 0,
@@ -318,9 +330,44 @@ export class MetricsService {
     );
 
     // Calculate overall averages
+
     const avgCtr = this.calculateCTR(totals.clicks, totals.impressions);
-    const avgCpl = this.calculateCPL(totals.spend, totals.conversions); // Assuming conversions = leads
+    const avgCpl = this.calculateCPL(totals.spend, totals.leads || totals.conversions);
+    const avgCpa = this.calculateCPA(totals.spend, totals.conversions);
     const avgRoas = this.calculateROAS(totals.revenue, totals.spend);
+
+    // Aggregate daily metrics across all campaigns using REAL revenue
+    const dailyMap = new Map<string, DailyMetric>();
+
+    // Helper to init daily metric
+    const initMetric = (date: string): DailyMetric => ({
+      date, impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0,
+      ctr: 0, cpc: 0, cpl: 0, roas: 0
+    });
+
+    campaignsPerformance.forEach(camp => {
+      camp.dailyMetrics.forEach(day => {
+        if (!dailyMap.has(day.date)) {
+          dailyMap.set(day.date, initMetric(day.date));
+        }
+        const acc = dailyMap.get(day.date)!;
+        acc.impressions += day.impressions;
+        acc.clicks += day.clicks;
+        acc.conversions += day.conversions;
+        acc.spend += day.spend;
+        acc.revenue += day.revenue || 0; // Use real revenue
+      });
+    });
+
+    const finalDailyMetrics: DailyMetric[] = Array.from(dailyMap.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(d => ({
+        ...d,
+        ctr: this.calculateCTR(d.clicks, d.impressions),
+        cpc: this.calculateCPC(d.spend, d.clicks),
+        cpl: this.calculateCPL(d.spend, d.conversions),
+        roas: this.calculateROAS(d.revenue, d.spend)
+      }));
 
     return {
       clientId,
@@ -336,6 +383,7 @@ export class MetricsService {
       totalConversions: totals.conversions,
       totalSpend: totals.spend,
       totalRevenue: totals.revenue,
+      totalLeads: totals.leads,
       totalMessagingConversations: totals.messagingConversations,
       totalMessagingFirstReply: totals.messagingFirstReply,
       totalLinkClicks: totals.linkClicks,
@@ -347,9 +395,12 @@ export class MetricsService {
       avgCpm: this.calculateCPM(totals.spend, totals.impressions),
       avgCtr,
       avgCpl,
+      avgCpa,
       avgRoas,
       campaigns: campaignsPerformance,
+      dailyMetrics: finalDailyMetrics,
     };
+
   }
 
   /**

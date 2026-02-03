@@ -43,7 +43,7 @@ fastify.register(helmet, {
 });
 
 // Health Check
-fastify.get('/health', async (request, reply) => {
+fastify.get('/health', async (_request, reply) => {
   try {
     const redisPing = await redis.ping();
 

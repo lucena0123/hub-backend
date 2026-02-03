@@ -1,93 +1,96 @@
-/**
- * Report Analysis Service
- * Generates insights, recommendations, and highlights from performance data
- */
+import type { ClientPerformanceSummary, AIReportContent } from '../types/metrics';
 
-import { ClientPerformanceSummary } from '../types/metrics';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-export function generateInsights(performance: ClientPerformanceSummary): string[] {
-  const insights: string[] = [];
+export async function generateClientReportContent(performance: ClientPerformanceSummary): Promise<AIReportContent> {
+  const defaultContent: AIReportContent = {
+    executiveSummary: "Este mês tivemos um volume consistente de leads, mantendo o investimento dentro do planejado.",
+    interpretation: "Os números indicam que estamos atraindo o público certo, com um custo por contato saudável.",
+    positives: ["Volume de conversas estável", "Investimento eficiente"],
+    improvements: ["Testar novas imagens", "Ampliar o alcance"],
+    recommendations: ["Manter foco na campanha principal", "Acompanhar qualidade dos leads"]
+  };
 
-  if (performance.avgRoas > 5) {
-    insights.push(`Excelente retorno sobre investimento com ROAS de ${performance.avgRoas.toFixed(2)}x, muito acima da media do mercado.`);
-  } else if (performance.avgRoas > 3) {
-    insights.push(`Bom retorno sobre investimento com ROAS de ${performance.avgRoas.toFixed(2)}x.`);
-  } else if (performance.avgRoas > 1) {
-    insights.push(`ROAS de ${performance.avgRoas.toFixed(2)}x indica retorno positivo, mas ha espaco para otimizacao.`);
-  } else {
-    insights.push(`ROAS de ${performance.avgRoas.toFixed(2)}x esta abaixo do ideal. Recomendamos revisao urgente das campanhas.`);
-  }
+  if (!OPENAI_API_KEY) return defaultContent;
 
-  if (performance.avgCtr > 3) {
-    insights.push(`CTR de ${performance.avgCtr.toFixed(2)}% demonstra alta relevancia dos anuncios para o publico-alvo.`);
-  } else if (performance.avgCtr < 1) {
-    insights.push(`CTR de ${performance.avgCtr.toFixed(2)}% esta baixo. Considere revisar criativos e copy dos anuncios.`);
-  }
+  const bestCampaign = performance.campaigns.reduce((best, current) =>
+    current.totalConversions > best.totalConversions ? current : best
+    , performance.campaigns[0] || { campaignName: 'N/A' });
 
-  if (performance.totalConversions > 0) {
-    const conversionRate = (performance.totalConversions / performance.totalClicks) * 100;
-    if (conversionRate > 5) {
-      insights.push(`Taxa de conversao de ${conversionRate.toFixed(2)}% indica landing pages otimizadas e publico bem segmentado.`);
-    } else if (conversionRate < 2) {
-      insights.push(`Taxa de conversao de ${conversionRate.toFixed(2)}% sugere oportunidade de melhoria nas landing pages.`);
+  const prompt = `
+    Gere um RELATÓRIO MENSAL PARA O CLIENTE no formato ideal para escritórios de advocacia.
+    Este relatório não deve conter termos técnicos, deve ser simples, direto, elegante e focado em RESULTADO.
+
+    DADOS DO MÊS:
+    - Cliente: ${performance.clientName}
+    - Investimento Total: R$ ${performance.totalSpend.toFixed(2)}
+    - Leas (Pessoas Interessadas): ${performance.totalLeads || performance.totalConversions}
+    - Custo por Interessado (CPL): R$ ${performance.avgCpl.toFixed(2)}
+    - Campanha de maior desempenho: ${bestCampaign.campaignName}
+
+    SIGA EXATAMENTE A ESTRUTURA ABAIXO E RETORNE APENAS UM JSON:
+
+    1. Resumo Executivo (executiveSummary)
+    Explique o mês em 3–4 linhas, com linguagem simples e humana.
+    Exemplo: "Este mês tivemos um bom volume de pessoas buscando atendimento..."
+
+    2. Interpretação dos Resultados (interpretation)
+    Transforme os números em significado real.
+    Exemplo: "Esses números mostram que o escritório atraiu pessoas realmente interessadas."
+
+    3. O que Funcionou Bem (positives)
+    Lista de 2 a 3 pontos curtos. Ex: "Volume de conversas", "Boa eficiência".
+
+    4. Oportunidades de Melhoria (improvements)
+    Lista de 2 a 3 pontos. Ex: "Testar novas imagens", "Ampliar alcance". SEM termos técnicos.
+
+    5. Recomendações para o Próximo Mês (recommendations)
+    Lista de 2 a 3 pontos. Ex: "Manter foco", "Ampliar investimento".
+
+    REGRAS RÍGIDAS:
+    - PROIBIDO: CTR, CPC, CPM, Frequência, ROAS, Impressões.
+    - Fale a língua do cliente (Advogado/Dono de negócio).
+
+    FORMATO JSON DE RESPOSTA:
+    {
+      "executiveSummary": "texto...",
+      "interpretation": "texto...",
+      "positives": ["item", "item"],
+      "improvements": ["item", "item"],
+      "recommendations": ["item", "item"]
     }
+  `;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) throw new Error(`OpenAI API Error: ${response.statusText}`);
+
+    const data = await response.json() as any;
+    const content = JSON.parse(data.choices[0].message.content);
+
+    return {
+      executiveSummary: content.executiveSummary || defaultContent.executiveSummary,
+      interpretation: content.interpretation || defaultContent.interpretation,
+      positives: content.positives || defaultContent.positives,
+      improvements: content.improvements || defaultContent.improvements,
+      recommendations: content.recommendations || defaultContent.recommendations
+    };
+
+  } catch (error) {
+    console.warn('Error generating report content:', error);
+    return defaultContent;
   }
-
-  const bestCampaign = performance.campaigns.reduce((best, current) =>
-    current.roas > best.roas ? current : best
-  );
-  insights.push(`A campanha "${bestCampaign.campaignName}" teve a melhor performance com ROAS de ${bestCampaign.roas.toFixed(2)}x.`);
-
-  return insights;
-}
-
-export function generateRecommendations(performance: ClientPerformanceSummary): string[] {
-  const recommendations: string[] = [];
-
-  if (performance.avgRoas < 3) {
-    recommendations.push('Revisar segmentacao de publico e ajustar lances para melhorar ROAS.');
-    recommendations.push('Analisar jornada do cliente e otimizar funil de conversao.');
-  }
-
-  const topCampaigns = performance.campaigns
-    .filter(c => c.roas > performance.avgRoas)
-    .sort((a, b) => b.roas - a.roas);
-
-  if (topCampaigns.length > 0) {
-    recommendations.push(`Considere aumentar investimento nas campanhas de melhor performance: ${topCampaigns.slice(0, 2).map(c => c.campaignName).join(', ')}.`);
-  }
-
-  if (performance.avgCtr < 2) {
-    recommendations.push('Realizar testes A/B de criativos para melhorar CTR.');
-    recommendations.push('Revisar copy dos anuncios para aumentar relevancia.');
-  }
-
-  const platforms = new Set(performance.campaigns.map(c => c.platform));
-  if (platforms.size === 1) {
-    recommendations.push('Considere diversificar plataformas para ampliar alcance e reduzir dependencia.');
-  }
-
-  if (performance.avgCpl > 50) {
-    recommendations.push('CPL elevado. Recomendamos otimizar formularios e reduzir friccao no processo de conversao.');
-  }
-
-  return recommendations;
-}
-
-export function generateHighlights(performance: ClientPerformanceSummary): string[] {
-  const highlights: string[] = [];
-
-  const roi = ((performance.totalRevenue - performance.totalSpend) / performance.totalSpend) * 100;
-  highlights.push(`ROI de ${roi.toFixed(1)}% no periodo.`);
-
-  const bestCampaign = performance.campaigns.reduce((best, current) =>
-    current.roas > best.roas ? current : best
-  );
-  highlights.push(`Campanha de destaque: ${bestCampaign.campaignName} com ${bestCampaign.totalConversions} conversoes.`);
-
-  highlights.push(`${performance.totalConversions} conversoes geradas com investimento de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(performance.totalSpend)}.`);
-
-  highlights.push(`${performance.activeCampaigns} campanhas ativas gerando resultados.`);
-
-  return highlights;
 }

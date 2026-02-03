@@ -1,9 +1,4 @@
-/**
- * Report Template Service
- * Generates HTML templates for PDF reports
- */
-
-import { ClientPerformanceSummary } from '../types/metrics';
+import { ClientPerformanceSummary, AIReportContent } from '../types/metrics';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -11,262 +6,228 @@ const formatCurrency = (value: number) =>
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('pt-BR').format(value);
 
-const formatPercent = (value: number) =>
-  `${value.toFixed(2)}%`;
-
-function translateStatus(status: string): string {
-  const translations: Record<string, string> = {
-    excellent: 'Excelente',
-    good: 'Bom',
-    fair: 'Regular',
-    poor: 'Precisa Atenção',
-  };
-  return translations[status] || status;
-}
-
-function translateBpmnStatus(status: string): string {
-  const translations: Record<string, string> = {
-    not_started: 'Não Iniciado',
-    in_progress: 'Em Progresso',
-    completed: 'Concluído',
-    blocked: 'Bloqueado',
-  };
-  return translations[status] || status;
-}
-
 export function generateReportHTML(
   performance: ClientPerformanceSummary,
-  insights: string[],
-  recommendations: string[],
-  highlights: string[],
+  aiContent: AIReportContent,
   title: string
 ): string {
+  const bestCampaign = performance.campaigns.reduce((best, current) =>
+    current.totalConversions > best.totalConversions ? current : best
+    , performance.campaigns[0] || { campaignName: 'N/A' });
+
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      color: #1a1a1a;
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 40px;
+      color: #1e293b;
       line-height: 1.6;
+      background-color: #fff;
     }
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 40px 20px;
-      text-align: center;
+
+    .header-container {
+      margin-bottom: 40px;
+      border-bottom: 2px solid #f1f5f9;
+      padding-bottom: 20px;
     }
-    .header h1 { font-size: 32px; margin-bottom: 10px; }
-    .header p { font-size: 16px; opacity: 0.9; }
-    .content { padding: 30px 20px; }
-    .section { margin-bottom: 40px; }
+    
+    .report-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+    
+    .client-name {
+      font-size: 18px;
+      color: #64748b;
+      margin-top: 8px;
+    }
+
+    .section {
+      margin-bottom: 35px;
+    }
+
     .section-title {
-      font-size: 24px;
-      color: #667eea;
-      margin-bottom: 20px;
-      padding-bottom: 10px;
-      border-bottom: 2px solid #667eea;
+      font-size: 18px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .metric-card {
-      background: #f8f9fa;
+
+    .executive-text, .interpretation-text {
+      font-size: 15px;
+      color: #334155;
+      background: #f8fafc;
       padding: 20px;
       border-radius: 8px;
-      border-left: 4px solid #667eea;
+      border-left: 4px solid #3b82f6;
     }
-    .metric-label {
-      font-size: 12px;
-      color: #666;
+
+    /* MAIN NUMBERS GRID */
+    .numbers-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-top: 15px;
+    }
+    
+    .number-card {
+      background: #fff; /* Clean white */
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 25px;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    
+    .number-label {
+      font-size: 14px;
+      color: #64748b;
       text-transform: uppercase;
+      font-weight: 500;
       margin-bottom: 8px;
     }
-    .metric-value {
+    
+    .number-value {
       font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .highlight-value {
+      color: #10b981; /* Green for efficiency/leads */
+    }
+
+    /* LIST STYLES for Positives/Improvements */
+    .list-container {
+      background: #fff;
+    }
+
+    .custom-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .custom-list li {
+      padding: 12px 15px;
+      margin-bottom: 10px;
+      background: #f8fafc;
+      border-radius: 6px;
+      font-size: 15px;
+      display: flex;
+      align-items: start;
+    }
+
+    .custom-list li::before {
+      content: '•';
+      color: #3b82f6;
       font-weight: bold;
-      color: #1a1a1a;
+      font-size: 20px;
+      margin-right: 12px;
+      line-height: 1;
     }
-    .campaigns-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    .campaigns-table th {
-      background: #667eea;
-      color: white;
-      padding: 12px;
-      text-align: left;
-      font-weight: 600;
-    }
-    .campaigns-table td {
-      padding: 12px;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    .campaigns-table tr:hover {
-      background: #f8f9fa;
-    }
-    .list { list-style: none; }
-    .list li {
-      padding: 12px;
-      margin-bottom: 8px;
-      background: #f8f9fa;
-      border-left: 3px solid #667eea;
-      border-radius: 4px;
-    }
-    .highlight {
-      background: #fef3c7;
-      border-left-color: #f59e0b;
-    }
+
+    .positive-list li::before { color: #10b981; }
+    .improvement-list li::before { color: #f59e0b; }
+    .recommendation-list li::before { color: #6366f1; }
+
     .footer {
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 2px solid #e0e0e0;
+      margin-top: 50px;
       text-align: center;
       font-size: 12px;
-      color: #666;
+      color: #94a3b8;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 20px;
     }
-    .status-excellent { color: #10b981; font-weight: bold; }
-    .status-good { color: #3b82f6; font-weight: bold; }
-    .status-fair { color: #f59e0b; font-weight: bold; }
-    .status-poor { color: #ef4444; font-weight: bold; }
+
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>${title}</h1>
-    <p>${performance.clientName}</p>
-    <p>${performance.period.start} a ${performance.period.end}</p>
+
+  <!-- 1. TÍTULO -->
+  <div class="header-container">
+    <h1 class="report-title">${title}</h1>
+    <div class="client-name">Cliente: ${performance.clientName} | Período: ${performance.period.start} a ${performance.period.end}</div>
   </div>
 
-  <div class="content">
-    <div class="section">
-      <h2 class="section-title">Resumo Executivo</h2>
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-label">Total de Impressoes</div>
-          <div class="metric-value">${formatNumber(performance.totalImpressions)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Total de Cliques</div>
-          <div class="metric-value">${formatNumber(performance.totalClicks)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Total de Conversoes</div>
-          <div class="metric-value">${formatNumber(performance.totalConversions)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Investimento Total</div>
-          <div class="metric-value">${formatCurrency(performance.totalSpend)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Receita Total</div>
-          <div class="metric-value">${formatCurrency(performance.totalRevenue)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">ROAS Medio</div>
-          <div class="metric-value">${performance.avgRoas.toFixed(2)}x</div>
-        </div>
-      </div>
+  <!-- 2. RESUMO EXECUTIVO -->
+  <div class="section">
+    <h2 class="section-title">2. Resumo Executivo</h2>
+    <div class="executive-text">
+      ${aiContent.executiveSummary}
+    </div>
+  </div>
 
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-label">CTR Medio</div>
-          <div class="metric-value">${formatPercent(performance.avgCtr)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">CPL Medio</div>
-          <div class="metric-value">${formatCurrency(performance.avgCpl)}</div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-label">Campanhas Ativas</div>
-          <div class="metric-value">${performance.activeCampaigns}/${performance.totalCampaigns}</div>
-        </div>
+  <!-- 3. NÚMEROS PRINCIPAIS -->
+  <div class="section">
+    <h2 class="section-title">3. Números Principais</h2>
+    <div class="numbers-grid">
+      <div class="number-card">
+        <div class="number-label">Investimento Total</div>
+        <div class="number-value">${formatCurrency(performance.totalSpend)}</div>
+      </div>
+      <div class="number-card">
+        <div class="number-label">Pessoas Interessadas (Leads)</div>
+        <div class="number-value highlight-value">${formatNumber(performance.totalLeads || performance.totalConversions)}</div>
+      </div>
+      <div class="number-card">
+        <div class="number-label">Custo por Interessado (CPL)</div>
+        <div class="number-value">${formatCurrency(performance.avgCpl)}</div>
+      </div>
+      <div class="number-card">
+        <div class="number-label">Campanha de Topo</div>
+        <div class="number-value" style="font-size: 20px; padding-top: 5px;">${bestCampaign.campaignName}</div>
       </div>
     </div>
+  </div>
 
-    <div class="section">
-      <h2 class="section-title">Destaques do Periodo</h2>
-      <ul class="list">
-        ${highlights.map(h => `<li class="highlight">${h}</li>`).join('')}
-      </ul>
+  <!-- 4. INTERPRETAÇÃO DOS RESULTADOS -->
+  <div class="section">
+    <h2 class="section-title">4. Interpretação dos Resultados</h2>
+    <div class="interpretation-text" style="border-left-color: #8b5cf6; background: #fdf4ff;">
+      ${aiContent.interpretation}
     </div>
+  </div>
 
-    <div class="section">
-      <h2 class="section-title">Performance por Campanha</h2>
-      <table class="campaigns-table">
-        <thead>
-          <tr>
-            <th>Campanha</th>
-            <th>Plataforma</th>
-            <th>Impressoes</th>
-            <th>Cliques</th>
-            <th>Conversoes</th>
-            <th>Investimento</th>
-            <th>ROAS</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${performance.campaigns.map(camp => `
-            <tr>
-              <td>${camp.campaignName}</td>
-              <td>${camp.platform.toUpperCase()}</td>
-              <td>${formatNumber(camp.totalImpressions)}</td>
-              <td>${formatNumber(camp.totalClicks)}</td>
-              <td>${formatNumber(camp.totalConversions)}</td>
-              <td>${formatCurrency(camp.totalSpend)}</td>
-              <td>${camp.roas.toFixed(2)}x</td>
-              <td class="status-${camp.status}">${translateStatus(camp.status)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
+  <!-- 5. O QUE FUNCIONOU BEM -->
+  <div class="section" style="page-break-inside: avoid;">
+    <h2 class="section-title">5. O que Funcionou Bem</h2>
+    <ul class="custom-list positive-list">
+      ${aiContent.positives.map(item => `<li>${item}</li>`).join('')}
+    </ul>
+  </div>
 
-    <div class="section">
-      <h2 class="section-title">Insights</h2>
-      <ul class="list">
-        ${insights.map(insight => `<li>${insight}</li>`).join('')}
-      </ul>
-    </div>
+  <!-- 6. OPORTUNIDADES DE MELHORIA -->
+  <div class="section" style="page-break-inside: avoid;">
+    <h2 class="section-title">6. Oportunidades de Melhoria</h2>
+    <ul class="custom-list improvement-list">
+      ${aiContent.improvements.map(item => `<li>${item}</li>`).join('')}
+    </ul>
+  </div>
 
-    <div class="section">
-      <h2 class="section-title">Recomendacoes</h2>
-      <ul class="list">
-        ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
-      </ul>
-    </div>
-
-    ${performance.bpmnProgress ? `
-    <div class="section">
-      <h2 class="section-title">Progresso BPMN</h2>
-      <div class="metric-card">
-        <div class="metric-label">Subprocesso Atual</div>
-        <div class="metric-value">${performance.bpmnProgress.currentSubprocess}</div>
-        <p style="margin-top: 10px;">Progresso: ${performance.bpmnProgress.progressPercentage}%</p>
-        <p>Status: ${translateBpmnStatus(performance.bpmnProgress.status)}</p>
-        ${performance.bpmnProgress.pendingTasks.length > 0 ? `
-          <p style="margin-top: 10px; font-weight: bold;">Tarefas Pendentes:</p>
-          <ul style="margin-left: 20px; margin-top: 5px;">
-            ${performance.bpmnProgress.pendingTasks.map(task => `<li>${task}</li>`).join('')}
-          </ul>
-        ` : ''}
-      </div>
-    </div>
-    ` : ''}
+  <!-- 7. RECOMENDAÇÕES -->
+  <div class="section" style="page-break-inside: avoid;">
+    <h2 class="section-title">7. Recomendações para o Próximo Mês</h2>
+    <ul class="custom-list recommendation-list">
+      ${aiContent.recommendations.map(item => `<li>${item}</li>`).join('')}
+    </ul>
   </div>
 
   <div class="footer">
-    <p>Relatorio gerado automaticamente em ${new Date().toLocaleString('pt-BR')}</p>
-    <p>BPMN System - Sistema de Gerenciamento de Campanhas</p>
+    <p>Relatório gerado automaticamente • ${new Date().toLocaleDateString('pt-BR')}</p>
   </div>
+
 </body>
 </html>
   `;

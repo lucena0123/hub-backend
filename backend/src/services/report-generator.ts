@@ -1,17 +1,12 @@
-/**
- * Report Generator Service
- * Orchestrates monthly PDF report generation using Puppeteer
- */
-
 import { Pool } from 'pg';
 import puppeteer from 'puppeteer';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MetricsService } from './metrics-service';
-import { MonthlyReport, ClientPerformanceSummary } from '../types/metrics';
+import { MonthlyReport, ClientPerformanceSummary, AIReportContent } from '../types/metrics';
 import { generateReportHTML } from './report-template';
-import { generateInsights, generateRecommendations, generateHighlights } from './report-analysis';
+import { generateClientReportContent } from './report-analysis';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -41,18 +36,15 @@ export class ReportGenerator {
       { startDate: startDateStr, endDate: endDateStr }
     );
 
-    const insights = generateInsights(performanceData);
-    const recommendations = generateRecommendations(performanceData);
-    const highlights = generateHighlights(performanceData);
+    // Generate AI Content using the new Structure
+    const aiContent = await generateClientReportContent(performanceData);
 
     const reportId = uuidv4();
     const title = `Relatório Mensal - ${MONTH_NAMES[month - 1]} ${year}`;
 
     const summaryData = {
       performance: performanceData,
-      insights,
-      recommendations,
-      highlights,
+      aiContent
     };
 
     const reportsDir = path.join(process.cwd(), 'reports');
@@ -63,7 +55,7 @@ export class ReportGenerator {
     const fileName = `${clientId}_${year}-${String(month).padStart(2, '0')}.pdf`;
     const filePath = path.join(reportsDir, fileName);
 
-    await this.generatePDF(performanceData, insights, recommendations, highlights, filePath, title);
+    await this.generatePDF(performanceData, aiContent, filePath, title);
 
     const fileSize = fs.statSync(filePath).size;
 
@@ -92,21 +84,28 @@ export class ReportGenerator {
 
   private async generatePDF(
     performance: ClientPerformanceSummary,
-    insights: string[],
-    recommendations: string[],
-    highlights: string[],
+    aiContent: AIReportContent,
     outputPath: string,
     title: string
   ): Promise<void> {
-    const html = generateReportHTML(performance, insights, recommendations, highlights, title);
+    const html = generateReportHTML(performance, aiContent, title);
 
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
+
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    // Wait for Chart.js to finish rendering (if applicable)
+    try {
+      await page.waitForFunction('window.chartRendered === true', { timeout: 5000 });
+    } catch (e) {
+      console.warn('Chart rendering timeout or check failed, proceeding with PDF generation anyway.');
+    }
+
 
     await page.pdf({
       path: outputPath,

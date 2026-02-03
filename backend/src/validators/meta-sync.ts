@@ -12,7 +12,7 @@ const dateRegex = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 /**
  * Schema for Meta Ads sync request
  */
-export const metaSyncSchema = z.object({
+const baseMetaSyncSchema = z.object({
   since: z.string()
     .regex(dateRegex, 'Date must be in YYYY-MM-DD format')
     .optional(),
@@ -22,7 +22,13 @@ export const metaSyncSchema = z.object({
   accountId: z.string()
     .max(50, 'Account ID too long')
     .optional(),
+  clientId: z.string()
+    .uuid('Invalid Client ID format')
+    .optional(),
   dryRun: z.boolean()
+    .optional()
+    .default(false),
+  async: z.boolean()
     .optional()
     .default(false),
   syncLevel: z.enum(['campaign', 'adset', 'ad', 'full'])
@@ -40,22 +46,33 @@ export const metaSyncSchema = z.object({
     message: 'since date must be before until date',
     path: ['since'],
   }
-).refine(
-  (data) => {
-    // Prevent date ranges > 90 days
-    if (data.since && data.until) {
-      const daysDiff = Math.floor(
-        (new Date(data.until).getTime() - new Date(data.since).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      return daysDiff <= 90;
-    }
-    return true;
-  },
-  {
-    message: 'Date range cannot exceed 90 days',
-    path: ['until'],
-  }
 );
+
+const maxRangeDays = (() => {
+  const raw = process.env.META_SYNC_MAX_DAYS;
+  if (!raw) return 365;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 365;
+})();
+
+export const metaSyncSchema = maxRangeDays > 0
+  ? baseMetaSyncSchema.refine(
+      (data) => {
+        // Prevent unbounded sync ranges. Set META_SYNC_MAX_DAYS=0 to disable.
+        if (data.since && data.until) {
+          const daysDiff = Math.floor(
+            (new Date(data.until).getTime() - new Date(data.since).getTime()) / (1000 * 60 * 60 * 24)
+          );
+          return daysDiff <= maxRangeDays;
+        }
+        return true;
+      },
+      {
+        message: `Date range cannot exceed ${maxRangeDays} days`,
+        path: ['until'],
+      }
+    )
+  : baseMetaSyncSchema;
 
 export type MetaSyncInput = z.infer<typeof metaSyncSchema>;
 

@@ -211,7 +211,7 @@ export class LeadTrackingService {
       averageTicket: parseFloat(row.average_ticket || 0),
       revenueGenerated: parseFloat(row.revenue_generated || 0),
       leadsResponded: row.leads_responded,
-      responseTimeHours: row.response_time_hours ? parseFloat(row.response_time_hours) : null,
+      responseTimeHours: row.response_time_hours != null ? parseFloat(row.response_time_hours) : undefined,
       notes: row.notes,
       leadQualificationRate: row.lead_qualification_rate ? parseFloat(row.lead_qualification_rate) : null,
       closingRate: row.closing_rate ? parseFloat(row.closing_rate) : null,

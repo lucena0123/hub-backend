@@ -1,7 +1,7 @@
 export { MetricsService } from './metrics-service';
 export { ReportGenerator } from './report-generator';
 export { generateReportHTML } from './report-template';
-export { generateInsights, generateRecommendations, generateHighlights } from './report-analysis';
+export { generateClientReportContent } from './report-analysis';
 export { DashboardService } from './dashboard-service';
 export type { DashboardOverview, PerformanceAlert } from './dashboard-service';
 export { PerformanceAlertService } from './performance-alert-service';

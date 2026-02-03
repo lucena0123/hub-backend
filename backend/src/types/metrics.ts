@@ -53,10 +53,16 @@ export interface DailyMetric {
   clicks: number;
   conversions: number;
   spend: number;
+  revenue: number;
   ctr: number;
   cpc: number;
   cpl: number;
   roas: number;
+  // Lead Generation fields (optional for backward compatibility)
+  messagingConversations?: number;
+  messagingFirstReply?: number;
+  linkClicks?: number;
+  landingPageViews?: number;
 }
 
 export interface CampaignAd {
@@ -105,6 +111,7 @@ export interface PerformanceSummary {
   totalConversions: number;
   totalSpend: number;
   totalRevenue: number;
+  totalLeads: number;
 
   // Lead Generation Metrics (for service businesses)
   totalMessagingConversations: number;
@@ -174,6 +181,7 @@ export interface ClientPerformanceSummary {
   totalConversions: number;
   totalSpend: number;
   totalRevenue: number;
+  totalLeads: number; // Added explicitly
 
   // Lead Generation Metrics (aggregated)
   totalMessagingConversations: number;
@@ -186,17 +194,23 @@ export interface ClientPerformanceSummary {
   avgFrequency: number;
   avgCpm: number;
 
+
   // Overall performance
   avgCtr: number;
   avgCpl: number;
+  avgCpa: number;
   avgRoas: number;
 
   // Per campaign breakdown
   campaigns: PerformanceSummary[];
 
+  // Daily Aggregated Metrics (for charts)
+  dailyMetrics: DailyMetric[];
+
   // BPMN Progress
   bpmnProgress?: BPMNProgress;
 }
+
 
 export interface BPMNProgress {
   id: string;
@@ -248,9 +262,10 @@ export interface MonthlyReport {
   // Data snapshot
   summaryData: {
     performance: ClientPerformanceSummary;
-    insights: string[];
-    recommendations: string[];
-    highlights: string[];
+    aiContent?: AIReportContent;
+    insights?: string[];
+    recommendations?: string[];
+    highlights?: string[];
   };
 
   // File info
@@ -267,6 +282,14 @@ export interface MonthlyReport {
   metadata?: any;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AIReportContent {
+  executiveSummary: string;
+  interpretation: string;
+  positives: string[];
+  improvements: string[];
+  recommendations: string[];
 }
 
 // Utility Types
