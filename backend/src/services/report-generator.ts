@@ -20,16 +20,24 @@ export class ReportGenerator {
     this.metricsService = new MetricsService(pool);
   }
 
+  private formatIsoDateUtc(date: Date): string {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   async generateMonthlyReport(
     clientId: string,
     month: number,
     year: number
   ): Promise<MonthlyReport> {
-    const periodStart = new Date(year, month - 1, 1);
-    const periodEnd = new Date(year, month, 0);
+    // Use UTC boundaries to avoid timezone shifts (off-by-one day).
+    const periodStart = new Date(Date.UTC(year, month - 1, 1));
+    const periodEnd = new Date(Date.UTC(year, month, 0));
 
-    const startDateStr = periodStart.toISOString().split('T')[0];
-    const endDateStr = periodEnd.toISOString().split('T')[0];
+    const startDateStr = this.formatIsoDateUtc(periodStart);
+    const endDateStr = this.formatIsoDateUtc(periodEnd);
 
     const performanceData = await this.metricsService.getClientPerformanceSummary(
       clientId,
@@ -52,7 +60,8 @@ export class ReportGenerator {
       fs.mkdirSync(reportsDir, { recursive: true });
     }
 
-    const fileName = `${clientId}_${year}-${String(month).padStart(2, '0')}.pdf`;
+    // Unique filename per generated report to avoid overwriting PDFs for the same period.
+    const fileName = `${clientId}_${year}-${String(month).padStart(2, '0')}_${reportId}.pdf`;
     const filePath = path.join(reportsDir, fileName);
 
     await this.generatePDF(performanceData, aiContent, filePath, title);
@@ -62,15 +71,15 @@ export class ReportGenerator {
     const result = await this.pool.query(
       `INSERT INTO monthly_reports
        (id, client_id, report_type, period_start, period_end, title, summary_data,
-        file_path, file_size, status, generated_at, created_at, updated_at)
+       file_path, file_size, status, generated_at, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), NOW())
        RETURNING *`,
       [
         reportId,
         clientId,
         'monthly',
-        periodStart,
-        periodEnd,
+        startDateStr,
+        endDateStr,
         title,
         JSON.stringify(summaryData),
         filePath,
@@ -99,11 +108,16 @@ export class ReportGenerator {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    // Wait for Chart.js to finish rendering (if applicable)
-    try {
-      await page.waitForFunction('window.chartRendered === true', { timeout: 5000 });
-    } catch (e) {
-      console.warn('Chart rendering timeout or check failed, proceeding with PDF generation anyway.');
+    // Wait for Chart.js to finish rendering (if applicable and used by the template).
+    const hasChartRenderedFlag = await page.evaluate(() =>
+      Object.prototype.hasOwnProperty.call(globalThis as any, 'chartRendered')
+    );
+    if (hasChartRenderedFlag) {
+      try {
+        await page.waitForFunction('window.chartRendered === true', { timeout: 5000 });
+      } catch {
+        console.warn('Chart rendering timeout or check failed, proceeding with PDF generation anyway.');
+      }
     }
 
 
