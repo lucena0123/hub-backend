@@ -7,6 +7,7 @@ import type { Pool } from 'pg';
 
 import { buildBpmnAlerts } from './performance-alert/bpmn-alerts';
 import { buildCampaignPerformanceAlerts } from './performance-alert/campaign-alerts';
+import { buildCreativeAlerts } from './performance-alert/creative-alerts';
 import { buildSyncAlerts } from './performance-alert/sync-alerts';
 import type { PerformanceAlert } from './performance-alert/types';
 
@@ -18,6 +19,7 @@ export class PerformanceAlertService {
   async getPerformanceAlerts(): Promise<PerformanceAlert[]> {
     const alerts: PerformanceAlert[] = [
       ...(await buildCampaignPerformanceAlerts(this.pool)),
+      ...(await buildCreativeAlerts(this.pool)),
       ...(await buildBpmnAlerts(this.pool)),
       ...(await buildSyncAlerts(this.pool)),
     ];
@@ -28,4 +30,3 @@ export class PerformanceAlertService {
     return alerts;
   }
 }
-
