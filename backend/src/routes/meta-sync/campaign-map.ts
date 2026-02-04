@@ -1,0 +1,61 @@
+import type { FastifyBaseLogger } from 'fastify';
+import { v4 as uuidv4 } from 'uuid';
+import type { Pool } from 'pg';
+import type { MetaAdsService } from '../../services/meta-ads-service';
+
+export const ensureMetaCampaignsImported = async (params: {
+  pool: Pool;
+  metaService: MetaAdsService;
+  clientId: string;
+  log: FastifyBaseLogger;
+}) => {
+  const { pool, metaService, clientId, log } = params;
+
+  try {
+    const campaigns = await metaService.fetchCampaigns();
+
+    if (!campaigns || campaigns.length === 0) return;
+
+    const values: any[] = [];
+    const placeholders: string[] = [];
+    let pIndex = 1;
+
+    for (const camp of campaigns) {
+      const rowPh: string[] = [];
+      for (let i = 0; i < 7; i++) rowPh.push(`$${pIndex++}`);
+      placeholders.push(`(${rowPh.join(', ')})`);
+
+      values.push(
+        uuidv4(), // id
+        camp.id, // externalId
+        'meta', // platform
+        camp.name, // name
+        camp.status || 'archived', // status
+        clientId, // clientId
+        0 // budget (placeholder)
+      );
+    }
+
+    if (placeholders.length === 0) return;
+
+    await pool.query(
+      `INSERT INTO campaigns (id, "externalId", platform, name, status, "clientId", budget)
+       VALUES ${placeholders.join(', ')}
+       ON CONFLICT ("externalId") DO UPDATE SET
+         name = EXCLUDED.name,
+         status = EXCLUDED.status,
+         "updatedAt" = NOW()`,
+      values
+    );
+
+    log.info({ count: campaigns.length }, 'Auto-imported campaigns from Meta');
+  } catch (error) {
+    log.error({ error }, 'Failed to auto-import campaigns (non-fatal)');
+  }
+};
+
+export const buildMetaCampaignMap = async (pool: Pool) => {
+  const campaignsResult = await pool.query('SELECT id, \"externalId\" FROM campaigns WHERE platform = $1', ['meta']);
+  return new Map<string, string>(campaignsResult.rows.map((row) => [row.externalId, row.id]));
+};
+
