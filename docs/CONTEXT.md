@@ -1,6 +1,6 @@
 # Contexto do Projeto
 
-Ultima atualizacao: 2026-02-01
+Ultima atualizacao: 2026-02-04
 
 ## Estado Geral: ~70% funcional
 
@@ -55,7 +55,7 @@ Plataforma de analytics, reporting e gestao de campanhas **operacional em produc
 auth (register/login), client (create/update + CPF/CNPJ), campaign (create/update), bpmn (init/update), report, metrics-import, meta-sync (com syncLevel enum)
 
 ### Config
-- `database.ts`: PG pool hardcoded (localhost:5433, bpmn_system, bpmn/dev123, max 20)
+- `database.ts`: usa `DATABASE_URL` (ou `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD`) com defaults dev + suporte a SSL via env
 - `redis.ts`: env REDIS_URL ou localhost:6379
 - `env.ts`: PORT 3001, JWT_SECRET com default dev
 
@@ -125,7 +125,7 @@ Client, Campaign, ProcessInstance, Task, DashboardStats, DashboardOverview, Perf
 
 - [ ] **BPMN Engine** - Motor de execucao. Os 24 subprocessos existem em `processos/*.js` mas nao sao executaveis. Precisa: parser dos v5-data.js, executor de tasks, state machine (pending->running->completed->failed), scheduler para loops (5.1 diario). Hoje o tracking e manual via bpmn.routes.ts
 - [ ] **Background Jobs / Worker** - Nao ha sistema de jobs. Processos recorrentes (monitoramento diario, faturamento mensal, renovacao D-60) precisam de scheduler (ex: BullMQ + Redis)
-- [ ] **DB credentials via env vars** - Credenciais hardcoded em config/database.ts. Bloqueio para deploy em producao
+- [x] **DB credentials via env vars** - Postgres agora le `DATABASE_URL` (ou `PG*`) em `config/database.ts` (deploy-ready)
 
 ### P1 - Alto impacto (expande capacidade do produto)
 
@@ -168,6 +168,7 @@ Client, Campaign, ProcessInstance, Task, DashboardStats, DashboardOverview, Perf
 
 ```bash
 # Backend - Funcionais
+DATABASE_URL=               # Postgres connection string (ex.: docker-compose local usa localhost:5433)
 META_ACCESS_TOKEN=          # Obrigatorio para sync Meta Ads
 META_AD_ACCOUNT_ID=         # Obrigatorio para sync Meta Ads
 META_API_VERSION=v20.0      # Default v20.0
@@ -179,7 +180,6 @@ FRONTEND_URL=               # Default: http://localhost:3000 (CORS)
 # Backend - Nao implementados
 OPENAI_API_KEY=             # Para features de IA (futuro)
 RESEND_API_KEY=             # Para emails (futuro)
-DATABASE_URL=               # Nao usado (credenciais hardcoded em config/database.ts)
 
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:3001
@@ -187,13 +187,11 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ## Divida Tecnica
 
-1. **Credenciais DB hardcoded** em `config/database.ts` (host, port, user, pass) - bloqueia deploy
-2. **Prisma no package.json** mas nao usado - remover dependencia orfã
-3. **Zero testes** - nenhum teste unitario, integracao ou e2e
-4. **Zero rate limiting** - servidor aberto sem protecao
-5. **BPMN tracking manual** - subprocessos hardcoded (4.1-5.3) no BPMNTracker, sem engine real
-6. **Sem .env.example** no backend - dificulta onboarding de dev
-7. **server-simple.ts** existe no src/ mas nao e usado - arquivo orfão
+1. **Prisma no package.json** mas nao usado - remover dependencia orfã
+2. **Zero testes** - nenhum teste unitario, integracao ou e2e
+3. **Zero rate limiting** - servidor aberto sem protecao
+4. **BPMN tracking manual** - subprocessos hardcoded (4.1-5.3) no BPMNTracker, sem engine real
+5. **server-simple.ts** existe no src/ mas nao e usado - arquivo orfão
 
 ## Repositorios
 
@@ -204,9 +202,8 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ## Proxima Prioridade Sugerida
 
-1. **Resolver DB credentials** (P0) - Mover para env vars, criar .env.example
-2. **BPMN Engine MVP** (P0) - Parser v5-data.js + executor basico + state machine
-3. **Background Jobs** (P0) - BullMQ + Redis para processos recorrentes
-4. **Rate Limiting** (P1) - @fastify/rate-limit
-5. **Google Ads** (P1) - Mesmo padrao MetaAdsService
-6. **Testes** (P2) - Vitest para services, supertest para rotas
+1. **BPMN Engine MVP** (P0) - Parser v5-data.js + executor basico + state machine
+2. **Background Jobs** (P0) - BullMQ + Redis para processos recorrentes
+3. **Rate Limiting** (P1) - @fastify/rate-limit
+4. **Google Ads** (P1) - Mesmo padrao MetaAdsService
+5. **Testes** (P2) - Vitest para services, supertest para rotas
