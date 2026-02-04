@@ -8,6 +8,7 @@ export interface ClientCreateData {
   name: string;
   email: string;
   cpfCnpj?: string;
+  metaAdAccountId?: string;
   tier?: 'basic' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget: number;
@@ -19,6 +20,7 @@ export interface ClientUpdateData {
   name?: string;
   email?: string;
   cpfCnpj?: string;
+  metaAdAccountId?: string | null;
   tier?: 'basic' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget?: number;
@@ -90,6 +92,18 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
       }
     } else {
       errors.push({ field: 'cpfCnpj', message: 'CPF/CNPJ must have 11 or 14 digits' });
+    }
+  }
+
+  // Optional Meta Ad Account ID validation
+  if (data.metaAdAccountId !== undefined && data.metaAdAccountId !== null) {
+    if (typeof data.metaAdAccountId !== 'string') {
+      errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must be a string' });
+    } else {
+      const normalized = data.metaAdAccountId.trim().replace(/^act_/i, '');
+      if (normalized.length > 0 && !/^\d+$/.test(normalized)) {
+        errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must contain only digits' });
+      }
     }
   }
 
@@ -169,6 +183,18 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
     }
   }
 
+  // Meta Ad Account ID validation (if provided)
+  if (data.metaAdAccountId !== undefined && data.metaAdAccountId !== null) {
+    if (typeof data.metaAdAccountId !== 'string') {
+      errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must be a string' });
+    } else {
+      const normalized = data.metaAdAccountId.trim().replace(/^act_/i, '');
+      if (normalized.length > 0 && !/^\d+$/.test(normalized)) {
+        errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must contain only digits' });
+      }
+    }
+  }
+
   // Tier validation (if provided)
   if (data.tier !== undefined && !['basic', 'premium', 'enterprise'].includes(data.tier)) {
     errors.push({ field: 'tier', message: 'Tier must be basic, premium, or enterprise' });
@@ -189,10 +215,12 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
  * Prepares client data for database insertion
  */
 export function prepareClientData(data: ClientCreateData): any {
+  const normalizedMetaAdAccountId = data.metaAdAccountId?.trim().replace(/^act_/i, '') || null;
   return {
     name: data.name.trim(),
     email: data.email.toLowerCase().trim(),
     cpfCnpj: data.cpfCnpj?.replace(/\D/g, '') || null,
+    metaAdAccountId: normalizedMetaAdAccountId,
     tier: data.tier || calculateTier(data.budget),
     status: data.status || 'active',
     budget: data.budget,

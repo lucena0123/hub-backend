@@ -135,6 +135,19 @@ type MetaInsightsResponse = {
   };
 };
 
+type MetaListResponse<T> = {
+  data: T[];
+  paging?: {
+    next?: string;
+  };
+  error?: {
+    message?: string;
+    type?: string;
+    code?: number;
+    fbtrace_id?: string;
+  };
+};
+
 type MetaGraphObjectError = {
   error?: {
     message?: string;
@@ -289,6 +302,49 @@ export class MetaAdsService {
     return allRows;
   }
 
+  /**
+   * Generic paginated fetch for Meta list endpoints (e.g. /campaigns).
+   */
+  private async fetchPaginatedList<T>(initialUrl: string): Promise<T[]> {
+    let nextUrl: string | undefined = initialUrl;
+    const allRows: T[] = [];
+    let requestCount = 0;
+    const maxRequests = 100;
+
+    while (nextUrl && requestCount < maxRequests) {
+      if (requestCount > 0) {
+        await this.delay(this.requestDelay);
+      }
+
+      const payload = await this.retryWithBackoff(async () => {
+        const res = await this.fetchWithTimeout(nextUrl!);
+        const data = (await res.json()) as MetaListResponse<T>;
+
+        if (!res.ok) {
+          const errorMsg = data.error?.message || 'Meta API request failed';
+          const errorCode = data.error?.code || res.status;
+          const traceId = data.error?.fbtrace_id || 'N/A';
+          throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+        }
+
+        return data;
+      });
+
+      if (payload.data?.length) {
+        allRows.push(...payload.data);
+      }
+
+      nextUrl = payload.paging?.next;
+      requestCount++;
+    }
+
+    if (requestCount >= maxRequests && nextUrl) {
+      console.warn(`Meta API pagination stopped at ${maxRequests} requests. More data may be available.`);
+    }
+
+    return allRows;
+  }
+
   async fetchCampaignInsights(params: MetaInsightsParams): Promise<MetaInsightRow[]> {
     return this.fetchPaginatedInsights<MetaInsightRow>({
       fields: [
@@ -372,21 +428,7 @@ export class MetaAdsService {
 
   async fetchCampaigns(): Promise<MetaCampaign[]> {
     const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,created_time,updated_time&limit=100`;
-
-    const response = await this.retryWithBackoff(async () => {
-      const res = await this.fetchWithTimeout(url);
-      const data = (await res.json()) as any;
-
-      if (!res.ok) {
-        const errorMsg = data.error?.message || 'Failed to fetch campaigns';
-        const errorCode = data.error?.code || res.status;
-        throw new Error(`Meta API Error ${errorCode}: ${errorMsg}`);
-      }
-
-      return data;
-    });
-
-    return (response as any).data || [];
+    return this.fetchPaginatedList<MetaCampaign>(url);
   }
 
   async fetchAdAccountDetails(): Promise<MetaAdAccount> {

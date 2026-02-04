@@ -13,6 +13,7 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
         SELECT
           id, name, email, tier, status,
           budget, "contractStart", "contractEnd",
+          "metaAdAccountId",
           "createdAt", "updatedAt"
         FROM clients
         ORDER BY "createdAt" DESC
@@ -98,8 +99,8 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
 
       const result = await pool.query(
         `INSERT INTO clients
-         (id, name, email, tier, status, budget, "contractStart", "contractEnd", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+         (id, name, email, tier, status, budget, "contractStart", "contractEnd", "metaAdAccountId", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
          RETURNING *`,
         [
           clientId,
@@ -110,6 +111,7 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
           clientData.budget,
           clientData.contractStart,
           clientData.contractEnd,
+          clientData.metaAdAccountId,
         ]
       );
 
@@ -210,6 +212,14 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
       if (updateData.contractEnd !== undefined) {
         updates.push(`"contractEnd" = $${paramIndex++}`);
         values.push(updateData.contractEnd);
+      }
+      if (updateData.metaAdAccountId !== undefined) {
+        updates.push(`"metaAdAccountId" = $${paramIndex++}`);
+        const normalized =
+          typeof updateData.metaAdAccountId === 'string'
+            ? updateData.metaAdAccountId.trim().replace(/^act_/i, '')
+            : updateData.metaAdAccountId;
+        values.push(normalized && typeof normalized === 'string' ? normalized : null);
       }
 
       if (updates.length === 0) {

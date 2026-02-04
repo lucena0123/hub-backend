@@ -239,13 +239,40 @@ const metaSyncRoutes: FastifyPluginAsync = async (fastify) => {
       const body = validation.data!;
 
       const accessToken = process.env.META_ACCESS_TOKEN;
-      const adAccountId = body.accountId || process.env.META_AD_ACCOUNT_ID;
+
+      const fromBody = typeof body.accountId === 'string' && body.accountId.trim()
+        ? body.accountId.trim().replace(/^act_/i, '')
+        : null;
+
+      let fromClient: string | null = null;
+      if (body.clientId) {
+        const clientResult = await pool.query(
+          'SELECT "metaAdAccountId" FROM clients WHERE id = $1',
+          [body.clientId]
+        );
+        const stored = clientResult.rows?.[0]?.metaAdAccountId;
+        if (typeof stored === 'string' && stored.trim()) {
+          fromClient = stored.trim().replace(/^act_/i, '');
+        }
+      }
+
+      if (fromBody && fromClient && fromBody !== fromClient) {
+        reply.status(400);
+        return {
+          error: 'Meta Ad Account mismatch',
+          message:
+            'O Meta Ad Account ID informado não corresponde ao Meta Ad Account ID cadastrado para este cliente. Corrija o cadastro do cliente ou remova o accountId do body.',
+        };
+      }
+
+      const adAccountId = fromBody || fromClient || process.env.META_AD_ACCOUNT_ID || null;
 
       if (!accessToken || !adAccountId) {
         reply.status(400);
         return {
           error: 'Missing Meta Ads credentials',
-          message: 'Set META_ACCESS_TOKEN and META_AD_ACCOUNT_ID environment variables',
+          message:
+            'Defina META_ACCESS_TOKEN e META_AD_ACCOUNT_ID no .env (backend) ou configure o Meta Ad Account ID no cadastro do cliente.',
         };
       }
 
