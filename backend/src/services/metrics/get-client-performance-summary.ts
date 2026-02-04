@@ -20,9 +20,10 @@ export const getClientPerformanceSummary = async (
   const dates = getDateRange(query.period || '30d', query.startDate, query.endDate);
   const platform = query.platform;
 
-  const campaignsResult = await pool.query('SELECT id, name, platform, budget, status FROM campaigns WHERE "clientId" = $1', [
-    clientId,
-  ]);
+  const campaignsResult = await pool.query(
+    'SELECT id, name, platform, budget, status, "updatedAt" FROM campaigns WHERE "clientId" = $1',
+    [clientId]
+  );
 
   const campaigns = campaignsResult.rows as Array<{
     id: string;
@@ -30,6 +31,7 @@ export const getClientPerformanceSummary = async (
     platform: string;
     budget: string | number | null;
     status: string;
+    updatedAt: Date;
   }>;
 
   if (campaigns.length === 0) {
@@ -218,6 +220,13 @@ export const getClientPerformanceSummary = async (
     dailyByCampaign.get(campaignId)!.push(metric);
   });
 
+  const updatedAtByCampaign = new Map<string, number>(
+    campaigns.map((campaign) => [
+      campaign.id,
+      campaign.updatedAt instanceof Date ? campaign.updatedAt.getTime() : new Date(campaign.updatedAt).getTime(),
+    ])
+  );
+
   const campaignsPerformance: PerformanceSummary[] = campaigns.map((campaign) => {
     const aggregated =
       aggregatedByCampaign.get(campaign.id) ??
@@ -292,6 +301,19 @@ export const getClientPerformanceSummary = async (
       dailyMetrics,
       status,
     };
+  });
+
+  campaignsPerformance.sort((a, b) => {
+    if (b.totalSpend !== a.totalSpend) return b.totalSpend - a.totalSpend;
+    if (b.totalMessagingConversations !== a.totalMessagingConversations)
+      return b.totalMessagingConversations - a.totalMessagingConversations;
+    if (b.totalImpressions !== a.totalImpressions) return b.totalImpressions - a.totalImpressions;
+
+    const aUpdatedAt = updatedAtByCampaign.get(a.campaignId) ?? 0;
+    const bUpdatedAt = updatedAtByCampaign.get(b.campaignId) ?? 0;
+    if (bUpdatedAt !== aUpdatedAt) return bUpdatedAt - aUpdatedAt;
+
+    return a.campaignName.localeCompare(b.campaignName, 'pt-BR', { sensitivity: 'base' });
   });
 
   const totals = campaignsPerformance.reduce(
@@ -393,4 +415,3 @@ export const getClientPerformanceSummary = async (
     dailyMetrics: finalDailyMetrics,
   };
 };
-
