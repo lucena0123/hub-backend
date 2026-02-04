@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateBpmnInit, validateBpmnUpdate } from '../validators/bpmn';
+import { BpmnDefinitionInvalidError, BpmnDefinitionNotFoundError } from '../services/bpmn-definition-service';
 
 const bpmnRoutes: FastifyPluginAsync = async (fastify) => {
-  const { bpmn: bpmnTracker } = fastify.services;
+  const { bpmn: bpmnTracker, bpmnDefinitions } = fastify.services;
 
   // Get client BPMN progress
   fastify.get('/api/clients/:id/bpmn-progress', async (request, reply) => {
@@ -91,6 +92,32 @@ const bpmnRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(500);
       return {
         error: 'Failed to fetch clients in subprocess',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Get subprocess definition (nodes/flows/metadata) from v5-data.js
+  fastify.get('/api/bpmn/subprocess/:id/definition', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const definition = await bpmnDefinitions.getSubprocessDefinition(id);
+      return definition;
+    } catch (error) {
+      if (error instanceof BpmnDefinitionInvalidError) {
+        reply.status(400);
+        return { error: 'Validation failed', message: error.message };
+      }
+
+      if (error instanceof BpmnDefinitionNotFoundError) {
+        reply.status(404);
+        return { error: 'Subprocess definition not found', message: error.message };
+      }
+
+      fastify.log.error(error);
+      reply.status(500);
+      return {
+        error: 'Failed to fetch subprocess definition',
         message: error instanceof Error ? error.message : 'Unknown error',
       };
     }

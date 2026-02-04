@@ -10,6 +10,7 @@ import { DashboardService } from '../services/dashboard-service';
 import { CacheService } from '../services/cache-service';
 import { SyncHistoryService } from '../services/sync-history-service';
 import { LeadTrackingService } from '../services/lead-tracking-service';
+import { BpmnDefinitionService } from '../services/bpmn-definition-service';
 import type { AppServices } from '../types/fastify';
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -26,6 +27,7 @@ export default fp(async (fastify: FastifyInstance) => {
   const services: AppServices = {
     metrics: new MetricsService(pool),
     bpmn: new BPMNTracker(pool),
+    bpmnDefinitions: new BpmnDefinitionService(),
     reports: new ReportGenerator(pool),
     dashboard: new DashboardService(pool),
     cache: cacheService,
