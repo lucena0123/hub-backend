@@ -262,7 +262,7 @@ export const getClientPerformanceSummary = async (
 
     const budget = parseFloat(String(campaign.budget ?? 0)) || 0;
     const budgetUsed = aggregated.totalSpend;
-    const budgetRemaining = budget - budgetUsed;
+    const budgetRemaining = budget > 0 ? budget - budgetUsed : 0;
     const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
 
     const dailyMetrics = dailyByCampaign.get(campaign.id) ?? [];

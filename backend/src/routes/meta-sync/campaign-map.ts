@@ -16,6 +16,16 @@ export const ensureMetaCampaignsImported = async (params: {
 
     if (!campaigns || campaigns.length === 0) return;
 
+    const parseMetaBudget = (value: string | null | undefined) => {
+      if (!value) return 0;
+      const cents = Number.parseFloat(value);
+      if (!Number.isFinite(cents) || cents <= 0) return 0;
+      return Math.round(cents) / 100;
+    };
+
+    const resolveBudget = (camp: { daily_budget?: string; lifetime_budget?: string }) =>
+      parseMetaBudget(camp.daily_budget ?? camp.lifetime_budget);
+
     const normalizeStatus = (status: string | null | undefined) => {
       const value = typeof status === 'string' ? status.trim().toLowerCase() : '';
       if (!value) return 'archived';
@@ -41,7 +51,7 @@ export const ensureMetaCampaignsImported = async (params: {
         camp.name, // name
         normalizeStatus(camp.status), // status
         clientId, // clientId
-        0 // budget (placeholder)
+        resolveBudget(camp) // budget (daily/lifetime, cents -> moeda)
       );
     }
 
@@ -53,6 +63,7 @@ export const ensureMetaCampaignsImported = async (params: {
        ON CONFLICT ("externalId") DO UPDATE SET
          name = EXCLUDED.name,
          status = EXCLUDED.status,
+         budget = CASE WHEN EXCLUDED.budget > 0 THEN EXCLUDED.budget ELSE campaigns.budget END,
          "updatedAt" = NOW()`,
       values
     );

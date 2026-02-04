@@ -79,7 +79,7 @@ export const getPerformanceSummary = async (
 
   const budget = parseFloat(campaign.budget) || 0;
   const budgetUsed = totalSpend;
-  const budgetRemaining = budget - budgetUsed;
+  const budgetRemaining = budget > 0 ? budget - budgetUsed : 0;
   const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
 
   const dailyMetrics = await getCampaignMetrics(pool, campaignId, query);
