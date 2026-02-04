@@ -4,9 +4,19 @@ export const mapCreativeRows = (params: { rows: any[]; adsetNameById: Map<string
   const { rows, adsetNameById } = params;
 
   return rows.map((row: any) => {
+    const formatRaw = typeof row.format === 'string' ? row.format.trim().toLowerCase() : '';
+    const isVideo = Boolean(row.video_id) || formatRaw.includes('video');
+
     const totalSpend = parseFloat(row.total_spend) || 0;
     const totalConversations = parseInt(row.total_conversations) || 0;
     const cpl = totalConversations > 0 ? totalSpend / totalConversations : null;
+
+    const video3sViewsTotal = parseInt(row.video_3s_views_total) || 0;
+    const videoThruplayTotal = parseInt(row.video_thruplay_total) || 0;
+    const hookRateAvgRaw = row.hook_rate_avg != null ? parseFloat(row.hook_rate_avg) : null;
+    const holdRateAvgRaw = row.hold_rate_avg != null ? parseFloat(row.hold_rate_avg) : null;
+    const hookRateAvg = isVideo && hookRateAvgRaw != null && Number.isFinite(hookRateAvgRaw) ? Number(hookRateAvgRaw.toFixed(2)) : null;
+    const holdRateAvg = isVideo && holdRateAvgRaw != null && Number.isFinite(holdRateAvgRaw) ? Number(holdRateAvgRaw.toFixed(2)) : null;
 
     const spendLast7 = parseFloat(row.spend_last7) || 0;
     const convLast7 = parseInt(row.conv_last7) || 0;
@@ -56,6 +66,10 @@ export const mapCreativeRows = (params: { rows: any[]; adsetNameById: Map<string
         avgCtr: parseFloat(row.avg_ctr) || 0,
         avgCpm: parseFloat(row.avg_cpm) || 0,
         cpl,
+        video3sViewsTotal,
+        videoThruplayTotal,
+        hookRateAvg,
+        holdRateAvg,
       },
       recent: {
         spend: spendLast7,
@@ -74,4 +88,3 @@ export const mapCreativeRows = (params: { rows: any[]; adsetNameById: Map<string
     };
   });
 };
-

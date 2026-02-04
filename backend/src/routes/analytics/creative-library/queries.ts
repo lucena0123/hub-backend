@@ -56,6 +56,10 @@ export const fetchCreativeAggRows = async (params: {
         COALESCE(SUM(m.clicks), 0)::int as total_clicks,
         COALESCE(AVG(m.ctr), 0) as avg_ctr,
         COALESCE(AVG(m.cpm), 0) as avg_cpm,
+        COALESCE(SUM(m.video_3sec_views), 0)::int as video_3s_views_total,
+        COALESCE(SUM(m.video_thruplay), 0)::int as video_thruplay_total,
+        COALESCE(AVG(m.hook_rate), 0) as hook_rate_avg,
+        COALESCE(AVG(m.hold_rate), 0) as hold_rate_avg,
         COALESCE(SUM(CASE WHEN m.date >= $5 THEN m.spend ELSE 0 END), 0) as spend_last7,
         COALESCE(SUM(CASE WHEN m.date >= $5 THEN m.messaging_conversations ELSE 0 END), 0)::int as conv_last7,
         COALESCE(SUM(CASE WHEN m.date >= $6 AND m.date < $5 THEN m.spend ELSE 0 END), 0) as spend_prev7,
@@ -98,6 +102,10 @@ export const fetchCreativeAggRows = async (params: {
       a.total_clicks,
       a.avg_ctr,
       a.avg_cpm,
+      a.video_3s_views_total,
+      a.video_thruplay_total,
+      a.hook_rate_avg,
+      a.hold_rate_avg,
       a.spend_last7,
       a.conv_last7,
       a.spend_prev7,
@@ -110,4 +118,3 @@ export const fetchCreativeAggRows = async (params: {
 
   return result.rows;
 };
-
