@@ -16,6 +16,15 @@ export const ensureMetaCampaignsImported = async (params: {
 
     if (!campaigns || campaigns.length === 0) return;
 
+    const normalizeStatus = (status: string | null | undefined) => {
+      const value = typeof status === 'string' ? status.trim().toLowerCase() : '';
+      if (!value) return 'archived';
+      if (value === 'active') return 'active';
+      if (value === 'paused') return 'paused';
+      if (value === 'archived') return 'archived';
+      return value;
+    };
+
     const values: any[] = [];
     const placeholders: string[] = [];
     let pIndex = 1;
@@ -23,14 +32,14 @@ export const ensureMetaCampaignsImported = async (params: {
     for (const camp of campaigns) {
       const rowPh: string[] = [];
       for (let i = 0; i < 7; i++) rowPh.push(`$${pIndex++}`);
-      placeholders.push(`(${rowPh.join(', ')})`);
+      placeholders.push(`(${rowPh.join(', ')}, NOW())`);
 
       values.push(
         uuidv4(), // id
         camp.id, // externalId
         'meta', // platform
         camp.name, // name
-        camp.status || 'archived', // status
+        normalizeStatus(camp.status), // status
         clientId, // clientId
         0 // budget (placeholder)
       );
@@ -39,7 +48,7 @@ export const ensureMetaCampaignsImported = async (params: {
     if (placeholders.length === 0) return;
 
     await pool.query(
-      `INSERT INTO campaigns (id, "externalId", platform, name, status, "clientId", budget)
+      `INSERT INTO campaigns (id, "externalId", platform, name, status, "clientId", budget, "updatedAt")
        VALUES ${placeholders.join(', ')}
        ON CONFLICT ("externalId") DO UPDATE SET
          name = EXCLUDED.name,
@@ -58,4 +67,3 @@ export const buildMetaCampaignMap = async (pool: Pool) => {
   const campaignsResult = await pool.query('SELECT id, \"externalId\" FROM campaigns WHERE platform = $1', ['meta']);
   return new Map<string, string>(campaignsResult.rows.map((row) => [row.externalId, row.id]));
 };
-
