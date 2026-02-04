@@ -71,7 +71,9 @@ export const getPerformanceSummary = async (
 
   const avgCtr = calculateCTR(totalClicks, totalImpressions);
   const avgCpc = calculateCPC(totalSpend, totalClicks);
-  const avgCpl = calculateCPL(totalSpend, totalLeads);
+  const totalContacts =
+    totalLeads > 0 ? totalLeads : totalMessagingConversations > 0 ? totalMessagingConversations : totalConversions;
+  const avgCpl = calculateCPL(totalSpend, totalContacts);
   const avgCpa = calculateCPA(totalSpend, totalConversions);
   const roas = calculateROAS(totalRevenue, totalSpend);
 
@@ -126,4 +128,3 @@ export const getPerformanceSummary = async (
     status,
   };
 };
-

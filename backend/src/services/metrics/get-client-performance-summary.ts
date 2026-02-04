@@ -250,7 +250,13 @@ export const getClientPerformanceSummary = async (
 
     const avgCtr = calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
     const avgCpc = calculateCPC(aggregated.totalSpend, aggregated.totalClicks);
-    const avgCpl = calculateCPL(aggregated.totalSpend, aggregated.totalLeads);
+    const totalContacts =
+      aggregated.totalLeads > 0
+        ? aggregated.totalLeads
+        : aggregated.totalMessagingConversations > 0
+          ? aggregated.totalMessagingConversations
+          : aggregated.totalConversions;
+    const avgCpl = calculateCPL(aggregated.totalSpend, totalContacts);
     const avgCpa = calculateCPA(aggregated.totalSpend, aggregated.totalConversions);
     const roas = calculateROAS(aggregated.totalRevenue, aggregated.totalSpend);
 
@@ -346,7 +352,9 @@ export const getClientPerformanceSummary = async (
   );
 
   const avgCtr = calculateCTR(totals.clicks, totals.impressions);
-  const avgCpl = calculateCPL(totals.spend, totals.conversions);
+  const totalContacts =
+    totals.leads > 0 ? totals.leads : totals.messagingConversations > 0 ? totals.messagingConversations : totals.conversions;
+  const avgCpl = calculateCPL(totals.spend, totalContacts);
   const avgCpa = calculateCPA(totals.spend, totals.conversions);
   const avgRoas = calculateROAS(totals.revenue, totals.spend);
 

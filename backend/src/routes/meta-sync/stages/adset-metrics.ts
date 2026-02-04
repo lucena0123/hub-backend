@@ -46,7 +46,8 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
         const cpc = parseNumber(row.cpc);
         const cpm = parseNumber(row.cpm);
         const frequency = parseNumber(row.frequency);
-        const cpl = leads > 0 ? spend / leads : 0;
+        const contacts = leads > 0 ? leads : conversations > 0 ? conversations : conversions;
+        const cpl = contacts > 0 ? spend / contacts : 0;
 
         const rowPh: string[] = [];
         for (let i = 0; i < 20; i++) {
@@ -112,4 +113,3 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
     log.info({ adsetInsights: totalAdsetInsights }, 'Ad set metrics synced');
   }
 };
-

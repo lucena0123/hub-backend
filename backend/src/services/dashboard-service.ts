@@ -132,7 +132,12 @@ export class DashboardService {
         COALESCE(SUM(leads), 0) as total_leads,
         CASE WHEN SUM(spend) > 0 THEN ROUND(SUM(revenue) / SUM(spend), 2) ELSE 0 END as avg_roas,
         CASE WHEN SUM(impressions) > 0 THEN ROUND((SUM(clicks)::decimal / SUM(impressions)) * 100, 2) ELSE 0 END as avg_ctr,
-        CASE WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2) ELSE 0 END as avg_cpl
+        CASE
+          WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2)
+          WHEN SUM(messaging_conversations) > 0 THEN ROUND(SUM(spend) / SUM(messaging_conversations), 2)
+          WHEN SUM(conversions) > 0 THEN ROUND(SUM(spend) / SUM(conversions), 2)
+          ELSE 0
+        END as avg_cpl
       FROM campaign_metrics
       WHERE date >= CURRENT_DATE - INTERVAL '30 days'
     `);

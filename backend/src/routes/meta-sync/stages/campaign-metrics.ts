@@ -55,7 +55,9 @@ const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'pool'>, metrics
     for (const entry of batch) {
       const ctr = entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0;
       const cpc = entry.clicks > 0 ? entry.spend / entry.clicks : 0;
-      const cpl = entry.leads > 0 ? entry.spend / entry.leads : 0;
+      const contacts =
+        entry.leads > 0 ? entry.leads : entry.messagingConversations > 0 ? entry.messagingConversations : entry.conversions;
+      const cpl = contacts > 0 ? entry.spend / contacts : 0;
       const cpa = entry.conversions > 0 ? entry.spend / entry.conversions : 0;
       const roas = entry.spend > 0 ? entry.revenue / entry.spend : 0;
 
@@ -209,4 +211,3 @@ export const syncCampaignMetricsStage = async (ctx: MetaSyncContext): Promise<Ca
 
   return { totalInsights, mappedTotal, updated, unmapped };
 };
-

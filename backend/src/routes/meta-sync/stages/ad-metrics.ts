@@ -60,7 +60,8 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
           const video3sec = sumActions(row.actions, ['video_view']);
           const hookRate = impressions > 0 ? (video3sec / impressions) * 100 : 0;
           const holdRate = video3sec > 0 ? (thruplay / video3sec) * 100 : 0;
-          const cpl = leads > 0 ? spend / leads : 0;
+          const contacts = leads > 0 ? leads : conversations > 0 ? conversations : conversions;
+          const cpl = contacts > 0 ? spend / contacts : 0;
 
           const rowPh: string[] = [];
           for (let i = 0; i < 25; i++) {
@@ -278,4 +279,3 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
     );
   }
 };
-
