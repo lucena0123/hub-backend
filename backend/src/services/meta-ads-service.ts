@@ -15,3 +15,4 @@ export type {
 } from './meta-ads/types';
 
 export { MetaAdsService } from './meta-ads/service';
+export type { MetaWriteOperation, MetaWritebackError, MetaWritebackResult } from './meta-ads/service';

@@ -10,4 +10,14 @@ export { BPMNTracker } from './bpmn-tracker';
 export { SyncHistoryService } from './sync-history-service';
 export { LeadTrackingService } from './lead-tracking-service';
 export { MetaAdsService } from './meta-ads-service';
-export type { MetaInsightRow, MetaAdAccount, MetaCampaign, MetaAdSet, MetaAdSetInsightRow, MetaAdInsightRow } from './meta-ads-service';
+export type {
+  MetaInsightRow,
+  MetaAdAccount,
+  MetaCampaign,
+  MetaAdSet,
+  MetaAdSetInsightRow,
+  MetaAdInsightRow,
+  MetaWriteOperation,
+  MetaWritebackError,
+  MetaWritebackResult,
+} from './meta-ads-service';

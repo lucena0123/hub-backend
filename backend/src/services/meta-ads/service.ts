@@ -32,6 +32,32 @@ type PaginatedFetchOptions = {
   breakdowns?: string[];
 };
 
+export type MetaWriteOperation = 'pause_ad' | 'resume_ad' | 'set_adset_daily_budget';
+
+export type MetaWritebackError = {
+  message: string;
+  status: number | null;
+  code: number | null;
+  fbtraceId: string | null;
+  raw: unknown;
+};
+
+export type MetaWritebackResult = {
+  success: boolean;
+  dryRun: boolean;
+  operation: MetaWriteOperation;
+  objectId: string;
+  request: {
+    method: 'GET' | 'POST';
+    url: string;
+    body?: Record<string, string>;
+  };
+  response: Record<string, unknown> | null;
+  error: MetaWritebackError | null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
 export class MetaAdsService {
   private accessToken: string;
   private adAccountId: string;
@@ -66,6 +92,406 @@ export class MetaAdsService {
       }
       throw error;
     }
+  }
+
+  private normalizeAccountId(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return trimmed.replace(/^act_/i, '');
+  }
+
+  private buildGraphUrl(path: string, query?: Record<string, string>) {
+    const base = `https://graph.facebook.com/${this.apiVersion}/${path}`;
+    if (!query || Object.keys(query).length === 0) return base;
+    const params = new URLSearchParams(query);
+    return `${base}?${params.toString()}`;
+  }
+
+  private async requestGraph(params: {
+    method: 'GET' | 'POST';
+    path: string;
+    query?: Record<string, string>;
+    body?: Record<string, string>;
+    timeoutMs?: number;
+  }): Promise<{ ok: true; url: string; data: any } | { ok: false; url: string; error: MetaWritebackError; data: any }> {
+    const url = this.buildGraphUrl(params.path, params.query);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), params.timeoutMs ?? 30000);
+
+    try {
+      const bodySearchParams = params.body ? new URLSearchParams(params.body) : null;
+
+      const response = await fetch(url, {
+        method: params.method,
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': bodySearchParams ? 'application/x-www-form-urlencoded' : 'application/json',
+        },
+        ...(bodySearchParams ? { body: bodySearchParams } : {}),
+        signal: controller.signal,
+      });
+
+      const data = (await response.json()) as any;
+
+      if (!response.ok) {
+        const message = (data && typeof data === 'object' && data.error && typeof data.error.message === 'string' ? data.error.message : null) ??
+          `Meta API request failed (HTTP ${response.status})`;
+        const code =
+          data && typeof data === 'object' && data.error && typeof data.error.code === 'number' ? data.error.code : null;
+        const fbtraceId =
+          data && typeof data === 'object' && data.error && typeof data.error.fbtrace_id === 'string' ? data.error.fbtrace_id : null;
+
+        return {
+          ok: false,
+          url,
+          data,
+          error: {
+            message,
+            status: response.status,
+            code,
+            fbtraceId,
+            raw: data,
+          },
+        };
+      }
+
+      if (data && typeof data === 'object' && data.error) {
+        const message = typeof data.error.message === 'string' ? data.error.message : 'Meta API returned an error payload';
+        const code = typeof data.error.code === 'number' ? data.error.code : null;
+        const fbtraceId = typeof data.error.fbtrace_id === 'string' ? data.error.fbtrace_id : null;
+        return {
+          ok: false,
+          url,
+          data,
+          error: {
+            message,
+            status: response.status,
+            code,
+            fbtraceId,
+            raw: data,
+          },
+        };
+      }
+
+      return { ok: true, url, data };
+    } catch (error) {
+      const message =
+        (error as Error)?.name === 'AbortError'
+          ? `Meta API request timeout after ${params.timeoutMs ?? 30000}ms`
+          : error instanceof Error
+            ? error.message
+            : 'Meta API request failed';
+
+      return {
+        ok: false,
+        url,
+        data: null,
+        error: {
+          message,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: error,
+        },
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async assertObjectBelongsToAccount(params: {
+    objectId: string;
+    objectType: 'ad' | 'adset';
+  }): Promise<{ ok: true } | { ok: false; error: MetaWritebackError }> {
+    const objectId = params.objectId.trim();
+    const expected = this.normalizeAccountId(this.adAccountId);
+
+    if (!objectId) {
+      return {
+        ok: false,
+        error: {
+          message: `Missing ${params.objectType} id`,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: null,
+        },
+      };
+    }
+
+    if (!expected) {
+      return {
+        ok: false,
+        error: {
+          message: 'Missing Meta ad account id in service configuration',
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: null,
+        },
+      };
+    }
+
+    const res = await this.requestGraph({
+      method: 'GET',
+      path: objectId,
+      query: { fields: 'account_id' },
+    });
+
+    if (!res.ok) {
+      return { ok: false, error: res.error };
+    }
+
+    const accountId = this.normalizeAccountId(res.data?.account_id);
+    if (!accountId) {
+      return {
+        ok: false,
+        error: {
+          message: `Unable to validate ${params.objectType} scope (missing account_id)`,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: res.data,
+        },
+      };
+    }
+
+    if (accountId !== expected) {
+      return {
+        ok: false,
+        error: {
+          message: `Scope mismatch: ${params.objectType} belongs to account ${accountId}, expected ${expected}`,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: res.data,
+        },
+      };
+    }
+
+    return { ok: true };
+  }
+
+  async pauseAd(adId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'PAUSED' },
+    };
+
+    if (dryRun) {
+      return {
+        success: true,
+        dryRun: true,
+        operation: 'pause_ad',
+        objectId,
+        request,
+        response: { success: true, dryRun: true },
+        error: null,
+      };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'ad' });
+    if (!scope.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'pause_ad',
+        objectId,
+        request,
+        response: null,
+        error: scope.error,
+      };
+    }
+
+    const res = await this.requestGraph({
+      method: 'POST',
+      path: objectId,
+      body: request.body,
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'pause_ad',
+        objectId,
+        request: { ...request, url: res.url },
+        response: isRecord(res.data) ? (res.data as any) : null,
+        error: res.error,
+      };
+    }
+
+    return {
+      success: true,
+      dryRun: false,
+      operation: 'pause_ad',
+      objectId,
+      request: { ...request, url: res.url },
+      response: isRecord(res.data) ? (res.data as any) : { success: true },
+      error: null,
+    };
+  }
+
+  async resumeAd(adId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'ACTIVE' },
+    };
+
+    if (dryRun) {
+      return {
+        success: true,
+        dryRun: true,
+        operation: 'resume_ad',
+        objectId,
+        request,
+        response: { success: true, dryRun: true },
+        error: null,
+      };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'ad' });
+    if (!scope.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'resume_ad',
+        objectId,
+        request,
+        response: null,
+        error: scope.error,
+      };
+    }
+
+    const res = await this.requestGraph({
+      method: 'POST',
+      path: objectId,
+      body: request.body,
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'resume_ad',
+        objectId,
+        request: { ...request, url: res.url },
+        response: isRecord(res.data) ? (res.data as any) : null,
+        error: res.error,
+      };
+    }
+
+    return {
+      success: true,
+      dryRun: false,
+      operation: 'resume_ad',
+      objectId,
+      request: { ...request, url: res.url },
+      response: isRecord(res.data) ? (res.data as any) : { success: true },
+      error: null,
+    };
+  }
+
+  async setAdSetDailyBudget(
+    adsetId: string,
+    amount: number,
+    options?: { dryRun?: boolean; minorUnitMultiplier?: number }
+  ): Promise<MetaWritebackResult> {
+    const objectId = String(adsetId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+    const multiplier = Number.isFinite(options?.minorUnitMultiplier as number) ? Number(options?.minorUnitMultiplier) : 100;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return {
+        success: false,
+        dryRun,
+        operation: 'set_adset_daily_budget',
+        objectId,
+        request: {
+          method: 'POST',
+          url: this.buildGraphUrl(objectId),
+          body: {},
+        },
+        response: null,
+        error: {
+          message: `Invalid budget amount: ${amount}`,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: amount,
+        },
+      };
+    }
+
+    const cents = Math.round(amount * multiplier);
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { daily_budget: String(cents) },
+    };
+
+    if (dryRun) {
+      return {
+        success: true,
+        dryRun: true,
+        operation: 'set_adset_daily_budget',
+        objectId,
+        request,
+        response: { success: true, dryRun: true, daily_budget: String(cents) },
+        error: null,
+      };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'adset' });
+    if (!scope.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'set_adset_daily_budget',
+        objectId,
+        request,
+        response: null,
+        error: scope.error,
+      };
+    }
+
+    const res = await this.requestGraph({
+      method: 'POST',
+      path: objectId,
+      body: request.body,
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'set_adset_daily_budget',
+        objectId,
+        request: { ...request, url: res.url },
+        response: isRecord(res.data) ? (res.data as any) : null,
+        error: res.error,
+      };
+    }
+
+    return {
+      success: true,
+      dryRun: false,
+      operation: 'set_adset_daily_budget',
+      objectId,
+      request: { ...request, url: res.url },
+      response: isRecord(res.data) ? (res.data as any) : { success: true },
+      error: null,
+    };
   }
 
   private async delay(ms: number): Promise<void> {
