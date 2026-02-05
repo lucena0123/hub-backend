@@ -1,6 +1,7 @@
 import type { OptimizationThemeTargets } from '../../../services/optimization-playbook';
 import { getOptimizationTargetsForTheme, inferOptimizationTheme } from '../../../services/optimization-playbook';
 import { formatCurrency, formatPercent, percentChange, safeFloat, safeInt } from './helpers';
+import { resolveBudgetAndMinSpend } from './budget';
 import type { OptimizationItem } from './types';
 
 type LeadTrackingAgg = { recordsLast7: number; qualifiedLast7: number; qualifiedPrev7: number };
@@ -44,24 +45,15 @@ export const buildCampaignItems = (params: {
     const adsetDailyBudget = safeFloat(adsetBudgets?.dailyBudget);
     const adsetLifetimeBudget = safeFloat(adsetBudgets?.lifetimeBudget);
 
-    const floorMinSpend = Math.max(20, Math.round(campaignTargets.minSpendForEvaluation * 0.2));
+    const budgetResolution = resolveBudgetAndMinSpend({
+      playbookMinSpendForEvaluation: campaignTargets.minSpendForEvaluation,
+      campaignBudget,
+      spendLast7,
+      adsetDailyBudget,
+      adsetLifetimeBudget,
+    });
 
-    const budgetCandidate =
-      campaignBudget > 0
-        ? { value: campaignBudget, isDaily: spendLast7 > campaignBudget * 1.2 }
-        : adsetDailyBudget > 0
-          ? { value: adsetDailyBudget, isDaily: true }
-          : adsetLifetimeBudget > 0
-            ? { value: adsetLifetimeBudget, isDaily: false }
-            : { value: 0, isDaily: false };
-
-    const expectedSpendLast7 =
-      budgetCandidate.value > 0 ? (budgetCandidate.isDaily ? budgetCandidate.value * 7 : budgetCandidate.value) : 0;
-
-    const minSpendForEvaluation =
-      expectedSpendLast7 > 0
-        ? Math.min(campaignTargets.minSpendForEvaluation, Math.max(floorMinSpend, expectedSpendLast7 * 0.8))
-        : campaignTargets.minSpendForEvaluation;
+    const minSpendForEvaluation = budgetResolution.minSpendForEvaluation;
 
     const firstReplyLast7 = safeInt(camp.first_reply_last7);
     const avgFrequencyLast7 = safeFloat(camp.avg_frequency_last7);

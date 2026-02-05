@@ -18,6 +18,14 @@ Aplicar a migration `019` no Postgres:
 psql -h localhost -p 5433 -U bpmn -d bpmn_system -f backend/src/database/migrations/019_create_creative_copy_insights.sql
 ```
 
+## 2.1) (Opcional) Garantir migração de budgets de AdSets (ABO)
+
+Se a conta usa **ABO** (budget no adset), aplique também a migration `020`:
+
+```bash
+psql -h localhost -p 5433 -U bpmn -d bpmn_system -f backend/src/database/migrations/020_create_adsets.sql
+```
+
 ## 3) Seed de dados mock (inclui criativos)
 
 No backend:
@@ -77,4 +85,3 @@ Copy insights:
 curl "http://localhost:<PORT>/api/creative-snapshots/<snapshotId>/copy-insights"
 curl -X POST "http://localhost:<PORT>/api/creative-snapshots/<snapshotId>/copy-insights" -H "Content-Type: application/json" --data "{\"force\":true}"
 ```
-

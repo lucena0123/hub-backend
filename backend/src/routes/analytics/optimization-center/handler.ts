@@ -6,6 +6,7 @@ import {
 } from '../../../services/optimization-playbook';
 import { shiftIsoDateUtc, toIsoDateUtc, toStringArray } from '../../../utils';
 import { getDaysForPeriod, pickText, safeFloat, safeInt, toJsonStringArray } from './helpers';
+import { resolveBudgetAndMinSpend } from './budget';
 import { scoreCreatives } from './creative-scoring';
 import { buildCampaignItems } from './campaign-recommendations';
 import { buildCreativeItems } from './creative-recommendations';
@@ -106,6 +107,42 @@ export const buildOptimizationCenter = async (params: {
   } catch (_error) {
     // Non-fatal: budget mode discovery falls back to campaign-level budget only.
   }
+
+  const budgetDiagnostics = (campaignsResult.rows as any[]).map((row) => {
+    const campaignIdValue = String(row.campaign_id);
+    const campaignName = String(row.campaign_name || '');
+    const campaignTheme = inferOptimizationTheme(campaignName);
+    const campaignTargets = getOptimizationTargetsForTheme(campaignTheme.themeKey);
+
+    const campaignBudget = safeFloat(row.budget);
+    const spendLast7 = safeFloat(row.spend_last7);
+    const adsetBudgets = adsetBudgetsByCampaign.get(campaignIdValue);
+    const adsetDailyBudget = safeFloat(adsetBudgets?.dailyBudget);
+    const adsetLifetimeBudget = safeFloat(adsetBudgets?.lifetimeBudget);
+
+    const budgetResolution = resolveBudgetAndMinSpend({
+      playbookMinSpendForEvaluation: campaignTargets.minSpendForEvaluation,
+      campaignBudget,
+      spendLast7,
+      adsetDailyBudget,
+      adsetLifetimeBudget,
+    });
+
+    return {
+      campaignId: campaignIdValue,
+      campaignName,
+      themeKey: campaignTheme.themeKey,
+      budgetMode: budgetResolution.budgetMode,
+      budgetSource: budgetResolution.budgetSource,
+      assumedBudgetKind: budgetResolution.assumedBudgetKind,
+      campaignBudget,
+      adsetDailyBudget,
+      adsetLifetimeBudget,
+      expectedSpendLast7: budgetResolution.expectedSpendLast7,
+      playbookMinSpendForEvaluation: campaignTargets.minSpendForEvaluation,
+      minSpendForEvaluation: budgetResolution.minSpendForEvaluation,
+    };
+  });
 
   const leadTrackingAgg = await pool.query(
     `SELECT
@@ -444,6 +481,7 @@ export const buildOptimizationCenter = async (params: {
       ...primaryTheme,
       targets,
     },
+    budgetDiagnostics,
     summary: { ...summary, total: items.length },
     highlights,
     items,
