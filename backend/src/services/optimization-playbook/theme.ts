@@ -1,9 +1,10 @@
-import { OPTIMIZATION_CENTER_PLAYBOOK_V1 } from './playbook-v1';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS } from './optimization-center/v1/defaults';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES } from './optimization-center/v1/themes';
 import type { OptimizationThemeMatch, OptimizationThemeTargets } from './types';
 
 export const getOptimizationTargetsForTheme = (themeKey: string): OptimizationThemeTargets => {
-  const base = OPTIMIZATION_CENTER_PLAYBOOK_V1.defaults;
-  const theme = OPTIMIZATION_CENTER_PLAYBOOK_V1.themes.find((t) => t.key === themeKey);
+  const base = OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS;
+  const theme = OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((t) => t.key === themeKey);
   return { ...base, ...(theme?.targets ?? {}) };
 };
 
@@ -20,7 +21,7 @@ export const inferOptimizationTheme = (campaignName: string): OptimizationThemeM
 
   if (bracketTag) {
     const normalizedTag = normalize(bracketTag).replace(/\s+/g, '_').toUpperCase();
-    const byTag = OPTIMIZATION_CENTER_PLAYBOOK_V1.themes.find((theme) =>
+    const byTag = OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((theme) =>
       theme.tags.some((tag) => normalize(tag).replace(/\s+/g, '_').toUpperCase() === normalizedTag)
     );
     if (byTag) {
@@ -34,7 +35,7 @@ export const inferOptimizationTheme = (campaignName: string): OptimizationThemeM
   }
 
   const normalizedName = normalize(name);
-  for (const theme of OPTIMIZATION_CENTER_PLAYBOOK_V1.themes) {
+  for (const theme of OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES) {
     if (theme.key === 'geral') continue;
     for (const keyword of theme.keywords) {
       const normalizedKeyword = normalize(keyword);
@@ -49,7 +50,6 @@ export const inferOptimizationTheme = (campaignName: string): OptimizationThemeM
     }
   }
 
-  const fallback = OPTIMIZATION_CENTER_PLAYBOOK_V1.themes.find((t) => t.key === 'geral')!;
+  const fallback = OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((t) => t.key === 'geral')!;
   return { themeKey: fallback.key, themeName: fallback.name, matchedBy: 'default', matchedValue: null };
 };
-

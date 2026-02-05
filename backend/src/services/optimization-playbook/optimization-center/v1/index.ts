@@ -1,0 +1,13 @@
+import type { OptimizationCenterPlaybook } from '../../types';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS } from './defaults';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_META } from './meta';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_RULES } from './rules';
+import { OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES } from './themes';
+
+export const OPTIMIZATION_CENTER_PLAYBOOK_V1: OptimizationCenterPlaybook = {
+  ...OPTIMIZATION_CENTER_PLAYBOOK_V1_META,
+  defaults: OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS,
+  themes: OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES,
+  rules: OPTIMIZATION_CENTER_PLAYBOOK_V1_RULES,
+};
+

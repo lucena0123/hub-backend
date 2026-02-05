@@ -8,8 +8,7 @@ import { shiftIsoDateUtc, toIsoDateUtc, toStringArray } from '../../../utils';
 import { getDaysForPeriod, pickText, safeFloat, safeInt, toJsonStringArray } from './helpers';
 import { resolveBudgetAndMinSpend } from './budget';
 import { scoreCreatives } from './creative-scoring';
-import { buildCampaignItems } from './campaign-recommendations';
-import { buildCreativeItems } from './creative-recommendations';
+import { evaluateOptimizationCenterRules } from '../../../services/optimization-playbook/optimization-center/engine/registry';
 import type { OptimizationSeverity } from './types';
 
 export type OptimizationCenterQuery = {
@@ -401,21 +400,21 @@ export const buildOptimizationCenter = async (params: {
 
   const { enrichedCreatives, winners } = scoreCreatives(creatives, targets);
 
-  const items = [
-    ...buildCampaignItems({
-      campaignRows: campaignsResult.rows as any[],
-      leadTrackingByCampaign,
-      reasonsByCampaign,
-      primaryTargets: targets,
-      adsetBudgetsByCampaign,
-    }),
-    ...buildCreativeItems({
-      enrichedCreatives,
-      winners,
-      primaryTheme,
-      targets,
-    }),
-  ];
+  const items = evaluateOptimizationCenterRules({
+    campaignRows: campaignsResult.rows as any[],
+    leadTrackingByCampaign,
+    reasonsByCampaign,
+    adsetBudgetsByCampaign,
+    primaryTheme,
+    primaryTargets: targets,
+    enrichedCreatives,
+    winners,
+    targets,
+    playbookCopy: {
+      preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
+      prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+    },
+  });
 
   const summary = { critical: 0, warning: 0, info: 0, opportunity: 0 };
   for (const item of items) summary[item.severity] += 1;
