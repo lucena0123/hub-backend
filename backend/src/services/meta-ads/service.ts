@@ -7,6 +7,7 @@ import type {
   MetaAd,
   MetaAdAccount,
   MetaAdInsightRow,
+  MetaAdSet,
   MetaAdSetInsightRow,
   MetaCampaign,
   MetaGraphIdMapResponse,
@@ -324,6 +325,11 @@ export class MetaAdsService {
     return this.fetchPaginatedList<MetaCampaign>(url);
   }
 
+  async fetchAdSets(): Promise<MetaAdSet[]> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,created_time,updated_time&limit=100`;
+    return this.fetchPaginatedList<MetaAdSet>(url);
+  }
+
   async fetchAdAccountDetails(): Promise<MetaAdAccount> {
     const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}?fields=id,account_id,name,account_status,currency,timezone_name,business_name,spend_cap,amount_spent`;
 
@@ -411,4 +417,3 @@ export class MetaAdsService {
     return allAds;
   }
 }
-

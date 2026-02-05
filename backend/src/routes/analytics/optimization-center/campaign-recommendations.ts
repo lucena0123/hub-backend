@@ -10,8 +10,9 @@ export const buildCampaignItems = (params: {
   leadTrackingByCampaign: Map<string, LeadTrackingAgg>;
   reasonsByCampaign: Map<string, Array<{ key: string; count: number }>>;
   primaryTargets: OptimizationThemeTargets;
+  adsetBudgetsByCampaign: Map<string, { dailyBudget: number; lifetimeBudget: number }>;
 }) => {
-  const { campaignRows, leadTrackingByCampaign, reasonsByCampaign, primaryTargets } = params;
+  const { campaignRows, leadTrackingByCampaign, reasonsByCampaign, primaryTargets, adsetBudgetsByCampaign } = params;
   const items: OptimizationItem[] = [];
 
   const actionableCampaigns: Array<{
@@ -37,6 +38,30 @@ export const buildCampaignItems = (params: {
 
     const spendLast7 = safeFloat(camp.spend_last7);
     const spendPrev7 = safeFloat(camp.spend_prev7);
+
+    const campaignBudget = safeFloat(camp.budget);
+    const adsetBudgets = adsetBudgetsByCampaign.get(campaignIdValue);
+    const adsetDailyBudget = safeFloat(adsetBudgets?.dailyBudget);
+    const adsetLifetimeBudget = safeFloat(adsetBudgets?.lifetimeBudget);
+
+    const floorMinSpend = Math.max(20, Math.round(campaignTargets.minSpendForEvaluation * 0.2));
+
+    const budgetCandidate =
+      campaignBudget > 0
+        ? { value: campaignBudget, isDaily: spendLast7 > campaignBudget * 1.2 }
+        : adsetDailyBudget > 0
+          ? { value: adsetDailyBudget, isDaily: true }
+          : adsetLifetimeBudget > 0
+            ? { value: adsetLifetimeBudget, isDaily: false }
+            : { value: 0, isDaily: false };
+
+    const expectedSpendLast7 =
+      budgetCandidate.value > 0 ? (budgetCandidate.isDaily ? budgetCandidate.value * 7 : budgetCandidate.value) : 0;
+
+    const minSpendForEvaluation =
+      expectedSpendLast7 > 0
+        ? Math.min(campaignTargets.minSpendForEvaluation, Math.max(floorMinSpend, expectedSpendLast7 * 0.8))
+        : campaignTargets.minSpendForEvaluation;
 
     const firstReplyLast7 = safeInt(camp.first_reply_last7);
     const avgFrequencyLast7 = safeFloat(camp.avg_frequency_last7);
@@ -97,13 +122,13 @@ export const buildCampaignItems = (params: {
         },
         entity: { type: 'campaign', id: campaignIdValue, name: campaignName },
         metrics: { spend: spendTotal, impressions: impressionsTotal },
-        thresholds: { minSpendForEvaluation: campaignTargets.minSpendForEvaluation },
+        thresholds: { minSpendForEvaluation },
       });
       continue;
     }
 
     // Spend with no contacts.
-    if (spendLast7 >= campaignTargets.minSpendForEvaluation && contactsLast7 === 0) {
+    if (spendLast7 >= minSpendForEvaluation && contactsLast7 === 0) {
       items.push({
         id: `camp-no-contacts-${campaignIdValue}`,
         ruleId: 'campaign.no-contacts',
@@ -120,7 +145,7 @@ export const buildCampaignItems = (params: {
         },
         entity: { type: 'campaign', id: campaignIdValue, name: campaignName },
         metrics: { spendLast7, contactsLast7 },
-        thresholds: { minSpendForEvaluation: campaignTargets.minSpendForEvaluation },
+        thresholds: { minSpendForEvaluation },
       });
     }
 
@@ -129,7 +154,7 @@ export const buildCampaignItems = (params: {
       contactsPrev7 >= campaignTargets.minContactsForEvaluation &&
       contactsDelta !== null &&
       contactsDelta <= campaignTargets.contactsDropPctWarning &&
-      spendLast7 >= Math.min(campaignTargets.minSpendForEvaluation, 100)
+      spendLast7 >= Math.min(minSpendForEvaluation, 100)
     ) {
       items.push({
         id: `camp-contacts-drop-${campaignIdValue}`,
@@ -187,7 +212,7 @@ export const buildCampaignItems = (params: {
     if (
       costPerContact != null &&
       contactsLast7 >= campaignTargets.minContactsForEvaluation &&
-      spendLast7 >= campaignTargets.minSpendForEvaluation
+      spendLast7 >= minSpendForEvaluation
     ) {
       if (costPerContact >= campaignTargets.targetCplBadMin) {
         items.push({
@@ -235,7 +260,7 @@ export const buildCampaignItems = (params: {
     }
 
     // Frequency (saturation) guardrail
-    if (avgFrequencyLast7 >= campaignTargets.frequencyCritical && spendLast7 >= campaignTargets.minSpendForEvaluation) {
+    if (avgFrequencyLast7 >= campaignTargets.frequencyCritical && spendLast7 >= minSpendForEvaluation) {
       items.push({
         id: `camp-frequency-critical-${campaignIdValue}`,
         ruleId: 'campaign.frequency-high',
@@ -257,7 +282,7 @@ export const buildCampaignItems = (params: {
           frequencyCritical: campaignTargets.frequencyCritical,
         },
       });
-    } else if (avgFrequencyLast7 >= campaignTargets.frequencyWarning && spendLast7 >= campaignTargets.minSpendForEvaluation) {
+    } else if (avgFrequencyLast7 >= campaignTargets.frequencyWarning && spendLast7 >= minSpendForEvaluation) {
       items.push({
         id: `camp-frequency-warning-${campaignIdValue}`,
         ruleId: 'campaign.frequency-high',
@@ -283,7 +308,7 @@ export const buildCampaignItems = (params: {
       firstReplyRate != null &&
       messagingLast7 >= campaignTargets.minContactsForEvaluation &&
       firstReplyRate < campaignTargets.firstReplyRateMin &&
-      spendLast7 >= campaignTargets.minSpendForEvaluation
+      spendLast7 >= minSpendForEvaluation
     ) {
       items.push({
         id: `camp-first-reply-low-${campaignIdValue}`,
@@ -306,7 +331,7 @@ export const buildCampaignItems = (params: {
     }
 
     // Qualification tracking reminders.
-    if (contactsLast7 > 0 && spendLast7 > campaignTargets.minSpendForEvaluation && leadTracking.recordsLast7 === 0) {
+    if (contactsLast7 > 0 && spendLast7 > minSpendForEvaluation && leadTracking.recordsLast7 === 0) {
       items.push({
         id: `qual-missing-${campaignIdValue}`,
         ruleId: 'qualification.missing',
@@ -324,7 +349,7 @@ export const buildCampaignItems = (params: {
         },
         entity: { type: 'campaign', id: campaignIdValue, name: campaignName },
         metrics: { contactsLast7, spendLast7 },
-        thresholds: { minSpendForEvaluation: campaignTargets.minSpendForEvaluation },
+        thresholds: { minSpendForEvaluation },
       });
     }
 
@@ -333,7 +358,7 @@ export const buildCampaignItems = (params: {
       const qualificationRate = leadTracking.qualifiedLast7 > 0 ? (leadTracking.qualifiedLast7 / contactsLast7) * 100 : 0;
       const costPerQualified = leadTracking.qualifiedLast7 > 0 ? spendLast7 / leadTracking.qualifiedLast7 : null;
 
-      if (spendLast7 > campaignTargets.minSpendForEvaluation && leadTracking.qualifiedLast7 === 0) {
+      if (spendLast7 > minSpendForEvaluation && leadTracking.qualifiedLast7 === 0) {
         items.push({
           id: `qual-zero-${campaignIdValue}`,
           ruleId: 'qualification.zero',
@@ -379,7 +404,7 @@ export const buildCampaignItems = (params: {
       }
     }
 
-    if (spendLast7 >= campaignTargets.minSpendForEvaluation && contactsLast7 > 0) {
+    if (spendLast7 >= minSpendForEvaluation && contactsLast7 > 0) {
       actionableCampaigns.push({
         campaignId: campaignIdValue,
         campaignName,

@@ -82,6 +82,31 @@ export const buildOptimizationCenter = async (params: {
   const primaryTheme = primaryCampaignName ? inferOptimizationTheme(primaryCampaignName) : inferOptimizationTheme('');
   const targets = getOptimizationTargetsForTheme(primaryTheme.themeKey);
 
+  const adsetBudgetsByCampaign = new Map<string, { dailyBudget: number; lifetimeBudget: number }>();
+  try {
+    const adsetBudgetsAgg = await pool.query(
+      `SELECT
+        a.campaign_id,
+        COALESCE(SUM(a.daily_budget), 0) as daily_budget,
+        COALESCE(SUM(a.lifetime_budget), 0) as lifetime_budget
+      FROM adsets a
+      JOIN campaigns c ON c.id = a.campaign_id
+      WHERE c."clientId" = $1
+        AND ($2::text IS NULL OR a.campaign_id = $2)
+      GROUP BY a.campaign_id`,
+      [clientId, campaignId || null]
+    );
+
+    for (const row of adsetBudgetsAgg.rows) {
+      adsetBudgetsByCampaign.set(String(row.campaign_id), {
+        dailyBudget: safeFloat(row.daily_budget),
+        lifetimeBudget: safeFloat(row.lifetime_budget),
+      });
+    }
+  } catch (_error) {
+    // Non-fatal: budget mode discovery falls back to campaign-level budget only.
+  }
+
   const leadTrackingAgg = await pool.query(
     `SELECT
       lt.campaign_id,
@@ -345,6 +370,7 @@ export const buildOptimizationCenter = async (params: {
       leadTrackingByCampaign,
       reasonsByCampaign,
       primaryTargets: targets,
+      adsetBudgetsByCampaign,
     }),
     ...buildCreativeItems({
       enrichedCreatives,

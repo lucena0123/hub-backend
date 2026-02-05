@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import type { CacheService } from '../../services/cache-service';
 import type { MetaAdsService } from '../../services/meta-ads-service';
 import type { MetaSyncInput } from '../../validators/meta-sync';
+import { ensureMetaAdSetsImported } from './adset-map';
 import { buildMetaCampaignMap, ensureMetaCampaignsImported } from './campaign-map';
 import type { IsoDateRange } from './utils';
 import type { MetaSyncProgress } from './types';
@@ -57,6 +58,15 @@ export const runMetaSyncWork = async (params: {
   }
 
   const campaignMap = await buildMetaCampaignMap(pool);
+
+  if (body.clientId) {
+    await ensureMetaAdSetsImported({
+      pool,
+      metaService,
+      campaignMap,
+      log,
+    });
+  }
 
   const ctx = {
     pool,
@@ -123,4 +133,3 @@ export const runMetaSyncWork = async (params: {
     unmapped,
   };
 };
-

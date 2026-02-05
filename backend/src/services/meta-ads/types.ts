@@ -41,6 +41,18 @@ export type MetaCampaign = {
   updated_time?: string;
 };
 
+export type MetaAdSet = {
+  id: string;
+  name?: string;
+  campaign_id?: string;
+  status?: string;
+  effective_status?: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  created_time?: string;
+  updated_time?: string;
+};
+
 export type MetaAdSetInsightRow = {
   campaign_id: string;
   adset_id: string;
@@ -145,4 +157,3 @@ export type MetaGraphObjectError = {
 };
 
 export type MetaGraphIdMapResponse<T> = Record<string, T | MetaGraphObjectError>;
-

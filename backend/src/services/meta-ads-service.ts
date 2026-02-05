@@ -7,6 +7,7 @@ export type {
   MetaInsightRow,
   MetaAdAccount,
   MetaCampaign,
+  MetaAdSet,
   MetaAdSetInsightRow,
   MetaAdInsightRow,
   MetaAdCreative,
@@ -14,4 +15,3 @@ export type {
 } from './meta-ads/types';
 
 export { MetaAdsService } from './meta-ads/service';
-
