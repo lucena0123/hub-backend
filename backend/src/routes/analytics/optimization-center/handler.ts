@@ -201,6 +201,8 @@ export const buildOptimizationCenter = async (params: {
         m.creative_snapshot_id,
         MAX(m.creative_id) as creative_id,
         array_agg(DISTINCT c.name) as campaigns,
+        array_agg(DISTINCT c.objective) FILTER (WHERE c.objective IS NOT NULL) as objectives,
+        array_agg(DISTINCT m.ad_name) FILTER (WHERE m.ad_name IS NOT NULL) as ad_names,
         COUNT(DISTINCT m.ad_id)::int as ads_count,
         COALESCE(SUM(m.spend), 0) as total_spend,
         COALESCE(SUM(m.messaging_conversations), 0)::int as total_conversations,
@@ -223,6 +225,8 @@ export const buildOptimizationCenter = async (params: {
       a.creative_snapshot_id,
       a.creative_id,
       a.campaigns,
+      a.objectives,
+      a.ad_names,
       a.ads_count,
       a.total_spend,
       a.total_conversations,
@@ -259,6 +263,8 @@ export const buildOptimizationCenter = async (params: {
         m.creative_snapshot_id,
         MAX(m.creative_id) as creative_id,
         array_agg(DISTINCT c.name) as campaigns,
+        array_agg(DISTINCT c.objective) FILTER (WHERE c.objective IS NOT NULL) as objectives,
+        array_agg(DISTINCT m.ad_name) FILTER (WHERE m.ad_name IS NOT NULL) as ad_names,
         COUNT(DISTINCT m.ad_id)::int as ads_count,
         COALESCE(SUM(m.spend), 0) as total_spend,
         COALESCE(SUM(m.messaging_conversations), 0)::int as total_conversations,
@@ -281,6 +287,8 @@ export const buildOptimizationCenter = async (params: {
       a.creative_snapshot_id,
       a.creative_id,
       a.campaigns,
+      a.objectives,
+      a.ad_names,
       a.ads_count,
       a.total_spend,
       a.total_conversations,
@@ -373,6 +381,8 @@ export const buildOptimizationCenter = async (params: {
       copyInsightsStatus: row.copy_insights_status || null,
       copyInsightsUpdatedAt: row.copy_insights_updated_at || null,
       campaigns: toStringArray(row.campaigns),
+      objectives: toStringArray(row.objectives),
+      adNames: toStringArray(row.ad_names),
       adsCount: safeInt(row.ads_count),
       metrics: {
         totalSpend,
@@ -439,6 +449,7 @@ export const buildOptimizationCenter = async (params: {
       spend: c.metrics.totalSpend,
       conversations: c.metrics.totalConversations,
       cpl: c.metrics.cpl ?? null,
+      adNames: c.adNames,
     })),
     losers: enrichedCreatives
       .filter((c: any) => c.status === 'loser')
@@ -453,6 +464,7 @@ export const buildOptimizationCenter = async (params: {
         spend: c.metrics.totalSpend,
         conversations: c.metrics.totalConversations,
         cpl: c.metrics.cpl ?? null,
+        adNames: c.adNames,
       })),
     fatigued: enrichedCreatives
       .filter((c: any) => c.status === 'fatigued')
@@ -467,6 +479,7 @@ export const buildOptimizationCenter = async (params: {
         spend: c.metrics.totalSpend,
         conversations: c.metrics.totalConversations,
         cpl: c.metrics.cpl ?? null,
+        adNames: c.adNames,
       })),
   };
 

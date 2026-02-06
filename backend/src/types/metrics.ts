@@ -139,6 +139,7 @@ export interface PerformanceSummary {
   budgetUsed: number;
   budgetRemaining: number;
   budgetUtilization: number; // %
+  budgetMode?: 'abo' | 'cbo' | 'mixed' | 'unknown';
 
   // Trends
   dailyMetrics: DailyMetric[];

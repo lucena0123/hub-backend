@@ -35,7 +35,7 @@ export const creativeCopyCtaMismatchRule: OptimizationRuleModule = {
         title: 'CTA pouco compatível com conversa',
         description: `CTA atual: ${c.ctaType}. Para campanhas de conversa, teste ${preferredCtas.join(' / ')}.`,
         theme: toThemeInfo(c.creativeTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline ?? 'Criativo' },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline || 'Criativo' },
         metrics: { spend: c.spend, conversations: c.conversations, cpl: (c.creative as any).metrics?.cpl ?? null },
         thresholds: { preferredCtaTypes: preferredCtas.join(',') },
       });

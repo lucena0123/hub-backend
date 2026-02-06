@@ -33,7 +33,7 @@ export const creativeCopyMissingHeadlineRule: OptimizationRuleModule = {
         description:
           'O snapshot não possui headline (título). Preencha um título curto e claro para aumentar clique e facilitar testes.',
         theme: toThemeInfo(c.creativeTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: 'Criativo' },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || 'Criativo' },
         metrics: { spend: c.spend, conversations: c.conversations },
         thresholds: {
           copyHeadlineMinChars: c.creativeTargets.copyHeadlineMinChars,

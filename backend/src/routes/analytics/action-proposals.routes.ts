@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 
-import { requireAuth, requireRoles } from '../../middleware/rbac';
+import { requireAuth } from '../../middleware/rbac';
 import { optionalAuth } from '../../middleware/auth';
 import { MetaAdsService } from '../../services/meta-ads-service';
 import { buildOptimizationCenter } from './optimization-center/handler';

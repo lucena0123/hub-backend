@@ -37,7 +37,7 @@ export const creativeCopyThemeNotMentionedRule: OptimizationRuleModule = {
         title: 'Copy não cita o tema',
         description: `Tema detectado: ${c.creativeTheme.themeName}, mas a copy não contém palavras-chave claras do tema. Sugestão: explicitar o assunto para aumentar qualificação.`,
         theme: toThemeInfo(c.creativeTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline ?? 'Criativo' },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline || 'Criativo' },
         metrics: { spend: c.spend, conversations: c.conversations },
       });
     }

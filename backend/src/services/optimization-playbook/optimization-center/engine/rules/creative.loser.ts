@@ -39,7 +39,7 @@ export const creativeLoserRule: OptimizationRuleModule = {
         title: 'Criativo com baixo desempenho',
         description: `${formatCurrency(spend)} de investimento com ${conv} conversas. Recomenda-se pausar/substituir e criar novas variações (copy/CTA/gancho).`,
         theme: toThemeInfo(ctx.primaryTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline },
         metrics: { spend, conversations: conv, cpl: c.metrics.cpl ?? null },
         thresholds: {
           creativeMinSpendLoser: ctx.targets.creativeMinSpendLoser,

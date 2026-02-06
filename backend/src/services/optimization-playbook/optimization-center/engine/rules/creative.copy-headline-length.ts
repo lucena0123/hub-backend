@@ -42,7 +42,7 @@ export const creativeCopyHeadlineLengthRule: OptimizationRuleModule = {
           title: 'Título fora do recomendado',
           description: `Headline ${reason}. Ajuste para ficar entre ${c.creativeTargets.copyHeadlineMinChars} e ${c.creativeTargets.copyHeadlineMaxChars} caracteres.`,
           theme: toThemeInfo(c.creativeTheme),
-          entity: { type: 'creative', id: c.snapshotId, name: headline },
+          entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || headline },
           metrics: { spend: c.spend, conversations: c.conversations },
           thresholds: {
             copyHeadlineMinChars: c.creativeTargets.copyHeadlineMinChars,

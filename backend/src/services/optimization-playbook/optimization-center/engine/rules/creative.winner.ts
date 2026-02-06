@@ -33,7 +33,7 @@ export const creativeWinnerRule: OptimizationRuleModule = {
         description:
           'Este criativo está entre os melhores do período. Use como referência para novas variações e para sustentar escala sem fadiga.',
         theme: toThemeInfo(ctx.primaryTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline },
         metrics: {
           spend: c.metrics.totalSpend,
           conversations: c.metrics.totalConversations,

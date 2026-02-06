@@ -41,7 +41,7 @@ export const ensureMetaCampaignsImported = async (params: {
 
     for (const camp of campaigns) {
       const rowPh: string[] = [];
-      for (let i = 0; i < 7; i++) rowPh.push(`$${pIndex++}`);
+      for (let i = 0; i < 8; i++) rowPh.push(`$${pIndex++}`);
       placeholders.push(`(${rowPh.join(', ')}, NOW())`);
 
       values.push(
@@ -51,19 +51,21 @@ export const ensureMetaCampaignsImported = async (params: {
         camp.name, // name
         normalizeStatus(camp.status), // status
         clientId, // clientId
-        resolveBudget(camp) // budget (daily/lifetime, cents -> moeda)
+        resolveBudget(camp), // budget (daily/lifetime, cents -> moeda)
+        camp.objective || null // objective
       );
     }
 
     if (placeholders.length === 0) return;
 
     await pool.query(
-      `INSERT INTO campaigns (id, "externalId", platform, name, status, "clientId", budget, "updatedAt")
+      `INSERT INTO campaigns (id, "externalId", platform, name, status, "clientId", budget, objective, "updatedAt")
        VALUES ${placeholders.join(', ')}
        ON CONFLICT ("externalId") DO UPDATE SET
          name = EXCLUDED.name,
          status = EXCLUDED.status,
          budget = CASE WHEN EXCLUDED.budget > 0 THEN EXCLUDED.budget ELSE campaigns.budget END,
+         objective = COALESCE(EXCLUDED.objective, campaigns.objective),
          "updatedAt" = NOW()`,
       values
     );

@@ -38,7 +38,7 @@ export const creativeCopyComplianceRiskRule: OptimizationRuleModule = {
         title: 'Risco de promessa (copy)',
         description: `Detectado termo de promessa absoluta (“${matched}”). Ajuste a copy para evitar promessas e reduzir risco de reprovação.`,
         theme: toThemeInfo(c.creativeTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline ?? 'Criativo' },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline || 'Criativo' },
         metrics: { spend: c.spend, conversations: c.conversations },
         thresholds: { prohibitedPhrase: matched },
       });

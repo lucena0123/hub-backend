@@ -166,6 +166,31 @@ export const getClientPerformanceSummary = async (
     });
   });
 
+
+  const adsetBudgetsByCampaign = new Map<string, { dailyBudget: number; lifetimeBudget: number }>();
+  try {
+    const adsetBudgetsAgg = await pool.query(
+      `SELECT
+        a.campaign_id,
+        COALESCE(SUM(a.daily_budget), 0) as daily_budget,
+        COALESCE(SUM(a.lifetime_budget), 0) as lifetime_budget
+      FROM adsets a
+      JOIN campaigns c ON c.id = a.campaign_id
+      WHERE c."clientId" = $1
+      GROUP BY a.campaign_id`,
+      [clientId]
+    );
+
+    for (const row of adsetBudgetsAgg.rows) {
+      adsetBudgetsByCampaign.set(String(row.campaign_id), {
+        dailyBudget: parseFloat(row.daily_budget) || 0,
+        lifetimeBudget: parseFloat(row.lifetime_budget) || 0,
+      });
+    }
+  } catch (error) {
+    // Non-fatal, assume CBO if missing table or error
+  }
+
   const dailyResult = await pool.query(
     `SELECT
       cm.campaign_id as "campaignId",
@@ -265,6 +290,23 @@ export const getClientPerformanceSummary = async (
     const budgetRemaining = budget > 0 ? budget - budgetUsed : 0;
     const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
 
+    const adsetBudgets = adsetBudgetsByCampaign.get(campaign.id);
+    const adsetDailyBudget = adsetBudgets?.dailyBudget || 0;
+    const adsetLifetimeBudget = adsetBudgets?.lifetimeBudget || 0;
+
+    const hasCampaignBudget = budget > 0;
+    const hasAdsetBudget = adsetDailyBudget > 0 || adsetLifetimeBudget > 0;
+
+    let budgetMode: 'abo' | 'cbo' | 'mixed' | 'unknown' = 'unknown';
+
+    if (hasCampaignBudget && hasAdsetBudget) {
+      budgetMode = 'mixed';
+    } else if (hasCampaignBudget) {
+      budgetMode = 'cbo';
+    } else if (hasAdsetBudget) {
+      budgetMode = 'abo';
+    }
+
     const dailyMetrics = dailyByCampaign.get(campaign.id) ?? [];
 
     const status = determinePerformanceStatus({
@@ -304,6 +346,7 @@ export const getClientPerformanceSummary = async (
       budgetUsed,
       budgetRemaining,
       budgetUtilization: Number(budgetUtilization.toFixed(2)),
+      budgetMode,
       dailyMetrics,
       status,
     };

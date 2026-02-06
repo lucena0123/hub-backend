@@ -34,7 +34,7 @@ export const creativeFatiguedRule: OptimizationRuleModule = {
         description:
           'O criativo perdeu desempenho nos últimos 7 dias. Ação: manter o ângulo vencedor e testar novas variações de título/primeiro segundo/CTA.',
         theme: toThemeInfo(ctx.primaryTheme),
-        entity: { type: 'creative', id: c.snapshotId, name: c.headline },
+        entity: { type: 'creative', id: c.snapshotId, name: c.adNames?.[0] || c.headline },
         metrics: {
           recentConversations: c.recent.conversations,
           previousConversations: c.previous.conversations,

@@ -54,6 +54,26 @@ export const getPerformanceSummary = async (
   );
   const rankings = rankingsResult.rows[0] || {};
 
+  let adsetDailyBudget = 0;
+  let adsetLifetimeBudget = 0;
+
+  try {
+    const adsetBudgetsResult = await pool.query(
+      `SELECT
+        COALESCE(SUM(daily_budget), 0) as daily_budget,
+        COALESCE(SUM(lifetime_budget), 0) as lifetime_budget
+       FROM adsets
+       WHERE campaign_id = $1`,
+      [campaignId]
+    );
+
+    const adsetRow = adsetBudgetsResult.rows[0] || {};
+    adsetDailyBudget = parseFloat(adsetRow.daily_budget) || 0;
+    adsetLifetimeBudget = parseFloat(adsetRow.lifetime_budget) || 0;
+  } catch (_error) {
+    // Non-fatal
+  }
+
   const metrics = metricsResult.rows[0];
   const totalImpressions = parseInt(metrics.total_impressions) || 0;
   const totalClicks = parseInt(metrics.total_clicks) || 0;
@@ -81,6 +101,19 @@ export const getPerformanceSummary = async (
   const budgetUsed = totalSpend;
   const budgetRemaining = budget > 0 ? budget - budgetUsed : 0;
   const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
+
+  const hasCampaignBudget = budget > 0;
+  const hasAdsetBudget = adsetDailyBudget > 0 || adsetLifetimeBudget > 0;
+
+  let budgetMode: 'abo' | 'cbo' | 'mixed' | 'unknown' = 'unknown';
+
+  if (hasCampaignBudget && hasAdsetBudget) {
+    budgetMode = 'mixed';
+  } else if (hasCampaignBudget) {
+    budgetMode = 'cbo';
+  } else if (hasAdsetBudget) {
+    budgetMode = 'abo';
+  }
 
   const dailyMetrics = await getCampaignMetrics(pool, campaignId, query);
 
@@ -124,6 +157,7 @@ export const getPerformanceSummary = async (
     budgetUsed,
     budgetRemaining,
     budgetUtilization: Number(budgetUtilization.toFixed(2)),
+    budgetMode,
     dailyMetrics,
     status,
   };

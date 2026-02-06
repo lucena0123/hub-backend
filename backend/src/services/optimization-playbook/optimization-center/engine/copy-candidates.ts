@@ -15,6 +15,8 @@ export type CopyCandidate = {
   snapshotId: string;
   creative: any;
   campaignName: string;
+  objectives: string[];
+  adNames: string[];
   creativeTheme: OptimizationThemeMatch;
   creativeTargets: OptimizationThemeTargets;
   spend: number;
@@ -44,6 +46,8 @@ export const getImportantCopyCandidates = (ctx: OptimizationRuleContext): CopyCa
   for (const creative of copyCandidates as any[]) {
     const snapshotId = String(creative.snapshotId);
     const campaignName = Array.isArray(creative.campaigns) && creative.campaigns.length > 0 ? String(creative.campaigns[0] || '') : '';
+    const objectives = Array.isArray(creative.objectives) ? creative.objectives.map(String) : [];
+    const adNames = Array.isArray(creative.adNames) ? creative.adNames.map(String) : [];
     const creativeTheme = campaignName ? inferOptimizationTheme(campaignName) : primaryTheme;
     const creativeTargets = getOptimizationTargetsForTheme(creativeTheme.themeKey);
 
@@ -70,6 +74,8 @@ export const getImportantCopyCandidates = (ctx: OptimizationRuleContext): CopyCa
       snapshotId,
       creative,
       campaignName,
+      objectives,
+      adNames,
       creativeTheme,
       creativeTargets,
       spend,
