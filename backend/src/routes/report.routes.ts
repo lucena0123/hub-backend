@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { validateReportGenerate, validateWeeklyReportGenerate } from '../validators/report';
 
 const reportRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
+  const { prisma } = fastify;
   const { reports: reportGenerator } = fastify.services;
 
   // Generate monthly report for a client
@@ -18,8 +18,11 @@ const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { month, year } = validation.data!;
 
-      const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [clientId]);
-      if (clientCheck.rows.length === 0) {
+      const client = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { id: true }
+      });
+      if (!client) {
         reply.status(404);
         return { error: 'Client not found' };
       }
@@ -51,8 +54,11 @@ const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { startDate, endDate } = validation.data!;
 
-      const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [clientId]);
-      if (clientCheck.rows.length === 0) {
+      const client = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { id: true }
+      });
+      if (!client) {
         reply.status(404);
         return { error: 'Client not found' };
       }

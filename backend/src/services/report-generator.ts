@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,7 +8,6 @@ import { toIsoDateUtc } from '../utils/date';
 import { generateClientReportContent, generateClientWeeklyReportContent } from './report-analysis';
 import { getClientLeadFunnelSummary } from './reports/lead-funnel-summary';
 import { generateReportPdf } from './reports/pdf';
-import { mapReportRow } from './reports/report-row';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -16,10 +15,9 @@ const MONTH_NAMES = [
 ];
 
 export class ReportGenerator {
-  private metricsService: MetricsService;
 
-  constructor(private pool: Pool) {
-    this.metricsService = new MetricsService(pool);
+
+  constructor(private prisma: PrismaClient, private metricsService: MetricsService) {
   }
 
   async generateMonthlyReport(
@@ -40,7 +38,7 @@ export class ReportGenerator {
     );
 
     const leadFunnel = await getClientLeadFunnelSummary({
-      pool: this.pool,
+      prisma: this.prisma,
       clientId,
       startDate: startDateStr,
       endDate: endDateStr,
@@ -64,7 +62,7 @@ export class ReportGenerator {
       fs.mkdirSync(reportsDir, { recursive: true });
     }
 
-    // Unique filename per generated report to avoid overwriting PDFs for the same period.
+    // Unique filename per generated generated report to avoid overwriting PDFs for the same period.
     const fileName = `${clientId}_${year}-${String(month).padStart(2, '0')}_${reportId}.pdf`;
     const filePath = path.join(reportsDir, fileName);
 
@@ -72,27 +70,47 @@ export class ReportGenerator {
 
     const fileSize = fs.statSync(filePath).size;
 
-    const result = await this.pool.query(
-      `INSERT INTO monthly_reports
-       (id, client_id, report_type, period_start, period_end, title, summary_data,
-       file_path, file_size, status, generated_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), NOW())
-       RETURNING *`,
-      [
-        reportId,
+    const report = await this.prisma.monthlyReport.create({
+      data: {
+        id: reportId,
         clientId,
-        'monthly',
-        startDateStr,
-        endDateStr,
+        reportType: 'monthly',
+        periodStart: new Date(startDateStr),
+        periodEnd: new Date(endDateStr),
         title,
-        JSON.stringify(summaryData),
+        summaryData: summaryData as any, // Cast to any to avoid strict JSON typing issues if types mismatch slightly
         filePath,
         fileSize,
-        'generated',
-      ]
-    );
+        status: 'generated',
+        generatedAt: new Date(),
+      }
+    });
 
-    return mapReportRow(result.rows[0]);
+    // We need to map it back to MonthlyReport type expected by frontend/controller
+    // The Prisma result has camelCase keys which matches our mapReportRow internal logic mostly, 
+    // but mapReportRow expects snake_case from PG driver.
+    // Instead of using mapReportRow, we should constructing the object directly or make a compatible mapper.
+    // Let's adapt mapReportRow or just return a compatible object.
+
+    return {
+      id: report.id,
+      clientId: report.clientId,
+      reportType: report.reportType as any,
+      periodStart: report.periodStart.toISOString(),
+      periodEnd: report.periodEnd.toISOString(),
+      title: report.title,
+      summaryData: report.summaryData as any,
+      filePath: report.filePath || undefined,
+      fileSize: report.fileSize || undefined,
+      pdfUrl: report.pdfUrl || undefined,
+      generatedBy: report.generatedBy || undefined,
+      generatedAt: report.generatedAt.toISOString(),
+      version: report.version || 1,
+      status: report.status as any,
+      metadata: report.metadata,
+      createdAt: report.createdAt.toISOString(),
+      updatedAt: report.updatedAt.toISOString(),
+    };
   }
 
   async generateWeeklyReport(clientId: string, startDate: string, endDate: string): Promise<MonthlyReport> {
@@ -102,7 +120,7 @@ export class ReportGenerator {
     });
 
     const leadFunnel = await getClientLeadFunnelSummary({
-      pool: this.pool,
+      prisma: this.prisma,
       clientId,
       startDate,
       endDate,
@@ -138,50 +156,97 @@ export class ReportGenerator {
 
     const fileSize = fs.statSync(filePath).size;
 
-    const result = await this.pool.query(
-      `INSERT INTO monthly_reports
-       (id, client_id, report_type, period_start, period_end, title, summary_data,
-       file_path, file_size, status, generated_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), NOW())
-       RETURNING *`,
-      [
-        reportId,
+    const report = await this.prisma.monthlyReport.create({
+      data: {
+        id: reportId,
         clientId,
-        'weekly',
-        startDate,
-        endDate,
+        reportType: 'weekly',
+        periodStart: new Date(startDate),
+        periodEnd: new Date(endDate),
         title,
-        JSON.stringify(summaryData),
+        summaryData: summaryData as any,
         filePath,
         fileSize,
-        'generated',
-      ]
-    );
+        status: 'generated',
+        generatedAt: new Date(),
+      }
+    });
 
-    return mapReportRow(result.rows[0]);
+    return {
+      id: report.id,
+      clientId: report.clientId,
+      reportType: report.reportType as any,
+      periodStart: report.periodStart.toISOString(),
+      periodEnd: report.periodEnd.toISOString(),
+      title: report.title,
+      summaryData: report.summaryData as any,
+      filePath: report.filePath || undefined,
+      fileSize: report.fileSize || undefined,
+      pdfUrl: report.pdfUrl || undefined,
+      generatedBy: report.generatedBy || undefined,
+      generatedAt: report.generatedAt.toISOString(),
+      version: report.version || 1,
+      status: report.status as any,
+      metadata: report.metadata,
+      createdAt: report.createdAt.toISOString(),
+      updatedAt: report.updatedAt.toISOString(),
+    };
   }
 
   async getReportHistory(clientId: string): Promise<MonthlyReport[]> {
-    const result = await this.pool.query(
-      `SELECT * FROM monthly_reports
-       WHERE client_id = $1
-       ORDER BY period_start DESC`,
-      [clientId]
-    );
+    const reports = await this.prisma.monthlyReport.findMany({
+      where: { clientId },
+      orderBy: { periodStart: 'desc' }
+    });
 
-    return result.rows.map((row) => mapReportRow(row));
+    return reports.map(report => ({
+      id: report.id,
+      clientId: report.clientId,
+      reportType: report.reportType as any,
+      periodStart: report.periodStart.toISOString(), // Assuming these are Date objects from Prisma
+      periodEnd: report.periodEnd.toISOString(),
+      title: report.title,
+      summaryData: report.summaryData as any,
+      filePath: report.filePath || undefined,
+      fileSize: report.fileSize || undefined,
+      pdfUrl: report.pdfUrl || undefined,
+      generatedBy: report.generatedBy || undefined,
+      generatedAt: report.generatedAt.toISOString(),
+      version: report.version || 1,
+      status: report.status as any,
+      metadata: report.metadata,
+      createdAt: report.createdAt.toISOString(),
+      updatedAt: report.updatedAt.toISOString(),
+    }));
   }
 
   async getReportById(reportId: string): Promise<MonthlyReport | null> {
-    const result = await this.pool.query(
-      'SELECT * FROM monthly_reports WHERE id = $1',
-      [reportId]
-    );
+    const report = await this.prisma.monthlyReport.findUnique({
+      where: { id: reportId }
+    });
 
-    if (result.rows.length === 0) {
+    if (!report) {
       return null;
     }
 
-    return mapReportRow(result.rows[0]);
+    return {
+      id: report.id,
+      clientId: report.clientId,
+      reportType: report.reportType as any,
+      periodStart: report.periodStart.toISOString(),
+      periodEnd: report.periodEnd.toISOString(),
+      title: report.title,
+      summaryData: report.summaryData as any,
+      filePath: report.filePath || undefined,
+      fileSize: report.fileSize || undefined,
+      pdfUrl: report.pdfUrl || undefined,
+      generatedBy: report.generatedBy || undefined,
+      generatedAt: report.generatedAt.toISOString(),
+      version: report.version || 1,
+      status: report.status as any,
+      metadata: report.metadata,
+      createdAt: report.createdAt.toISOString(),
+      updatedAt: report.updatedAt.toISOString(),
+    };
   }
 }

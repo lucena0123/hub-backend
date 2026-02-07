@@ -3,7 +3,7 @@ import { messagingConversationTypes, parseNumber, sumActions } from '../insights
 import type { MetaSyncContext } from '../types';
 
 export const syncBreakdownsStage = async (ctx: MetaSyncContext) => {
-  const { dateChunks, metaService, campaignMap, pool, progress, log } = ctx;
+  const { dateChunks, metaService, campaignMap, progress, log } = ctx;
 
   const syncDelay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,12 +71,12 @@ export const syncBreakdownsStage = async (ctx: MetaSyncContext) => {
             const totalImpressions = segments.reduce((s: number, seg: any) => s + seg.impressions, 0);
             const totalConversions = segments.reduce((s: number, seg: any) => s + (seg.messaging_conversations || 0), 0);
 
-            await pool.query(
+            await ctx.prisma.$executeRawUnsafe(
               `INSERT INTO metrics_breakdowns (id, campaign_id, date, breakdown_type, breakdown_data, total_spend, total_impressions, total_conversions, platform)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'meta')
                ON CONFLICT (campaign_id, date, breakdown_type, platform)
                DO UPDATE SET breakdown_data = $5, total_spend = $6, total_impressions = $7, total_conversions = $8`,
-              [uuidv4(), cId, date, bd.type, JSON.stringify(segments), totalSpend, totalImpressions, totalConversions]
+              uuidv4(), cId, date, bd.type, JSON.stringify(segments), totalSpend, totalImpressions, totalConversions
             );
           }
 

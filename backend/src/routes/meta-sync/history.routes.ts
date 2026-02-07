@@ -1,8 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 
 const metaSyncHistoryRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
   const { syncHistory: syncHistoryService } = fastify.services;
+  const prisma = (fastify as any).prisma;
 
   // Get sync history
   fastify.get('/api/metrics/sync/history', async (request, reply) => {
@@ -48,34 +48,15 @@ const metaSyncHistoryRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const { id } = request.params as { id: string };
 
-      const result = await pool.query(
-        `SELECT
-           id, platform, account_id as "accountId",
-           date_range_start as "dateRangeStart",
-           date_range_end as "dateRangeEnd",
-           status, total_insights as "totalInsights",
-           mapped_campaigns as "mappedCampaigns",
-           updated_metrics as "updatedMetrics",
-           unmapped_campaigns as "unmappedCampaigns",
-           duration_ms as "durationMs",
-           started_at as "startedAt",
-           completed_at as "completedAt",
-           error_message as "errorMessage",
-           error_stack as "errorStack",
-           dry_run as "dryRun",
-           triggered_by as "triggeredBy",
-           metadata
-          FROM sync_history
-          WHERE id = $1`,
-        [id]
-      );
+      const row = await prisma.syncHistory.findUnique({
+        where: { id }
+      });
 
-      if (result.rows.length === 0) {
+      if (!row) {
         reply.status(404);
         return { error: 'Sync record not found' };
       }
 
-      const row = result.rows[0];
       const state = row.completedAt ? row.status : 'running';
       return { ...row, state };
     } catch (error) {
@@ -90,4 +71,3 @@ const metaSyncHistoryRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default metaSyncHistoryRoutes;
-

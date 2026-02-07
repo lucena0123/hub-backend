@@ -37,7 +37,7 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
   const campaignStatus = String(row.campaign_status || '');
 
   const theme = inferOptimizationTheme(campaignName);
-  const targets = getOptimizationTargetsForTheme(theme.themeKey);
+  const targets = getOptimizationTargetsForTheme(theme.themeKey, ctx.clientTargetOverrides);
 
   const spendTotal = safeFloat(row.spend_total);
   const impressionsTotal = safeInt(row.impressions_total);

@@ -1,17 +1,19 @@
-import type { Pool } from 'pg';
+
 
 import { median, shiftIsoDateUtc, toIsoDateUtc } from '../utils';
 
-import { fetchAdsetNames, fetchCreativeAggRows } from './queries';
+
 import { scoreCreatives } from './scoring';
 import { mapCreativeRows } from './transform';
 
+import { AnalyticsService } from '../../../services/analytics/analytics-service';
+
 export const getCreativeLibraryResponse = async (params: {
-  pool: Pool;
+  analytics: AnalyticsService;
   clientId: string;
   query: { period?: string; startDate?: string; endDate?: string; campaignId?: string };
 }) => {
-  const { pool, clientId, query } = params;
+  const { analytics, clientId, query } = params;
   const { period = '30d', startDate, endDate, campaignId } = query;
 
   const days =
@@ -32,16 +34,24 @@ export const getCreativeLibraryResponse = async (params: {
   const endMinus13 = shiftIsoDateUtc(end, -13);
 
   const campaignFilter = campaignId || null;
-  const adsetNameById = await fetchAdsetNames({ pool, clientId, start, end, campaignId: campaignFilter });
-  const rows = await fetchCreativeAggRows({
-    pool,
+
+
+  const adsetNameByIdMapPromise = analytics.getAdSetNames(clientId, start, end, campaignFilter);
+  const rowsPromise = analytics.getCreativeLibraryStats(
     clientId,
     start,
     end,
-    campaignId: campaignFilter,
     endMinus6,
     endMinus13,
-  });
+    campaignFilter
+  );
+
+  const [adsetRows, rows] = await Promise.all([adsetNameByIdMapPromise, rowsPromise]);
+
+  const adsetNameById = new Map<string, string | null>();
+  for (const row of adsetRows) {
+    adsetNameById.set(String(row.adset_id), row.adset_name || null);
+  }
 
   const creatives = mapCreativeRows({ rows, adsetNameById });
 

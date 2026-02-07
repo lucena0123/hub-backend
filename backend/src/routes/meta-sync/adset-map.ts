@@ -1,15 +1,14 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { v4 as uuidv4 } from 'uuid';
-import type { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import type { MetaAdsService } from '../../services/meta-ads-service';
 
 export const ensureMetaAdSetsImported = async (params: {
-  pool: Pool;
+  prisma: PrismaClient;
   metaService: MetaAdsService;
   campaignMap: Map<string, string>;
   log: FastifyBaseLogger;
 }) => {
-  const { pool, metaService, campaignMap, log } = params;
+  const { prisma, metaService, campaignMap, log } = params;
 
   try {
     const adsets = await metaService.fetchAdSets();
@@ -32,61 +31,47 @@ export const ensureMetaAdSetsImported = async (params: {
       return value;
     };
 
-    const values: any[] = [];
-    const placeholders: string[] = [];
-    let pIndex = 1;
     let mappedCount = 0;
 
-    for (const adset of adsets) {
-      const metaCampaignId = String(adset.campaign_id || '');
-      const campaignId = metaCampaignId ? campaignMap.get(metaCampaignId) : undefined;
-      if (!campaignId) continue;
+    await Promise.all(
+      adsets.map(async (adset) => {
+        const metaCampaignId = String(adset.campaign_id || '');
+        const campaignId = metaCampaignId ? campaignMap.get(metaCampaignId) : undefined;
+        if (!campaignId) return;
 
-      const rowPh: string[] = [];
-      for (let i = 0; i < 9; i++) rowPh.push(`$${pIndex++}`);
-      placeholders.push(`(${rowPh.join(', ')}, NOW(), NOW())`);
+        const adsetId = adset.id;
+        const name = adset.name || `AdSet ${adsetId}`;
+        const status = normalizeStatus(adset.status);
+        const effectiveStatus = adset.effective_status
+          ? String(adset.effective_status).trim().toLowerCase()
+          : null;
+        const dailyBudget = parseMetaBudget(adset.daily_budget);
+        const lifetimeBudget = parseMetaBudget(adset.lifetime_budget);
 
-      values.push(
-        uuidv4(), // id
-        campaignId, // campaign_id
-        adset.id, // adset_id (platform id)
-        adset.name || null, // adset_name
-        normalizeStatus(adset.status), // status
-        adset.effective_status ? String(adset.effective_status).trim().toLowerCase() : null, // effective_status
-        parseMetaBudget(adset.daily_budget), // daily_budget
-        parseMetaBudget(adset.lifetime_budget), // lifetime_budget
-        'meta' // platform
-      );
-
-      mappedCount++;
-    }
-
-    if (placeholders.length === 0) return;
-
-    await pool.query(
-      `INSERT INTO adsets (
-          id,
-          campaign_id,
-          adset_id,
-          adset_name,
-          status,
-          effective_status,
-          daily_budget,
-          lifetime_budget,
-          platform,
-          created_at,
-          updated_at
-        )
-       VALUES ${placeholders.join(', ')}
-       ON CONFLICT (adset_id, platform) DO UPDATE SET
-         campaign_id = EXCLUDED.campaign_id,
-         adset_name = EXCLUDED.adset_name,
-         status = EXCLUDED.status,
-         effective_status = EXCLUDED.effective_status,
-         daily_budget = CASE WHEN EXCLUDED.daily_budget > 0 THEN EXCLUDED.daily_budget ELSE adsets.daily_budget END,
-         lifetime_budget = CASE WHEN EXCLUDED.lifetime_budget > 0 THEN EXCLUDED.lifetime_budget ELSE adsets.lifetime_budget END,
-         updated_at = NOW()`,
-      values
+        await prisma.adSet.upsert({
+          where: { adsetId }, // Using unique adsetId
+          update: {
+            campaignId,
+            name,
+            status,
+            effectiveStatus,
+            dailyBudget: dailyBudget > 0 ? dailyBudget : undefined,
+            lifetimeBudget: lifetimeBudget > 0 ? lifetimeBudget : undefined,
+            updatedAt: new Date(),
+          },
+          create: {
+            adsetId,
+            campaignId,
+            platform: 'meta',
+            name,
+            status,
+            effectiveStatus,
+            dailyBudget,
+            lifetimeBudget,
+          },
+        });
+        mappedCount++;
+      })
     );
 
     log.info({ count: mappedCount }, 'Auto-imported adsets from Meta');
@@ -99,4 +84,3 @@ export const ensureMetaAdSetsImported = async (params: {
     log.error({ error }, 'Failed to auto-import adsets (non-fatal)');
   }
 };
-

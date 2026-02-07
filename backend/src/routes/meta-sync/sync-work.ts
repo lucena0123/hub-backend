@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import type { CacheService } from '../../services/cache-service';
 import type { MetaAdsService } from '../../services/meta-ads-service';
 import type { MetaSyncInput } from '../../validators/meta-sync';
@@ -14,29 +14,29 @@ import { syncCampaignMetricsStage } from './stages/campaign-metrics';
 
 export type MetaSyncWorkResult =
   | {
-      outcome: 'no_insights';
-      totalInsights: 0;
-      mappedTotal: 0;
-      updated: 0;
-      unmapped: string[];
-    }
+    outcome: 'no_insights';
+    totalInsights: 0;
+    mappedTotal: 0;
+    updated: 0;
+    unmapped: string[];
+  }
   | {
-      outcome: 'dry_run';
-      totalInsights: number;
-      mappedTotal: number;
-      updated: 0;
-      unmapped: string[];
-    }
+    outcome: 'dry_run';
+    totalInsights: number;
+    mappedTotal: number;
+    updated: 0;
+    unmapped: string[];
+  }
   | {
-      outcome: 'success';
-      totalInsights: number;
-      mappedTotal: number;
-      updated: number;
-      unmapped: string[];
-    };
+    outcome: 'success';
+    totalInsights: number;
+    mappedTotal: number;
+    updated: number;
+    unmapped: string[];
+  };
 
 export const runMetaSyncWork = async (params: {
-  pool: Pool;
+  prisma: PrismaClient;
   metaService: MetaAdsService;
   body: MetaSyncInput;
   dateChunks: IsoDateRange[];
@@ -46,22 +46,22 @@ export const runMetaSyncWork = async (params: {
   log: FastifyBaseLogger;
   progress: MetaSyncProgress;
 }): Promise<MetaSyncWorkResult> => {
-  const { pool, metaService, body, dateChunks, since, until, cacheService, log, progress } = params;
+  const { prisma, metaService, body, dateChunks, since, until, cacheService, log, progress } = params;
 
   if (body.clientId) {
     await ensureMetaCampaignsImported({
-      pool,
+      prisma,
       metaService,
       clientId: body.clientId,
       log,
     });
   }
 
-  const campaignMap = await buildMetaCampaignMap(pool);
+  const campaignMap = await buildMetaCampaignMap(prisma);
 
   if (body.clientId) {
     await ensureMetaAdSetsImported({
-      pool,
+      prisma,
       metaService,
       campaignMap,
       log,
@@ -69,7 +69,7 @@ export const runMetaSyncWork = async (params: {
   }
 
   const ctx = {
-    pool,
+    prisma,
     metaService,
     body,
     dateChunks,

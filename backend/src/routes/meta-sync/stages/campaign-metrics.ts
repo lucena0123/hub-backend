@@ -40,7 +40,7 @@ export type CampaignMetricsStageResult = {
   unmapped: Set<string>;
 };
 
-const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'pool'>, metrics: MappedCampaignMetric[]) => {
+const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'prisma'>, metrics: MappedCampaignMetric[]) => {
   if (metrics.length === 0) return 0;
 
   const batchSize = getBatchSize(25);
@@ -96,7 +96,7 @@ const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'pool'>, metrics
       );
     }
 
-    const result = await ctx.pool.query(
+    const result = await ctx.prisma.$executeRawUnsafe(
       `INSERT INTO campaign_metrics
        (id, campaign_id, date, impressions, clicks, spend, conversions, revenue, leads, ctr, cpc, cpl, cpa, roas, platform, messaging_conversations, messaging_first_reply, link_clicks, landing_page_views, reach, frequency, cpm, quality_ranking, engagement_rate_ranking, conversion_rate_ranking)
        VALUES ${placeholders.join(', ')}
@@ -123,10 +123,10 @@ const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'pool'>, metrics
          quality_ranking = EXCLUDED.quality_ranking,
          engagement_rate_ranking = EXCLUDED.engagement_rate_ranking,
          conversion_rate_ranking = EXCLUDED.conversion_rate_ranking`,
-      values
+      ...values
     );
 
-    totalUpdated += result.rowCount || batch.length;
+    totalUpdated += result; // $executeRawUnsafe returns number of affected rows
   }
 
   return totalUpdated;

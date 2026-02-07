@@ -2,15 +2,16 @@ import { FastifyPluginAsync } from 'fastify';
 import { buildOptimizationCenter } from './optimization-center/handler';
 
 const optimizationCenterRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
+
 
   fastify.get<{
     Params: { clientId: string };
     Querystring: { period?: string; startDate?: string; endDate?: string; campaignId?: string };
   }>('/api/clients/:clientId/optimization-center', async (request, reply) => {
     try {
+      const { analytics } = fastify.services;
       return await buildOptimizationCenter({
-        pool,
+        analytics,
         clientId: request.params.clientId,
         query: request.query,
       });

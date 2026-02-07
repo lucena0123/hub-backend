@@ -4,7 +4,7 @@ import { leadTypes, messagingConversationTypes, messagingReplyTypes, parseNumber
 import type { MetaSyncContext } from '../types';
 
 export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
-  const { dateChunks, metaService, campaignMap, pool, progress, log } = ctx;
+  const { dateChunks, metaService, campaignMap, progress, log } = ctx;
 
   await progress.setStage('adset', dateChunks.length, 'Sincronizando métricas de conjuntos de anúncios...');
   let totalAdsetInsights = 0;
@@ -80,7 +80,7 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
       }
 
       if (adsetPlaceholders.length > 0) {
-        await pool.query(
+        await ctx.prisma.$executeRawUnsafe(
           `INSERT INTO adset_metrics
            (id, campaign_id, adset_id, adset_name, date, impressions, reach, clicks, spend, conversions, leads, messaging_conversations, messaging_first_reply, ctr, cpc, cpl, cpm, frequency, quality_ranking, platform)
            VALUES ${adsetPlaceholders.join(', ')}
@@ -101,7 +101,7 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
              frequency = EXCLUDED.frequency,
              quality_ranking = EXCLUDED.quality_ranking,
              adset_name = EXCLUDED.adset_name`,
-          adsetValues
+          ...adsetValues
         );
       }
     }

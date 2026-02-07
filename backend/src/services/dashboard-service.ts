@@ -1,9 +1,4 @@
-/**
- * Dashboard Service
- * Aggregates data for the main dashboard overview
- */
-
-import { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import { PerformanceAlertService, PerformanceAlert } from './performance-alert-service';
 
 export type { PerformanceAlert };
@@ -48,7 +43,7 @@ export interface DashboardOverview {
 export class DashboardService {
   private alertService: PerformanceAlertService;
 
-  constructor(private pool: Pool) {
+  constructor(private prisma: PrismaClient, pool: any) { // Keep pool for alertService compatibility for now if it uses it, but logic here uses prisma
     this.alertService = new PerformanceAlertService(pool);
   }
 
@@ -71,60 +66,85 @@ export class DashboardService {
     };
   }
 
+  async getStats() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      totalClients,
+      activeClients,
+      runningProcesses,
+      pendingTasks,
+      completedTasksToday
+    ] = await Promise.all([
+      this.prisma.client.count(),
+      this.prisma.client.count({ where: { status: 'active' } }),
+      this.prisma.processInstance.count({ where: { status: 'running' } }),
+      this.prisma.task.count({ where: { status: 'pending' } }),
+      this.prisma.task.count({
+        where: {
+          status: 'completed',
+          completedAt: { gte: today }
+        }
+      })
+    ]);
+
+    return {
+      totalClients,
+      activeClients,
+      runningProcesses,
+      pendingTasks,
+      completedTasksToday,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   async getPerformanceAlerts(): Promise<PerformanceAlert[]> {
     return this.alertService.getPerformanceAlerts();
   }
 
   private async getClientsOverview() {
-    const result = await this.pool.query(`
-      SELECT
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'active') as active,
-        tier,
-        COUNT(*) as tier_count
-      FROM clients
-      GROUP BY tier
-    `);
+    const total = await this.prisma.client.count();
+    const active = await this.prisma.client.count({ where: { status: 'active' } });
+
+    // Group by tier
+    const byTierResult = await this.prisma.client.groupBy({
+      by: ['tier'],
+      _count: {
+        tier: true
+      }
+    });
 
     const byTier: Record<string, number> = {};
-    let total = 0;
-    let active = 0;
-
-    result.rows.forEach(row => {
-      byTier[row.tier] = parseInt(row.tier_count);
-      total = parseInt(row.total);
-      active = parseInt(row.active);
+    byTierResult.forEach((row: any) => {
+      byTier[row.tier] = row._count.tier;
     });
 
     return { total, active, byTier };
   }
 
   private async getCampaignsOverview() {
-    const result = await this.pool.query(`
-      SELECT
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'active') as active,
-        platform,
-        COUNT(*) as platform_count
-      FROM campaigns
-      GROUP BY platform
-    `);
+    const total = await this.prisma.campaign.count();
+    const active = await this.prisma.campaign.count({ where: { status: 'active' } });
+
+    const byPlatformResult = await this.prisma.campaign.groupBy({
+      by: ['platform'],
+      _count: {
+        platform: true
+      }
+    });
 
     const byPlatform: Record<string, number> = {};
-    let total = 0;
-    let active = 0;
-
-    result.rows.forEach(row => {
-      byPlatform[row.platform] = parseInt(row.platform_count);
-      total += parseInt(row.platform_count);
-      active += parseInt(row.active);
+    byPlatformResult.forEach((row: any) => {
+      byPlatform[row.platform] = row._count.platform;
     });
 
     return { total, active, byPlatform };
   }
 
   private async getPerformanceOverview() {
-    const result = await this.pool.query(`
+    // raw query is still efficient for complex aggregation across date ranges
+    const result = await this.prisma.$queryRaw<any[]>`
       SELECT
         COALESCE(SUM(spend), 0) as total_spend,
         COALESCE(SUM(revenue), 0) as total_revenue,
@@ -140,83 +160,103 @@ export class DashboardService {
         END as avg_cpl
       FROM campaign_metrics
       WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-    `);
+    `;
 
-    const row = result.rows[0];
+    // Prisma $queryRaw returns BigInt for totals usually, need to handle deserialization if needed, 
+    // or just map. Postgres sums are usually strings or numbers in JS driver. 
+    // Prisma returns array of objects.
+
+    const row = result[0];
     return {
-      totalSpend: parseFloat(row.total_spend) || 0,
-      totalRevenue: parseFloat(row.total_revenue) || 0,
-      totalConversions: parseInt(row.total_conversions) || 0,
-      totalLeads: parseInt(row.total_leads) || 0,
-      avgRoas: parseFloat(row.avg_roas) || 0,
-      avgCtr: parseFloat(row.avg_ctr) || 0,
-      avgCpl: parseFloat(row.avg_cpl) || 0,
+      totalSpend: Number(row.total_spend) || 0,
+      totalRevenue: Number(row.total_revenue) || 0,
+      totalConversions: Number(row.total_conversions) || 0,
+      totalLeads: Number(row.total_leads) || 0,
+      avgRoas: Number(row.avg_roas) || 0,
+      avgCtr: Number(row.avg_ctr) || 0,
+      avgCpl: Number(row.avg_cpl) || 0,
     };
   }
 
   private async getBPMNOverview() {
-    const result = await this.pool.query(`
-      SELECT
-        COUNT(*) FILTER (WHERE current_subprocess LIKE '4.%') as in_execution,
-        COUNT(*) FILTER (WHERE current_subprocess LIKE '5.%') as in_monitoring,
-        COALESCE(AVG(progress_percentage), 0) as avg_progress,
-        COUNT(*) FILTER (WHERE status = 'blocked') as blocked
-      FROM client_bpmn_progress
-    `);
+    // Prisma aggregations
+    // "4.%": startsWith '4.'
+    const inExecution = await this.prisma.clientBPMNProgress.count({
+      where: { currentSubprocess: { startsWith: '4.' } }
+    });
 
-    const row = result.rows[0];
+    const inMonitoring = await this.prisma.clientBPMNProgress.count({
+      where: { currentSubprocess: { startsWith: '5.' } }
+    });
+
+    const blocked = await this.prisma.clientBPMNProgress.count({
+      where: { status: 'blocked' }
+    });
+
+    const avgProgressResult = await this.prisma.clientBPMNProgress.aggregate({
+      _avg: {
+        progressPercentage: true
+      }
+    });
+
     return {
-      clientsInExecution: parseInt(row.in_execution) || 0,
-      clientsInMonitoring: parseInt(row.in_monitoring) || 0,
-      avgProgress: Math.round(parseFloat(row.avg_progress) || 0),
-      blockedClients: parseInt(row.blocked) || 0,
+      clientsInExecution: inExecution,
+      clientsInMonitoring: inMonitoring,
+      avgProgress: Math.round(avgProgressResult._avg.progressPercentage || 0),
+      blockedClients: blocked,
     };
   }
 
   private async getReportsOverview() {
-    const result = await this.pool.query(`
-      SELECT
-        COUNT(*) as total,
-        MAX(generated_at) as last_generated
-      FROM monthly_reports
-    `);
+    const total = await this.prisma.monthlyReport.count();
+    const last = await this.prisma.monthlyReport.findFirst({
+      orderBy: { generatedAt: 'desc' },
+      select: { generatedAt: true }
+    });
 
-    const row = result.rows[0];
     return {
-      totalGenerated: parseInt(row.total) || 0,
-      lastGenerated: row.last_generated || null,
+      totalGenerated: total,
+      lastGenerated: last?.generatedAt.toISOString() || null,
     };
   }
 
   private async getRecentActivity() {
     const activities: Array<{ type: string; description: string; timestamp: string }> = [];
 
-    const reports = await this.pool.query(`
-      SELECT title, generated_at, client_id
-      FROM monthly_reports
-      ORDER BY generated_at DESC
-      LIMIT 3
-    `);
-    reports.rows.forEach(r => {
+    const reports = await this.prisma.monthlyReport.findMany({
+      orderBy: { generatedAt: 'desc' },
+      take: 3,
+      select: { title: true, generatedAt: true }
+    });
+
+    reports.forEach((r: any) => {
       activities.push({
         type: 'report',
         description: `Relatório gerado: ${r.title}`,
-        timestamp: r.generated_at,
+        timestamp: r.generatedAt.toISOString(),
       });
     });
 
-    const bpmn = await this.pool.query(`
-      SELECT cbp.current_subprocess, cbp.progress_percentage, cbp.updated_at, c.name as client_name
-      FROM client_bpmn_progress cbp
-      JOIN clients c ON cbp.client_id = c.id
-      ORDER BY cbp.updated_at DESC
-      LIMIT 3
-    `);
-    bpmn.rows.forEach(b => {
+    const bpmn = await this.prisma.clientBPMNProgress.findMany({
+      orderBy: { updatedAt: 'desc' },
+      take: 3,
+      // include removed as no relation exists
+    });
+
+    // Fetch client names
+    const clientIds = [...new Set(bpmn.map(b => b.clientId))];
+    const clients = await this.prisma.client.findMany({
+      where: { id: { in: clientIds } },
+      select: { id: true, name: true }
+    });
+
+    const clientMap = new Map(clients.map((c: any) => [c.id, c.name]));
+
+    bpmn.forEach((b: any) => {
       activities.push({
         type: 'bpmn',
-        description: `${b.client_name}: Subprocess ${b.current_subprocess} - ${b.progress_percentage}%`,
-        timestamp: b.updated_at,
+        description: `${clientMap.get(b.clientId) || 'Unknown'}: Subprocess ${b.currentSubprocess} - ${b.progressPercentage}%`,
+        timestamp: b.updatedAt.toISOString(),
       });
     });
 

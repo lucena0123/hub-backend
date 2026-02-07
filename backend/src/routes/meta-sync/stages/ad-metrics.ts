@@ -12,7 +12,7 @@ import {
 import type { MetaSyncContext } from '../types';
 
 export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
-  const { dateChunks, metaService, campaignMap, pool, progress, since, until, log } = ctx;
+  const { dateChunks, metaService, campaignMap, progress, since, until, log } = ctx;
 
   try {
     await progress.setStage('ad', dateChunks.length + 1, 'Sincronizando métricas de anúncios/criativos...');
@@ -99,7 +99,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
         }
 
         if (adPlaceholders.length > 0) {
-          await pool.query(
+          await ctx.prisma.$executeRawUnsafe(
             `INSERT INTO ad_creative_metrics
               (id, campaign_id, adset_id, ad_id, ad_name, date, impressions, reach, clicks, spend, conversions, messaging_conversations, ctr, cpc, cpl, cpm, video_thruplay, video_p25, video_p50, video_p75, video_p100, video_3sec_views, hook_rate, hold_rate, platform)
               VALUES ${adPlaceholders.join(', ')}
@@ -124,7 +124,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
                 hook_rate = EXCLUDED.hook_rate,
                 hold_rate = EXCLUDED.hold_rate,
                ad_name = EXCLUDED.ad_name`,
-            adValues
+            ...adValues
           );
         }
       }
@@ -193,17 +193,18 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
               );
             }
 
-            const result = await pool.query(
+            // Use $queryRawUnsafe to get RETURNING values
+            const result = await ctx.prisma.$queryRawUnsafe(
               `INSERT INTO ad_creative_snapshots
                 (id, creative_id, platform, content_hash, headline, primary_text, description, cta_type, destination_url, image_url, thumbnail_url, video_id, format, is_dynamic, headlines, primary_texts, descriptions, cta_types, destination_urls, object_story_spec, asset_feed_spec, raw)
                VALUES ${placeholders.join(', ')}
                ON CONFLICT (creative_id, content_hash, platform)
                DO UPDATE SET last_seen_at = NOW()
                RETURNING id, creative_id, content_hash`,
-              values
+              ...values
             );
 
-            for (const row of result.rows) {
+            for (const row of result as any[]) {
               const key = `${row.creative_id}:${row.content_hash}`;
               snapshotKeyToId.set(key, row.id);
             }
@@ -237,7 +238,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
               const sinceParam = paramIndex++;
               const untilParam = paramIndex++;
 
-              await pool.query(
+              await ctx.prisma.$executeRawUnsafe(
                 `UPDATE ad_creative_metrics m
                  SET creative_id = v.creative_id,
                      creative_snapshot_id = v.snapshot_id
@@ -246,7 +247,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
                    AND m.date >= $${sinceParam}
                    AND m.date <= $${untilParam}
                    AND m.platform = 'meta'`,
-                values
+                ...values
               );
             }
           }

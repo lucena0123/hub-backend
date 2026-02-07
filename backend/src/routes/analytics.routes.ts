@@ -9,6 +9,7 @@ import actionProposalsRoutes from './analytics/action-proposals.routes';
 import optimizationCenterRoutes from './analytics/optimization-center.routes';
 import playbookRoutes from './analytics/playbooks.routes';
 import temporalAnalysisRoutes from './analytics/temporal-analysis.routes';
+import budgetPacingRoutes from './analytics/budget-pacing.routes';
 
 const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.register(playbookRoutes);
@@ -21,6 +22,7 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.register(temporalAnalysisRoutes);
   fastify.register(businessMetricsRoutes);
   fastify.register(optimizationCenterRoutes);
+  fastify.register(budgetPacingRoutes);
 };
 
 export default analyticsRoutes;

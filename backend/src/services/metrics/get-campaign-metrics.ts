@@ -1,10 +1,10 @@
-import type { Pool } from 'pg';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 import type { DailyMetric, MetricsQuery } from '../../types/metrics';
 import { getDateRange } from './date-range';
 
 export const getCampaignMetrics = async (
-  pool: Pool,
+  prisma: PrismaClient,
   campaignId: string,
   query: MetricsQuery = {}
 ): Promise<DailyMetric[]> => {
@@ -12,55 +12,58 @@ export const getCampaignMetrics = async (
 
   const dates = getDateRange(period, startDate, endDate);
 
-  const queryParams: any[] = [campaignId, dates.start, dates.end];
-  let platformFilter = '';
+  const where: Prisma.CampaignMetricWhereInput = {
+    campaignId,
+    date: {
+      gte: new Date(dates.start),
+      lte: new Date(dates.end),
+    },
+  };
 
   if (platform) {
-    queryParams.push(platform);
-    platformFilter = 'AND platform = $4';
+    where.platform = platform;
   }
 
-  const result = await pool.query(
-    `SELECT
-      date,
-      SUM(impressions) as impressions,
-      SUM(clicks) as clicks,
-      SUM(conversions) as conversions,
-      SUM(messaging_conversations) as messaging_conversations,
-      SUM(messaging_first_reply) as messaging_first_reply,
-      SUM(link_clicks) as link_clicks,
-      SUM(landing_page_views) as landing_page_views,
-      SUM(spend) as spend,
-      SUM(revenue) as revenue,
-      AVG(ctr) as ctr,
-      AVG(cpc) as cpc,
-      AVG(cpl) as cpl,
-      AVG(roas) as roas
-    FROM campaign_metrics
-    WHERE campaign_id = $1
-      AND date >= $2
-      AND date <= $3
-      ${platformFilter}
-    GROUP BY date
-    ORDER BY date ASC`,
-    queryParams
-  );
+  const metrics = await prisma.campaignMetric.groupBy({
+    by: ['date'],
+    where,
+    _sum: {
+      impressions: true,
+      clicks: true,
+      conversions: true,
+      messagingConversations: true,
+      messagingFirstReply: true,
+      linkClicks: true,
+      landingPageViews: true,
+      spend: true,
+      revenue: true,
+    },
+    _avg: {
+      ctr: true,
+      cpc: true,
+      cpl: true,
+      roas: true,
+    },
+    orderBy: {
+      date: 'asc',
+    },
+  });
 
-  return result.rows.map((row) => ({
-    date: row.date.toISOString().split('T')[0],
-    impressions: parseInt(row.impressions) || 0,
-    clicks: parseInt(row.clicks) || 0,
-    conversions: parseInt(row.conversions) || 0,
-    messagingConversations: parseInt(row.messaging_conversations) || 0,
-    messagingFirstReply: parseInt(row.messaging_first_reply) || 0,
-    linkClicks: parseInt(row.link_clicks) || 0,
-    landingPageViews: parseInt(row.landing_page_views) || 0,
-    spend: parseFloat(row.spend) || 0,
-    revenue: parseFloat(row.revenue) || 0,
-    ctr: parseFloat(row.ctr) || 0,
-    cpc: parseFloat(row.cpc) || 0,
-    cpl: parseFloat(row.cpl) || 0,
-    roas: parseFloat(row.roas) || 0,
+  return metrics.map((m) => ({
+    date: m.date.toISOString().split('T')[0],
+    impressions: m._sum.impressions || 0,
+    clicks: m._sum.clicks || 0,
+    conversions: m._sum.conversions || 0,
+    messagingConversations: m._sum.messagingConversations || 0,
+    messagingFirstReply: m._sum.messagingFirstReply || 0,
+    linkClicks: m._sum.linkClicks || 0,
+    landingPageViews: m._sum.landingPageViews || 0,
+    spend: m._sum.spend || 0,
+    revenue: m._sum.revenue || 0,
+    ctr: m._avg.ctr || 0,
+    cpc: m._avg.cpc || 0,
+    cpl: m._avg.cpl || 0,
+    roas: m._avg.roas || 0,
   }));
 };
 

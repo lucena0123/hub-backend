@@ -3,7 +3,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { getCreativeLibraryResponse } from './creative-library/service';
 
 const creativeLibraryRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
+
 
   fastify.get<{
     Params: { clientId: string };
@@ -11,7 +11,8 @@ const creativeLibraryRoutes: FastifyPluginAsync = async (fastify) => {
   }>('/api/clients/:clientId/creative-library', async (request, reply) => {
     try {
       const { clientId } = request.params;
-      return await getCreativeLibraryResponse({ pool, clientId, query: request.query });
+      const { analytics } = fastify.services;
+      return await getCreativeLibraryResponse({ analytics, clientId, query: request.query });
     } catch (error) {
       reply.status(500);
       return {

@@ -1,7 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
 
+import { authenticate } from '../middleware/auth';
+
 const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
+  fastify.addHook('preHandler', authenticate);
   const { dashboard: dashboardService, cache: cacheService } = fastify.services;
 
   // Dashboard overview
@@ -32,32 +34,8 @@ const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
   // Dashboard stats
   fastify.get('/api/dashboard/stats', async (_request, reply) => {
     try {
-      const [
-        totalClientsResult,
-        activeClientsResult,
-        runningProcessesResult,
-        pendingTasksResult,
-        completedTodayResult,
-      ] = await Promise.all([
-        pool.query('SELECT COUNT(*) as count FROM clients'),
-        pool.query("SELECT COUNT(*) as count FROM clients WHERE status = 'active'"),
-        pool.query("SELECT COUNT(*) as count FROM process_instances WHERE status = 'running'"),
-        pool.query("SELECT COUNT(*) as count FROM tasks WHERE status = 'pending'"),
-        pool.query(`
-          SELECT COUNT(*) as count FROM tasks
-          WHERE status = 'completed'
-          AND "completedAt" >= CURRENT_DATE
-        `),
-      ]);
-
-      return {
-        totalClients: parseInt(totalClientsResult.rows[0].count),
-        activeClients: parseInt(activeClientsResult.rows[0].count),
-        runningProcesses: parseInt(runningProcessesResult.rows[0].count),
-        pendingTasks: parseInt(pendingTasksResult.rows[0].count),
-        completedTasksToday: parseInt(completedTodayResult.rows[0].count),
-        timestamp: new Date().toISOString(),
-      };
+      const stats = await dashboardService.getStats();
+      return stats;
     } catch (error) {
       reply.status(500);
       return {

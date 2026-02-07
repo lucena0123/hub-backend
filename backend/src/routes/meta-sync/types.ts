@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { Pool } from 'pg';
+import type { PrismaClient } from '@prisma/client';
 import type { MetaAdsService } from '../../services/meta-ads-service';
 import type { MetaSyncInput } from '../../validators/meta-sync';
 import type { IsoDateRange } from './utils';
@@ -10,7 +10,7 @@ export type MetaSyncProgress = {
 };
 
 export type MetaSyncContext = {
-  pool: Pool;
+  prisma: PrismaClient;
   metaService: MetaAdsService;
   body: MetaSyncInput;
   dateChunks: IsoDateRange[];

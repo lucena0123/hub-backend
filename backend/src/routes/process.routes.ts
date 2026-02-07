@@ -1,24 +1,28 @@
 import { FastifyPluginAsync } from 'fastify';
+import { authenticate } from '../middleware/auth';
 
 const processRoutes: FastifyPluginAsync = async (fastify) => {
-  const { pool } = fastify;
+  fastify.addHook('preHandler', authenticate);
+  const { processes: processService } = fastify.services;
 
   // Get all processes
   fastify.get('/api/processes', async (_request, reply) => {
     try {
-      const result = await pool.query(`
-        SELECT
-          p.*,
-          c.name as "clientName",
-          c.tier as "clientTier"
-        FROM process_instances p
-        LEFT JOIN clients c ON p."clientId" = c.id
-        ORDER BY p."startedAt" DESC
-        LIMIT 50
-      `);
+      const processes = await processService.listProcesses();
 
-      return result.rows;
+      // Transform result to match old API response structure if needed
+      // Old API returned: p.*, clientName, clientTier
+      // Prisma returns: ...processFields, client: { name, tier }
+      // We can map it to flatten the structure for backward compatibility
+
+      return processes.map((p: any) => ({
+        ...p,
+        clientName: p.client.name,
+        clientTier: p.client.tier,
+        client: undefined // Remove nested object
+      }));
     } catch (error) {
+      fastify.log.error(error);
       reply.status(500);
       return {
         error: 'Failed to fetch processes',
@@ -31,31 +35,20 @@ const processRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/processes/:id', async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
+      const process = await processService.getProcessById(id);
 
-      const processResult = await pool.query(
-        `SELECT p.*, c.name as "clientName"
-         FROM process_instances p
-         LEFT JOIN clients c ON p."clientId" = c.id
-         WHERE p.id = $1`,
-        [id]
-      );
-
-      if (processResult.rows.length === 0) {
+      if (!process) {
         reply.status(404);
         return { error: 'Process not found' };
       }
 
-      const process = processResult.rows[0];
-
-      const tasksResult = await pool.query(
-        'SELECT * FROM tasks WHERE "processInstanceId" = $1 ORDER BY "startedAt" ASC',
-        [id]
-      );
-
+      // Flatten client name for backward compatibility
       return {
         ...process,
-        tasks: tasksResult.rows,
+        clientName: process.client.name,
+        client: undefined
       };
+
     } catch (error) {
       reply.status(500);
       return {
@@ -69,29 +62,16 @@ const processRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/tasks', async (request, reply) => {
     try {
       const { status } = request.query as { status?: string };
+      const tasks = await processService.listTasks(status);
 
-      let query = `
-        SELECT
-          t.*,
-          p."processId",
-          c.name as "clientName"
-        FROM tasks t
-        LEFT JOIN process_instances p ON t."processInstanceId" = p.id
-        LEFT JOIN clients c ON p."clientId" = c.id
-      `;
+      // Flatten structure
+      return tasks.map((t: any) => ({
+        ...t,
+        processId: t.processInstance.processId,
+        clientName: t.processInstance.client.name,
+        processInstance: undefined
+      }));
 
-      const params: string[] = [];
-
-      if (status) {
-        query += ' WHERE t.status = $1';
-        params.push(status);
-      }
-
-      query += ' ORDER BY t.priority DESC, t."startedAt" DESC LIMIT 100';
-
-      const result = await pool.query(query, params);
-
-      return result.rows;
     } catch (error) {
       reply.status(500);
       return {

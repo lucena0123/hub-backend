@@ -2,15 +2,23 @@ import fp from 'fastify-plugin';
 import { FastifyInstance } from 'fastify';
 import { pool } from '../config/database';
 import { redis } from '../config/redis';
+import { prisma } from '../config/prisma';
 import { ClientAudit } from '../middleware/audit';
 import { MetricsService } from '../services/metrics-service';
+import { ClientService } from '../services/client-service';
+import { AuthService } from '../services/auth-service';
+import { ProcessService } from '../services/process-service';
 import { BPMNTracker } from '../services/bpmn-tracker';
 import { ReportGenerator } from '../services/report-generator';
 import { DashboardService } from '../services/dashboard-service';
 import { CacheService } from '../services/cache-service';
 import { SyncHistoryService } from '../services/sync-history-service';
+import { AnalyticsService } from '../services/analytics/analytics-service';
 import { LeadTrackingService } from '../services/lead-tracking-service';
 import { BpmnDefinitionService } from '../services/bpmn-definition-service';
+import { QueueService } from '../services/queue-service';
+import { NotificationService } from '../services/notification-service';
+import { CampaignService } from '../services/campaign.service';
 import type { AppServices } from '../types/fastify';
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -21,29 +29,79 @@ export default fp(async (fastify: FastifyInstance) => {
   await redis.connect();
   fastify.log.info('Redis connected');
 
+  // Connect Prisma
+  try {
+    await prisma.$connect();
+    fastify.log.info('Prisma connected');
+  } catch (err) {
+    fastify.log.error({ err }, 'Failed to connect Prisma');
+    throw err;
+  }
+
   const cacheService = new CacheService(redis as any);
 
+  // Initialize BullMQ queue service (gracefully degrades if Redis < 5.0)
+  const queueService = new QueueService(pool);
+  await queueService.initialize();
+
+  if (queueService.available) {
+    fastify.log.info('BullMQ queues initialized');
+    try {
+      const scheduledClients = await queueService.scheduleRecurringJobs();
+      fastify.log.info({ clients: scheduledClients }, 'Recurring jobs scheduled');
+    } catch (err) {
+      fastify.log.warn({ err }, 'Failed to schedule recurring jobs (non-fatal)');
+    }
+  } else {
+    fastify.log.warn('BullMQ disabled (Redis < 5.0) — scheduler and workers will not run');
+  }
+
   // Create services
+  const metricsService = new MetricsService(prisma);
+  const bpmnTracker = new BPMNTracker(prisma);
+  const bpmnDefinitionService = new BpmnDefinitionService();
+  const reportGenerator = new ReportGenerator(prisma, metricsService);
+  const dashboardService = new DashboardService(prisma, pool);
+  const syncHistoryService = new SyncHistoryService(prisma);
+  const analyticsService = new AnalyticsService(prisma);
+  const leadTrackingService = new LeadTrackingService(pool);
+  const clientAudit = new ClientAudit(pool);
+  const clientService = new ClientService(prisma, clientAudit);
+  const notificationService = new NotificationService(pool);
+  const campaignService = new CampaignService(prisma);
+  const authService = new AuthService(prisma);
+  const processService = new ProcessService(prisma);
+
   const services: AppServices = {
-    metrics: new MetricsService(pool),
-    bpmn: new BPMNTracker(pool),
-    bpmnDefinitions: new BpmnDefinitionService(),
-    reports: new ReportGenerator(pool),
-    dashboard: new DashboardService(pool),
+    metrics: metricsService,
+    bpmn: bpmnTracker,
+    bpmnDefinitions: bpmnDefinitionService,
+    reports: reportGenerator,
+    dashboard: dashboardService,
     cache: cacheService,
-    syncHistory: new SyncHistoryService(pool),
-    leadTracking: new LeadTrackingService(pool),
-    clientAudit: new ClientAudit(pool),
+    syncHistory: syncHistoryService,
+    leadTracking: leadTrackingService,
+    clientAudit: clientAudit,
+    clients: clientService,
+    queue: queueService,
+    notification: notificationService,
+    campaigns: campaignService,
+    auth: authService,
+    processes: processService,
+    analytics: analyticsService,
   };
 
   // Decorate fastify instance
   fastify.decorate('pool', pool);
   fastify.decorate('services', services);
+  fastify.decorate('prisma', prisma);
 
-  // Graceful shutdown
+  // Register cleanup hooks
   fastify.addHook('onClose', async () => {
     await pool.end();
     fastify.log.info('PostgreSQL pool closed');
+    await prisma.$disconnect();
+    fastify.log.info('Prisma disconnected');
     await redis.quit();
     fastify.log.info('Redis disconnected');
   });

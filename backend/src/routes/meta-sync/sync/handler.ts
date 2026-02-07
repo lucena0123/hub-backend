@@ -5,7 +5,7 @@ import { getMetaSyncChunkDays, splitDateRange } from '../utils';
 import { runMetaSyncWork } from '../sync-work';
 
 export const createSyncMetaAdsHandler = (fastify: any) => {
-  const { pool } = fastify;
+  const { prisma } = fastify;
   const { syncHistory: syncHistoryService, cache: cacheService } = fastify.services;
 
   return async (request: any, reply: any) => {
@@ -29,8 +29,11 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
 
       let fromClient: string | null = null;
       if (body.clientId) {
-        const clientResult = await pool.query('SELECT \"metaAdAccountId\" FROM clients WHERE id = $1', [body.clientId]);
-        const stored = clientResult.rows?.[0]?.metaAdAccountId;
+        const clientResult = await prisma.client.findUnique({
+          where: { id: body.clientId },
+          select: { metaAdAccountId: true },
+        });
+        const stored = clientResult?.metaAdAccountId;
         if (typeof stored === 'string' && stored.trim()) {
           fromClient = stored.trim().replace(/^act_/i, '');
         }
@@ -194,7 +197,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
 
       const runWork = async () => {
         const result = await runMetaSyncWork({
-          pool,
+          prisma,
           metaService,
           body,
           dateChunks,
