@@ -32,7 +32,15 @@ type PaginatedFetchOptions = {
   breakdowns?: string[];
 };
 
-export type MetaWriteOperation = 'pause_ad' | 'resume_ad' | 'set_adset_daily_budget';
+export type MetaWriteOperation =
+  | 'pause_ad'
+  | 'resume_ad'
+  | 'set_adset_daily_budget'
+  | 'set_campaign_daily_budget'
+  | 'pause_campaign'
+  | 'activate_campaign'
+  | 'pause_adset'
+  | 'activate_adset';
 
 export type MetaWritebackError = {
   message: string;
@@ -492,6 +500,179 @@ export class MetaAdsService {
       response: isRecord(res.data) ? (res.data as any) : { success: true },
       error: null,
     };
+  }
+
+  async setCampaignDailyBudget(
+    campaignId: string,
+    amount: number,
+    options?: { dryRun?: boolean; minorUnitMultiplier?: number }
+  ): Promise<MetaWritebackResult> {
+    const objectId = String(campaignId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+    const multiplier = Number.isFinite(options?.minorUnitMultiplier as number) ? Number(options?.minorUnitMultiplier) : 100;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return {
+        success: false,
+        dryRun,
+        operation: 'set_campaign_daily_budget',
+        objectId,
+        request: {
+          method: 'POST',
+          url: this.buildGraphUrl(objectId),
+          body: {},
+        },
+        response: null,
+        error: {
+          message: `Invalid budget amount: ${amount}`,
+          status: null,
+          code: null,
+          fbtraceId: null,
+          raw: amount,
+        },
+      };
+    }
+
+    const cents = Math.round(amount * multiplier);
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { daily_budget: String(cents) },
+    };
+
+    if (dryRun) {
+      return {
+        success: true,
+        dryRun: true,
+        operation: 'set_campaign_daily_budget',
+        objectId,
+        request,
+        response: { success: true, dryRun: true, daily_budget: String(cents) },
+        error: null,
+      };
+    }
+
+    const res = await this.requestGraph({
+      method: 'POST',
+      path: objectId,
+      body: request.body,
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        dryRun: false,
+        operation: 'set_campaign_daily_budget',
+        objectId,
+        request: { ...request, url: res.url },
+        response: isRecord(res.data) ? (res.data as any) : null,
+        error: res.error,
+      };
+    }
+
+    return {
+      success: true,
+      dryRun: false,
+      operation: 'set_campaign_daily_budget',
+      objectId,
+      request: { ...request, url: res.url },
+      response: isRecord(res.data) ? (res.data as any) : { success: true },
+      error: null,
+    };
+  }
+
+  async pauseCampaign(campaignId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(campaignId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'PAUSED' },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'pause_campaign', objectId, request, response: { success: true, dryRun: true }, error: null };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'pause_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+    return { success: true, dryRun: false, operation: 'pause_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+
+  async activateCampaign(campaignId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(campaignId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'ACTIVE' },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'activate_campaign', objectId, request, response: { success: true, dryRun: true }, error: null };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'activate_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+    return { success: true, dryRun: false, operation: 'activate_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+
+  async pauseAdSet(adsetId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adsetId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'PAUSED' },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'pause_adset', objectId, request, response: { success: true, dryRun: true }, error: null };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'adset' });
+    if (!scope.ok) {
+      return { success: false, dryRun: false, operation: 'pause_adset', objectId, request, response: null, error: scope.error };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'pause_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+    return { success: true, dryRun: false, operation: 'pause_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+
+  async activateAdSet(adsetId: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adsetId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { status: 'ACTIVE' },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'activate_adset', objectId, request, response: { success: true, dryRun: true }, error: null };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'adset' });
+    if (!scope.ok) {
+      return { success: false, dryRun: false, operation: 'activate_adset', objectId, request, response: null, error: scope.error };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'activate_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+    return { success: true, dryRun: false, operation: 'activate_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
   }
 
   private async delay(ms: number): Promise<void> {

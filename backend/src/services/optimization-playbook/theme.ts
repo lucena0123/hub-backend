@@ -2,10 +2,13 @@ import { OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS } from './optimization-center/
 import { OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES } from './optimization-center/v1/themes';
 import type { OptimizationThemeMatch, OptimizationThemeTargets } from './types';
 
-export const getOptimizationTargetsForTheme = (themeKey: string): OptimizationThemeTargets => {
+export const getOptimizationTargetsForTheme = (
+  themeKey: string,
+  clientOverrides?: Partial<OptimizationThemeTargets> | null,
+): OptimizationThemeTargets => {
   const base = OPTIMIZATION_CENTER_PLAYBOOK_V1_DEFAULTS;
   const theme = OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((t) => t.key === themeKey);
-  return { ...base, ...(theme?.targets ?? {}) };
+  return { ...base, ...(theme?.targets ?? {}), ...(clientOverrides ?? {}) };
 };
 
 const normalize = (value: string) =>

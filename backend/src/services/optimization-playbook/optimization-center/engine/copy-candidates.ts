@@ -49,7 +49,7 @@ export const getImportantCopyCandidates = (ctx: OptimizationRuleContext): CopyCa
     const objectives = Array.isArray(creative.objectives) ? creative.objectives.map(String) : [];
     const adNames = Array.isArray(creative.adNames) ? creative.adNames.map(String) : [];
     const creativeTheme = campaignName ? inferOptimizationTheme(campaignName) : primaryTheme;
-    const creativeTargets = getOptimizationTargetsForTheme(creativeTheme.themeKey);
+    const creativeTargets = getOptimizationTargetsForTheme(creativeTheme.themeKey, ctx.clientTargetOverrides);
 
     const spend = safeFloat(creative.metrics?.totalSpend);
     const conversations = safeFloat(creative.metrics?.totalConversations);

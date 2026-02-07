@@ -47,6 +47,7 @@ export type OptimizationRuleContext = {
   winners: any[];
   targets: OptimizationThemeTargets;
   playbookCopy: { preferredCtaTypes: string[]; prohibitedPhrases: string[] };
+  clientTargetOverrides?: Partial<OptimizationThemeTargets> | null;
 };
 
 export type OptimizationRuleModule = {

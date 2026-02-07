@@ -324,59 +324,60 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         if (action === 'scale' && entityType === 'campaign') {
-          const adsetsResult = await pool.query(
-            `SELECT adset_id, daily_budget, status, effective_status
-             FROM adsets
-             WHERE campaign_id = $1
-               AND platform = 'meta'
-             ORDER BY daily_budget DESC
-             LIMIT 20`,
+          const campaignResult = await pool.query(
+            `SELECT id, "externalId", budget
+             FROM campaigns
+             WHERE id = $1 OR "externalId" = $1
+             LIMIT 1`,
             [entityId]
           );
 
-          const adsets = adsetsResult.rows
-            .map((row: any) => ({
-              adsetId: typeof row.adset_id === 'string' ? row.adset_id : null,
-              dailyBudget: typeof row.daily_budget === 'string' ? Number.parseFloat(row.daily_budget) : Number(row.daily_budget ?? 0),
-              status: row.status ?? null,
-              effectiveStatus: row.effective_status ?? null,
-            }))
-            .filter((row: any) => typeof row.adsetId === 'string' && row.adsetId.trim());
-
-          if (adsets.length === 0) {
+          if (campaignResult.rows.length === 0) {
             return {
               ok: false,
               retryable: false,
-              meta: { error: 'no_adsets_found_for_campaign', campaignId: entityId },
+              meta: { error: 'campaign_not_found', campaignId: entityId },
             };
           }
 
-          const operations = [];
-          for (const adset of adsets) {
-            const currentBudget = Number.isFinite(adset.dailyBudget) ? adset.dailyBudget : 0;
-            if (currentBudget <= 0) continue;
-            const nextBudget = Math.round(currentBudget * 1.2 * 100) / 100;
-            operations.push(
-              await metaService.setAdSetDailyBudget(adset.adsetId, nextBudget, { dryRun })
+          const campaign = campaignResult.rows[0];
+          const campaignExternalId = String(campaign.externalId || entityId);
+          const currentBudget = Number(campaign.budget ?? 0);
+
+          if (!Number.isFinite(currentBudget) || currentBudget <= 0) {
+            return {
+              ok: false,
+              retryable: false,
+              meta: { error: 'campaign_budget_invalid', campaignId: entityId, currentBudget },
+            };
+          }
+
+          const nextBudget = Math.round(currentBudget * 1.2 * 100) / 100;
+          const operation = await metaService.setCampaignDailyBudget(campaignExternalId, nextBudget, { dryRun });
+
+          if (operation.success && !dryRun) {
+            await pool.query(
+              `UPDATE campaigns SET budget = $2, "updatedAt" = NOW() WHERE id = $1 OR "externalId" = $1`,
+              [entityId, nextBudget]
             );
           }
 
-          const ok = operations.length > 0 && operations.every((op: any) => Boolean(op?.success));
-          const retryable = operations.some((op: any) => {
-            const status = op?.error?.status;
-            const code = op?.error?.code;
+          const retryable = !operation.success && (() => {
+            const status = operation.error?.status;
+            const code = operation.error?.code;
             return status === null || (typeof status === 'number' && status >= 500) || code === 4 || code === 17;
-          });
+          })();
 
           return {
-            ok,
-            retryable: !ok && retryable,
+            ok: operation.success,
+            retryable: Boolean(retryable),
             meta: {
-              operation: 'scale_campaign_adsets',
+              operation: 'scale_campaign_budget',
               dryRun,
               campaignId: entityId,
-              adsets,
-              operations,
+              currentBudget,
+              nextBudget,
+              result: operation,
             },
           };
         }
@@ -746,7 +747,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
           if (executionStatus === 'queued') {
             await client.query('COMMIT');
             reply.status(202);
-            void runExecutionAsync(executionId);
+            void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
             return { success: true, queued: true, dryRun, alreadyQueued: true, executionId };
           }
 
@@ -776,7 +777,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
 
             await client.query('COMMIT');
             reply.status(202);
-            void runExecutionAsync(executionId);
+            void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
             return { success: true, queued: true, dryRun, retried: true, executionId };
           }
         }
@@ -792,7 +793,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('COMMIT');
 
         reply.status(202);
-        void runExecutionAsync(executionId);
+        void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
         return { success: true, queued: true, dryRun, executionId };
       } catch (error) {
         await client.query('ROLLBACK');
@@ -857,7 +858,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const campaignId = toNullableString(body.campaignId);
         const actionsRaw = Array.isArray(body.actions) ? body.actions : null;
         const allowedActions = new Set(
-          (actionsRaw && actionsRaw.length > 0 ? actionsRaw : ['pause', 'scale', 'refresh']).map((a) => String(a))
+          (actionsRaw && actionsRaw.length > 0 ? actionsRaw : ['pause', 'scale']).map((a) => String(a))
         );
 
         const clientConfig = await pool.query('SELECT \"metaAdAccountId\" FROM clients WHERE id = $1', [clientId]);
@@ -865,8 +866,9 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const accountId =
           typeof accountIdRaw === 'string' && accountIdRaw.trim() ? accountIdRaw.trim().replace(/^act_/i, '') : null;
 
+        const { analytics } = fastify.services;
         const optimization = await buildOptimizationCenter({
-          pool,
+          analytics,
           clientId,
           query: {
             ...(period ? { period } : {}),
