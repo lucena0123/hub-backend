@@ -1,9 +1,46 @@
 import { FastifyPluginAsync } from 'fastify';
+import { AbTestSuggestionsService } from '../../services/ab-test-suggestions';
 
 const creativeSnapshotsRoutes: FastifyPluginAsync = async (fastify) => {
 
 
   // Get a creative snapshot by ID
+  fastify.get<{
+    Params: { snapshotId: string };
+    Querystring: { period?: string; startDate?: string; endDate?: string; force?: string };
+  }>('/api/creative-snapshots/:snapshotId/ab-test-suggestions', async (request, reply) => {
+    try {
+      const { snapshotId } = request.params;
+      const { period, startDate, endDate, force } = request.query;
+
+      const service = new AbTestSuggestionsService(
+        fastify.prisma,
+        fastify.services.analytics,
+        fastify.services.aiOutputs
+      );
+      const result = await service.getSuggestions({
+        snapshotId,
+        period,
+        startDate,
+        endDate,
+        force: force === 'true',
+      });
+
+      if (!result) {
+        reply.status(404);
+        return { error: 'Creative snapshot not found' };
+      }
+
+      return result;
+    } catch (error) {
+      reply.status(500);
+      return {
+        error: 'Failed to fetch A/B test suggestions',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   fastify.get<{
     Params: { snapshotId: string };
   }>('/api/creative-snapshots/:snapshotId', async (request, reply) => {
@@ -51,4 +88,3 @@ const creativeSnapshotsRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default creativeSnapshotsRoutes;
-

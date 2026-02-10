@@ -16,6 +16,10 @@ import audienceInsightsRoutes from './analytics/audience-insights.routes';
 import anomalyDetectionRoutes from './analytics/anomaly-detection.routes';
 import campaignHealthRoutes from './analytics/campaign-health.routes';
 import weeklySummaryRoutes from './analytics/weekly-summary.routes';
+import zeroConversationsRoutes from './analytics/zero-conversations.routes';
+import benchmarksRoutes from './analytics/benchmarks.routes';
+import complianceRiskRoutes from './analytics/compliance-risk.routes';
+import aiInsightsRoutes from './analytics/ai-insights.routes';
 import { authenticate } from '../middleware/auth';
 
 const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -37,6 +41,10 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.register(anomalyDetectionRoutes);
   fastify.register(campaignHealthRoutes);
   fastify.register(weeklySummaryRoutes);
+  fastify.register(zeroConversationsRoutes);
+  fastify.register(benchmarksRoutes);
+  fastify.register(complianceRiskRoutes);
+  fastify.register(aiInsightsRoutes);
 };
 
 export default analyticsRoutes;
