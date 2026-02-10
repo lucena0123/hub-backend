@@ -2,9 +2,19 @@ import type { ClientPerformanceSummary, AIReportContent, ClientLeadFunnelSummary
 import type { AiOutputService, AiOutputLogInput } from './ai-output-service';
 import { getPromptDefinition } from './ai-prompts';
 import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../utils/ai-output';
+import { z } from 'zod';
+import { zodErrorToReason } from '../utils/ai-guardrails';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+const reportContentSchema = z.object({
+  executiveSummary: z.string().min(1),
+  interpretation: z.string().min(1),
+  positives: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+  recommendations: z.array(z.string()).default([]),
+});
 
 type ReportAiTelemetry = {
   aiOutputs?: AiOutputService;
@@ -39,6 +49,8 @@ const generateWithPrompt = async (
       status: 'skipped',
       payload: fallback,
       error: { reason: 'missing_api_key' },
+      errorReason: 'missing_api_key',
+      fallbackUsed: true,
       latencyMs: null,
       inputHash: options?.inputHash ?? null,
       model: null,
@@ -68,19 +80,18 @@ const generateWithPrompt = async (
 
     const data = (await response.json()) as any;
     const content = JSON.parse(data.choices[0].message.content);
-
-    const parsed = {
-      executiveSummary: content.executiveSummary || fallback.executiveSummary,
-      interpretation: content.interpretation || fallback.interpretation,
-      positives: content.positives || fallback.positives,
-      improvements: content.improvements || fallback.improvements,
-      recommendations: content.recommendations || fallback.recommendations,
-    };
+    const parsedResult = reportContentSchema.safeParse(content);
+    if (!parsedResult.success) {
+      throw new Error(`Invalid AI response: ${zodErrorToReason(parsedResult.error)}`);
+    }
+    const parsed = parsedResult.data;
 
     await logAiOutput(options?.telemetry, {
       status: 'success',
       payload: parsed,
       error: null,
+      errorReason: null,
+      fallbackUsed: false,
       latencyMs: Date.now() - startedAt,
       inputHash: options?.inputHash ?? null,
       model: OPENAI_MODEL,
@@ -95,6 +106,8 @@ const generateWithPrompt = async (
       status: 'failed',
       payload: fallback,
       error: normalizeAiError(error),
+      errorReason: zodErrorToReason(error),
+      fallbackUsed: true,
       latencyMs: null,
       inputHash: options?.inputHash ?? null,
       model: OPENAI_MODEL,
@@ -194,6 +207,8 @@ export async function generateClientReportContent(
         status: 'cached',
         payload: cached.payload,
         error: null,
+        errorReason: null,
+        fallbackUsed: false,
         latencyMs: 0,
         inputHash,
         model: cached.model ?? OPENAI_MODEL,
@@ -275,6 +290,8 @@ export async function generateClientWeeklyReportContent(
         status: 'cached',
         payload: cached.payload,
         error: null,
+        errorReason: null,
+        fallbackUsed: false,
         latencyMs: 0,
         inputHash,
         model: cached.model ?? OPENAI_MODEL,

@@ -2,9 +2,18 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../../middleware/auth';
 import { getPromptDefinition } from '../../services/ai-prompts';
 import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../../utils/ai-output';
+import { z } from 'zod';
+import { zodErrorToReason } from '../../utils/ai-guardrails';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+const weeklySummarySchema = z.object({
+  summary: z.string().min(1),
+  highlights: z.array(z.string()).default([]),
+  concerns: z.array(z.string()).default([]),
+  nextSteps: z.array(z.string()).default([]),
+});
 
 type WeeklySummaryResponse = {
   clientId: string;
@@ -250,22 +259,43 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
         maxAgeHours: cacheHours,
       });
       if (cached?.payload) {
-        summaryContent = cached.payload as any;
-        aiUsed = true;
-        aiModel = cached.model ?? OPENAI_MODEL;
-        usedCache = true;
-        await aiOutputs.logOutput({
-          type: 'weekly-summary',
-          entityId: clientId,
-          model: aiModel,
-          promptId: promptDef.id,
-          promptVersion: promptDef.version,
-          status: 'cached',
-          payload: summaryContent,
-          error: null,
-          latencyMs: 0,
-          inputHash,
-        });
+        const cachedParsed = weeklySummarySchema.safeParse(cached.payload);
+        if (cachedParsed.success) {
+          summaryContent = cachedParsed.data;
+          aiUsed = true;
+          aiModel = cached.model ?? OPENAI_MODEL;
+          usedCache = true;
+          await aiOutputs.logOutput({
+            type: 'weekly-summary',
+            entityId: clientId,
+            model: aiModel,
+            promptId: promptDef.id,
+            promptVersion: promptDef.version,
+            status: 'cached',
+            payload: summaryContent,
+            error: null,
+            errorReason: null,
+            fallbackUsed: false,
+            latencyMs: 0,
+            inputHash,
+          });
+        } else {
+          summaryContent = buildFallbackSummary(clientName, metricsSnapshot, anomalyCount, proposalsExecuted);
+          await aiOutputs.logOutput({
+            type: 'weekly-summary',
+            entityId: clientId,
+            model: cached.model ?? OPENAI_MODEL,
+            promptId: promptDef.id,
+            promptVersion: promptDef.version,
+            status: 'failed',
+            payload: summaryContent,
+            error: { reason: 'invalid_cache' },
+            errorReason: zodErrorToReason(cachedParsed.error),
+            fallbackUsed: true,
+            latencyMs: 0,
+            inputHash,
+          });
+        }
       }
     }
 
@@ -293,12 +323,17 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
         const raw = data?.choices?.[0]?.message?.content;
         if (raw) {
           const parsed = JSON.parse(raw);
-          summaryContent = {
+          const normalized = {
             summary: parsed.summary || '',
             highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
             concerns: Array.isArray(parsed.concerns) ? parsed.concerns : [],
             nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
           };
+          const parsedSummary = weeklySummarySchema.safeParse(normalized);
+          if (!parsedSummary.success) {
+            throw new Error(`Invalid AI response: ${zodErrorToReason(parsedSummary.error)}`);
+          }
+          summaryContent = parsedSummary.data;
           aiUsed = true;
           aiModel = OPENAI_MODEL;
           if (aiOutputs) {
@@ -311,6 +346,8 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
               status: 'success',
               payload: summaryContent,
               error: null,
+              errorReason: null,
+              fallbackUsed: false,
               latencyMs: Date.now() - startedAt,
               inputHash,
             });
@@ -331,6 +368,8 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
             status: 'failed',
             payload: summaryContent,
             error: normalizeAiError(err),
+            errorReason: zodErrorToReason(err),
+            fallbackUsed: true,
             latencyMs: null,
             inputHash,
           });
@@ -348,6 +387,8 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
           status: 'skipped',
           payload: summaryContent,
           error: { reason: 'missing_api_key' },
+          errorReason: 'missing_api_key',
+          fallbackUsed: true,
           latencyMs: null,
           inputHash,
         });

@@ -4,6 +4,8 @@ import { inferOptimizationTheme, type OptimizationThemeMatch } from './optimizat
 import { getPromptDefinition } from './ai-prompts';
 import type { AiOutputService } from './ai-output-service';
 import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../utils/ai-output';
+import { z } from 'zod';
+import { zodErrorToReason } from '../utils/ai-guardrails';
 
 type CreativeSnapshotInput = {
   snapshotId: string;
@@ -46,6 +48,29 @@ export type GenerateCopyInsightsInput = {
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.1';
+
+const copyInsightsSchema = z.object({
+  angle: z
+    .object({
+      name: z.string().nullable().optional(),
+      reason: z.string().nullable().optional(),
+    })
+    .optional(),
+  persona: z.string().nullable().optional(),
+  hook: z.string().nullable().optional(),
+  clarityIssues: z.array(z.string()).default([]),
+  complianceRisks: z.array(z.string()).default([]),
+  suggestions: z
+    .object({
+      headlines: z.array(z.string()).default([]),
+      primaryTexts: z.array(z.string()).default([]),
+      ctas: z.array(z.string()).default([]),
+      experiments: z.array(z.string()).default([]),
+    })
+    .default({ headlines: [], primaryTexts: [], ctas: [], experiments: [] }),
+  aiUsed: z.boolean().optional(),
+  message: z.string().optional(),
+});
 
 const normalizeList = (value: unknown): string[] | null => {
   if (!Array.isArray(value)) return null;
@@ -227,6 +252,8 @@ export const generateCopyInsights = async (
         status: 'cached',
         payload: cached.payload,
         error: null,
+        errorReason: null,
+        fallbackUsed: false,
         latencyMs: 0,
         inputHash,
       });
@@ -258,6 +285,8 @@ export const generateCopyInsights = async (
         status: 'skipped',
         payload: fallback,
         error: { reason: 'missing_api_key' },
+        errorReason: 'missing_api_key',
+        fallbackUsed: true,
         latencyMs: null,
         inputHash,
       });
@@ -312,6 +341,11 @@ export const generateCopyInsights = async (
       aiUsed: true,
     };
 
+    const validated = copyInsightsSchema.safeParse(normalized);
+    if (!validated.success) {
+      throw new Error(`Invalid AI response: ${zodErrorToReason(validated.error)}`);
+    }
+
     if (input.aiOutputs) {
       await input.aiOutputs.logOutput({
         type: 'copy-insights',
@@ -320,8 +354,10 @@ export const generateCopyInsights = async (
         promptId: promptDef.id,
         promptVersion: promptDef.version,
         status: 'success',
-        payload: normalized,
+        payload: validated.data,
         error: null,
+        errorReason: null,
+        fallbackUsed: false,
         latencyMs: Date.now() - startedAt,
         inputHash,
       });
@@ -332,7 +368,7 @@ export const generateCopyInsights = async (
       model: OPENAI_MODEL,
       promptId: promptDef.id,
       promptVersion: promptDef.version,
-      analysis: normalized,
+      analysis: validated.data,
       errorMessage: null,
     };
   } catch (error) {
@@ -353,6 +389,8 @@ export const generateCopyInsights = async (
         status: 'failed',
         payload: fallback,
         error: normalizeAiError(error),
+        errorReason: zodErrorToReason(error),
+        fallbackUsed: true,
         latencyMs: null,
         inputHash,
       });

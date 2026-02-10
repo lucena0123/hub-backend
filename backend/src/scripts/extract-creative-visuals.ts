@@ -6,6 +6,12 @@ type VisualAttributes = {
   dominantColor: string | null;
   textDetected: boolean;
   edgeDensity: number;
+  textDensity: number;
+  contrastRatio: number;
+  contrastLevel: 'low' | 'medium' | 'high';
+  faceDetected: boolean;
+  objectDetected: boolean;
+  visualStyle: 'text-heavy' | 'image-first' | 'mixed';
   width: number;
   height: number;
   sampledAt: string;
@@ -125,6 +131,7 @@ const main = async () => {
             let edgeCount = 0;
             let total = 0;
             const threshold = 25;
+            const hist = new Uint32Array(256);
             for (let y = 1; y < height - 1; y++) {
               for (let x = 1; x < width - 1; x++) {
                 const i = y * width + x;
@@ -137,13 +144,78 @@ const main = async () => {
                 const mag = Math.sqrt(gx * gx + gy * gy);
                 if (mag > threshold) edgeCount++;
                 total++;
+                hist[gray[i]]++;
               }
             }
 
             const edgeDensity = total > 0 ? edgeCount / total : 0;
             const textDetected = edgeDensity > 0.08;
+            const textDensity = edgeDensity;
 
-            return { dominantColor, textDetected, edgeDensity, width, height };
+            // Contrast via luminance percentiles (p10/p90)
+            const totalPix = hist.reduce((sum, v) => sum + v, 0);
+            let p10 = 0;
+            let p90 = 255;
+            if (totalPix > 0) {
+              let acc = 0;
+              for (let i = 0; i < 256; i++) {
+                acc += hist[i];
+                if (acc / totalPix >= 0.1) {
+                  p10 = i;
+                  break;
+                }
+              }
+              acc = 0;
+              for (let i = 255; i >= 0; i--) {
+                acc += hist[i];
+                if (acc / totalPix >= 0.1) {
+                  p90 = i;
+                  break;
+                }
+              }
+            }
+            const contrastRatio = ((p90 / 255) + 0.05) / ((p10 / 255) + 0.05);
+            let contrastLevel = 'low';
+            if (contrastRatio >= 3.0) contrastLevel = 'high';
+            else if (contrastRatio >= 2.0) contrastLevel = 'medium';
+
+            // Skin-tone heuristic for faces/people presence
+            let skinCount = 0;
+            let skinSampleTotal = 0;
+            const stepSkin = 8;
+            for (let i = 0; i < data.length; i += 4 * stepSkin) {
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+              const y = 0.299 * r + 0.587 * g + 0.114 * b;
+              const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+              const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+              if (y > 60 && cb >= 85 && cb <= 135 && cr >= 135 && cr <= 180) {
+                skinCount++;
+              }
+              skinSampleTotal++;
+            }
+            const skinRatio = skinSampleTotal > 0 ? skinCount / skinSampleTotal : 0;
+            const faceDetected = skinRatio > 0.02 && skinRatio < 0.6;
+            const objectDetected = edgeDensity > 0.1;
+
+            let visualStyle = 'mixed';
+            if (textDetected && textDensity >= 0.12) visualStyle = 'text-heavy';
+            else if (!textDetected && textDensity <= 0.06) visualStyle = 'image-first';
+
+            return {
+              dominantColor,
+              textDetected,
+              edgeDensity,
+              textDensity,
+              contrastRatio,
+              contrastLevel,
+              faceDetected,
+              objectDetected,
+              visualStyle,
+              width,
+              height,
+            };
           };
         </script>
       </body>
@@ -163,18 +235,36 @@ const main = async () => {
       const dataUrl = toDataUrl(Buffer.from(response.data), response.headers?.['content-type']);
       const attrs = await page.evaluate(async (imgDataUrl) => {
         return (window as any).computeAttributes(imgDataUrl);
-      }, dataUrl) as { dominantColor: string | null; textDetected: boolean; edgeDensity: number; width: number; height: number };
+      }, dataUrl) as {
+        dominantColor: string | null;
+        textDetected: boolean;
+        edgeDensity: number;
+        textDensity: number;
+        contrastRatio: number;
+        contrastLevel: 'low' | 'medium' | 'high';
+        faceDetected: boolean;
+        objectDetected: boolean;
+        visualStyle: 'text-heavy' | 'image-first' | 'mixed';
+        width: number;
+        height: number;
+      };
 
       const payload: VisualAttributes = {
         dominantColor: attrs.dominantColor,
         textDetected: attrs.textDetected,
         edgeDensity: Number(attrs.edgeDensity.toFixed(4)),
+        textDensity: Number(attrs.textDensity.toFixed(4)),
+        contrastRatio: Number(attrs.contrastRatio.toFixed(3)),
+        contrastLevel: attrs.contrastLevel,
+        faceDetected: attrs.faceDetected,
+        objectDetected: attrs.objectDetected,
+        visualStyle: attrs.visualStyle,
         width: attrs.width,
         height: attrs.height,
         sampledAt: new Date().toISOString(),
         algorithm: {
-          version: 'poc-v1',
-          notes: 'Dominant color via 16-bin RGB histogram; text detection via Sobel edge density.',
+          version: 'v1.5',
+          notes: 'Dominant color (16-bin RGB), text density (Sobel edges), contrast via luminance percentiles, skin-tone heuristic for faces.',
         },
       };
 

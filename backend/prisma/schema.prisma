@@ -722,6 +722,8 @@ model ai_outputs {
   status         String
   payload        Json?
   error          Json?
+  error_reason   String?   @map("error_reason")
+  fallback_used  Boolean   @default(false) @map("fallback_used")
   latency_ms     Int?
   input_hash     String?
   created_at     DateTime? @default(now()) @db.Timestamp(6)
@@ -729,6 +731,7 @@ model ai_outputs {
   @@index([type, entity_id, created_at(sort: Desc)], map: "idx_ai_outputs_type_entity")
   @@index([input_hash, created_at(sort: Desc)], map: "idx_ai_outputs_input_hash")
   @@index([status, created_at(sort: Desc)], map: "idx_ai_outputs_status")
+  @@index([promptId, prompt_version, status, created_at(sort: Desc)], map: "idx_ai_outputs_prompt")
   @@map("ai_outputs")
 }
 

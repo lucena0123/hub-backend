@@ -12,6 +12,8 @@ export type AiOutputLogInput = {
   status: AiOutputStatus;
   payload?: unknown | null;
   error?: unknown | null;
+  errorReason?: string | null;
+  fallbackUsed?: boolean | null;
   latencyMs?: number | null;
   inputHash?: string | null;
 };
@@ -67,8 +69,8 @@ export class AiOutputService {
     try {
       await this.pool.query(
         `INSERT INTO ai_outputs
-         (type, entity_id, model, prompt_id, prompt_version, status, payload, error, latency_ms, input_hash)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)`,
+         (type, entity_id, model, prompt_id, prompt_version, status, payload, error, error_reason, fallback_used, latency_ms, input_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12)`,
         [
           input.type,
           input.entityId,
@@ -78,6 +80,8 @@ export class AiOutputService {
           input.status,
           toJson(input.payload),
           toJson(input.error),
+          input.errorReason ?? null,
+          input.fallbackUsed ?? false,
           input.latencyMs ?? null,
           input.inputHash ?? null,
         ]
@@ -91,6 +95,8 @@ export class AiOutputService {
         promptId: input.promptId ?? null,
         promptVersion: input.promptVersion ?? null,
         inputHash: input.inputHash ?? null,
+        errorReason: input.errorReason ?? null,
+        fallbackUsed: input.fallbackUsed ?? false,
       };
       if (input.status === 'failed') {
         console.warn('[ai-output]', logMeta);

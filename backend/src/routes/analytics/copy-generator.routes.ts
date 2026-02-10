@@ -9,9 +9,19 @@ import {
 } from '../../services/optimization-playbook';
 import { getPromptDefinition } from '../../services/ai-prompts';
 import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../../utils/ai-output';
+import { z } from 'zod';
+import { zodErrorToReason } from '../../utils/ai-guardrails';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+const copySuggestionSchema = z.object({
+  headline: z.string().min(1),
+  primaryText: z.string().min(1),
+  cta: z.string().min(1),
+  angle: z.string().min(1),
+});
+const copySuggestionsSchema = z.array(copySuggestionSchema).min(1);
 
 type CopySuggestion = {
   headline: string;
@@ -193,29 +203,47 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
         });
         if (cached?.payload) {
           const payload = cached.payload as any;
-          if (Array.isArray(payload?.suggestions) && payload.suggestions.length > 0) {
-            suggestions = payload.suggestions;
+          const cachedSuggestions = payload?.suggestions;
+          const parsedCached = copySuggestionsSchema.safeParse(cachedSuggestions);
+          if (parsedCached.success) {
+            suggestions = parsedCached.data;
+            if (payload?.winnerContext) {
+              Object.assign(winnerContext, payload.winnerContext);
+            }
+            aiUsed = true;
+            aiModel = cached.model ?? OPENAI_MODEL;
+            usedCache = true;
+            await aiOutputs.logOutput({
+              type: 'copy-generator',
+              entityId: clientId,
+              model: aiModel,
+              promptId: promptDef.id,
+              promptVersion: promptDef.version,
+              status: 'cached',
+              payload: { suggestions, winnerContext },
+              error: null,
+              errorReason: null,
+              fallbackUsed: false,
+              latencyMs: 0,
+              inputHash,
+            });
           } else {
             suggestions = (FALLBACK_SUGGESTIONS[theme.themeKey] || FALLBACK_SUGGESTIONS.geral).slice(0, suggestCount);
+            await aiOutputs.logOutput({
+              type: 'copy-generator',
+              entityId: clientId,
+              model: cached.model ?? OPENAI_MODEL,
+              promptId: promptDef.id,
+              promptVersion: promptDef.version,
+              status: 'failed',
+              payload: { suggestions, winnerContext },
+              error: { reason: 'invalid_cache' },
+              errorReason: zodErrorToReason(parsedCached.error),
+              fallbackUsed: true,
+              latencyMs: 0,
+              inputHash,
+            });
           }
-          if (payload?.winnerContext) {
-            Object.assign(winnerContext, payload.winnerContext);
-          }
-          aiUsed = true;
-          aiModel = cached.model ?? OPENAI_MODEL;
-          usedCache = true;
-          await aiOutputs.logOutput({
-            type: 'copy-generator',
-            entityId: clientId,
-            model: aiModel,
-            promptId: promptDef.id,
-            promptVersion: promptDef.version,
-            status: 'cached',
-            payload: { suggestions, winnerContext },
-            error: null,
-            latencyMs: 0,
-            inputHash,
-          });
         }
       }
 
@@ -256,7 +284,11 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
               angle: String(s.angle || 'geral'),
             }));
 
-          if (suggestions.length === 0) throw new Error('No valid suggestions from OpenAI');
+          const parsedSuggestions = copySuggestionsSchema.safeParse(suggestions);
+          if (!parsedSuggestions.success) {
+            throw new Error(`Invalid AI response: ${zodErrorToReason(parsedSuggestions.error)}`);
+          }
+          suggestions = parsedSuggestions.data;
           aiUsed = true;
           aiModel = OPENAI_MODEL;
           if (aiOutputs) {
@@ -269,6 +301,8 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
               status: 'success',
               payload: { suggestions, winnerContext },
               error: null,
+              errorReason: null,
+              fallbackUsed: false,
               latencyMs: Date.now() - startedAt,
               inputHash,
             });
@@ -286,6 +320,8 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
               status: 'failed',
               payload: { suggestions, winnerContext },
               error: normalizeAiError(error),
+              errorReason: zodErrorToReason(error),
+              fallbackUsed: true,
               latencyMs: null,
               inputHash,
             });
@@ -303,6 +339,8 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
             status: 'skipped',
             payload: { suggestions, winnerContext },
             error: { reason: 'missing_api_key' },
+            errorReason: 'missing_api_key',
+            fallbackUsed: true,
             latencyMs: null,
             inputHash,
           });
