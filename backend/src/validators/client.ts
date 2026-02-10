@@ -9,11 +9,11 @@ export interface ClientCreateData {
   email: string;
   cpfCnpj?: string;
   metaAdAccountId?: string;
-  tier?: 'basic' | 'premium' | 'enterprise';
+  tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget: number;
   contractStart: string;
-  contractEnd: string;
+  contractEnd?: string | null;
 }
 
 export interface ClientUpdateData {
@@ -21,11 +21,11 @@ export interface ClientUpdateData {
   email?: string;
   cpfCnpj?: string;
   metaAdAccountId?: string | null;
-  tier?: 'basic' | 'premium' | 'enterprise';
+  tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget?: number;
   contractStart?: string;
-  contractEnd?: string;
+  contractEnd?: string | null;
 }
 
 export interface ValidationError {
@@ -65,9 +65,7 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
     }
   }
 
-  if (!data.contractEnd) {
-    errors.push({ field: 'contractEnd', message: 'Contract end date is required' });
-  } else {
+  if (data.contractEnd !== undefined && data.contractEnd !== null && data.contractEnd !== '') {
     const endDate = new Date(data.contractEnd);
     if (isNaN(endDate.getTime())) {
       errors.push({ field: 'contractEnd', message: 'Invalid contract end date format' });
@@ -108,8 +106,8 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
   }
 
   // Validate tier if provided
-  if (data.tier && !['basic', 'premium', 'enterprise'].includes(data.tier)) {
-    errors.push({ field: 'tier', message: 'Tier must be basic, premium, or enterprise' });
+  if (data.tier && !['basic', 'standard', 'premium', 'enterprise'].includes(data.tier)) {
+    errors.push({ field: 'tier', message: 'Tier must be basic, standard, premium, or enterprise' });
   }
 
   // Validate status if provided
@@ -160,7 +158,7 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
     }
   }
 
-  if (data.contractEnd !== undefined) {
+  if (data.contractEnd !== undefined && data.contractEnd !== null && data.contractEnd !== '') {
     const endDate = new Date(data.contractEnd);
     if (isNaN(endDate.getTime())) {
       errors.push({ field: 'contractEnd', message: 'Invalid contract end date format' });
@@ -196,8 +194,8 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
   }
 
   // Tier validation (if provided)
-  if (data.tier !== undefined && !['basic', 'premium', 'enterprise'].includes(data.tier)) {
-    errors.push({ field: 'tier', message: 'Tier must be basic, premium, or enterprise' });
+  if (data.tier !== undefined && !['basic', 'standard', 'premium', 'enterprise'].includes(data.tier)) {
+    errors.push({ field: 'tier', message: 'Tier must be basic, standard, premium, or enterprise' });
   }
 
   // Status validation (if provided)
@@ -225,6 +223,6 @@ export function prepareClientData(data: ClientCreateData): any {
     status: data.status || 'active',
     budget: data.budget,
     contractStart: data.contractStart,
-    contractEnd: data.contractEnd,
+    contractEnd: data.contractEnd ?? null,
   };
 }

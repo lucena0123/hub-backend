@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { getBatchSize, extractCreativeSnapshot, toJsonb } from '../utils';
 import {
   leadTypes,
+  landingPageViewTypes,
+  linkClickTypes,
   messagingConversationTypes,
   parseNumber,
   purchaseTypes,
@@ -47,6 +49,8 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
           const impressions = Math.round(parseNumber(row.impressions));
           const reach = Math.round(parseNumber(row.reach));
           const clicks = Math.round(parseNumber(row.clicks));
+          const linkClicks = sumActions(row.actions, linkClickTypes);
+          const landingPageViews = sumActions(row.actions, landingPageViewTypes);
           const spend = parseNumber(row.spend);
           const conversations = sumActions(row.actions, messagingConversationTypes);
           const leads = sumActions(row.actions, leadTypes);
@@ -64,7 +68,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
           const cpl = contacts > 0 ? spend / contacts : 0;
 
           const rowPh: string[] = [];
-          for (let i = 0; i < 25; i++) {
+          for (let i = 0; i < 27; i++) {
             rowPh.push(`$${adParamIndex++}`);
           }
           adPlaceholders.push(`(${rowPh.join(', ')})`);
@@ -75,10 +79,12 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
             row.adset_id || null,
             row.ad_id,
             row.ad_name || null,
-            row.date_start,
+            new Date(row.date_start),
             impressions,
             reach,
             clicks,
+            linkClicks,
+            landingPageViews,
             spend,
             conversions,
             conversations,
@@ -101,13 +107,15 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
         if (adPlaceholders.length > 0) {
           await ctx.prisma.$executeRawUnsafe(
             `INSERT INTO ad_creative_metrics
-              (id, campaign_id, adset_id, ad_id, ad_name, date, impressions, reach, clicks, spend, conversions, messaging_conversations, ctr, cpc, cpl, cpm, video_thruplay, video_p25, video_p50, video_p75, video_p100, video_3sec_views, hook_rate, hold_rate, platform)
+              (id, campaign_id, adset_id, ad_id, ad_name, date, impressions, reach, clicks, link_clicks, landing_page_views, spend, conversions, messaging_conversations, ctr, cpc, cpl, cpm, video_thruplay, video_p25, video_p50, video_p75, video_p100, video_3sec_views, hook_rate, hold_rate, platform)
               VALUES ${adPlaceholders.join(', ')}
               ON CONFLICT (ad_id, date, platform)
               DO UPDATE SET
                 impressions = EXCLUDED.impressions,
                 reach = EXCLUDED.reach,
                 clicks = EXCLUDED.clicks,
+                link_clicks = EXCLUDED.link_clicks,
+                landing_page_views = EXCLUDED.landing_page_views,
                 spend = EXCLUDED.spend,
                 conversions = EXCLUDED.conversions,
                 messaging_conversations = EXCLUDED.messaging_conversations,
@@ -164,7 +172,11 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
 
             for (const snap of batch) {
               const rowPh: string[] = [];
-              for (let i = 0; i < columnsPerRow; i++) rowPh.push(`$${paramIndex++}`);
+              for (let i = 0; i < columnsPerRow; i++) {
+                const placeholderIndex = paramIndex++;
+                const needsJsonb = i >= 14;
+                rowPh.push(needsJsonb ? `$${placeholderIndex}::jsonb` : `$${placeholderIndex}`);
+              }
               placeholders.push(`(${rowPh.join(', ')})`);
 
               values.push(
@@ -234,7 +246,7 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext) => {
                 values.push(map.adId, map.creativeId, map.snapshotId);
               }
 
-              values.push(since, until);
+              values.push(new Date(since), new Date(until));
               const sinceParam = paramIndex++;
               const untilParam = paramIndex++;
 

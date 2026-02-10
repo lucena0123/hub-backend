@@ -2,7 +2,6 @@ import type { FastifyPluginAsync } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 
 import { requireAuth } from '../../middleware/rbac';
-import { optionalAuth } from '../../middleware/auth';
 import { MetaAdsService } from '../../services/meta-ads-service';
 import { buildOptimizationCenter } from './optimization-center/handler';
 
@@ -20,6 +19,12 @@ const parseLimit = (raw: unknown) => {
   const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
   const limit = Number.isFinite(parsed) ? parsed : 50;
   return Math.max(1, Math.min(200, limit));
+};
+
+const parseOffset = (raw: unknown) => {
+  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
+  const offset = Number.isFinite(parsed) ? parsed : 0;
+  return Math.max(0, offset);
 };
 
 const mapProposalRow = (row: any) => ({
@@ -89,6 +94,52 @@ const mapExecutionRow = (row: any) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+const mapHistoryRow = (row: any) => {
+  const entityName =
+    row.campaign_name ??
+    row.adset_name ??
+    row.creative_headline ??
+    row.creative_primary_text ??
+    null;
+
+  return {
+    executionId: String(row.execution_id),
+    proposalId: String(row.proposal_id),
+    clientId: String(row.client_id),
+    status: row.execution_status,
+    attempts: typeof row.attempts === 'number' ? row.attempts : 0,
+    dryRun: Boolean(row.dry_run),
+    requestPayload: row.request_payload ?? null,
+    metaResponse: row.meta_response ?? null,
+    error: row.error_message
+      ? { message: row.error_message, stack: row.error_stack ?? null }
+      : null,
+    startedAt: row.started_at ?? null,
+    completedAt: row.completed_at ?? null,
+    createdAt: row.execution_created_at,
+    updatedAt: row.execution_updated_at,
+    executedBy: {
+      type: row.executed_by_type,
+      userId: row.executed_by_user_id ?? null,
+    },
+    action: row.action ?? null,
+    title: row.title ?? null,
+    description: row.description ?? null,
+    category: row.category ?? null,
+    severity: row.severity ?? null,
+    entity: row.entity_type && row.entity_id
+      ? {
+          type: row.entity_type,
+          id: row.entity_id,
+          name: entityName,
+        }
+      : null,
+    source: row.source ?? null,
+    proposalCreatedAt: row.proposal_created_at ?? null,
+    proposalUpdatedAt: row.proposal_updated_at ?? null,
+  };
+};
 
 const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify;
@@ -428,7 +479,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { status?: string; action?: string; entityType?: string; limit?: string };
   }>(
     '/api/clients/:clientId/action-proposals',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       try {
         const { clientId } = request.params;
@@ -467,6 +518,137 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         reply.status(500);
         return {
           error: 'Failed to list action proposals',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  fastify.get<{
+    Params: { clientId: string };
+    Querystring: {
+      status?: string;
+      action?: string;
+      entityType?: string;
+      entityId?: string;
+      campaignId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: string;
+      offset?: string;
+    };
+  }>(
+    '/api/clients/:clientId/action-history',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      try {
+        const { clientId } = request.params;
+        const status = toNullableString(request.query.status);
+        const action = toNullableString(request.query.action);
+        const entityType = toNullableString(request.query.entityType);
+        const entityId = toNullableString(request.query.entityId);
+        const campaignId = toNullableString(request.query.campaignId);
+        const startDate = toNullableString(request.query.startDate);
+        const endDate = toNullableString(request.query.endDate);
+        const limit = parseLimit(request.query.limit);
+        const offset = parseOffset(request.query.offset);
+
+        const params = [
+          clientId,
+          status,
+          action,
+          entityType,
+          entityId,
+          startDate,
+          endDate,
+          campaignId,
+        ];
+
+        const whereClause = `
+          p.client_id = $1
+          AND ($2::text IS NULL OR e.status = $2)
+          AND ($3::text IS NULL OR p.action = $3)
+          AND ($4::text IS NULL OR p.entity_type = $4)
+          AND ($5::text IS NULL OR p.entity_id = $5)
+          AND ($6::date IS NULL OR e.created_at::date >= $6::date)
+          AND ($7::date IS NULL OR e.created_at::date <= $7::date)
+          AND (
+            $8::text IS NULL OR (
+              (p.entity_type = 'campaign' AND p.entity_id = $8)
+              OR (p.entity_type = 'adset' AND EXISTS (
+                SELECT 1 FROM adsets a2 WHERE a2.adset_id = p.entity_id AND a2.campaign_id = $8
+              ))
+              OR (p.entity_type = 'creative' AND EXISTS (
+                SELECT 1 FROM ad_creative_metrics m WHERE m.creative_snapshot_id = p.entity_id AND m.campaign_id = $8
+              ))
+            )
+          )
+        `;
+
+        const countResult = await pool.query(
+          `SELECT COUNT(*)::int AS total
+           FROM action_executions e
+           JOIN action_proposals p ON p.id = e.proposal_id
+           WHERE ${whereClause}`,
+          params
+        );
+
+        const result = await pool.query(
+          `SELECT
+            e.id as execution_id,
+            e.status as execution_status,
+            e.attempts,
+            e.dry_run,
+            e.request_payload,
+            e.meta_response,
+            e.error_message,
+            e.error_stack,
+            e.started_at,
+            e.completed_at,
+            e.executed_by_type,
+            e.executed_by_user_id,
+            e.created_at as execution_created_at,
+            e.updated_at as execution_updated_at,
+            p.id as proposal_id,
+            p.client_id,
+            p.action,
+            p.title,
+            p.description,
+            p.category,
+            p.severity,
+            p.entity_type,
+            p.entity_id,
+            p.source,
+            p.created_at as proposal_created_at,
+            p.updated_at as proposal_updated_at,
+            c.name as campaign_name,
+            a.adset_name as adset_name,
+            s.headline as creative_headline,
+            s.primary_text as creative_primary_text
+          FROM action_executions e
+          JOIN action_proposals p ON p.id = e.proposal_id
+          LEFT JOIN campaigns c
+            ON p.entity_type = 'campaign'
+           AND (c.id = p.entity_id OR c."externalId" = p.entity_id)
+          LEFT JOIN adsets a
+            ON p.entity_type = 'adset'
+           AND a.adset_id = p.entity_id
+          LEFT JOIN ad_creative_snapshots s
+            ON p.entity_type = 'creative'
+           AND s.id = p.entity_id
+          WHERE ${whereClause}
+          ORDER BY e.created_at DESC
+          LIMIT $9 OFFSET $10`,
+          [...params, limit, offset]
+        );
+
+        const total = Number(countResult.rows?.[0]?.total ?? 0);
+        const history = result.rows.map(mapHistoryRow);
+        return { clientId, total, history };
+      } catch (error) {
+        reply.status(500);
+        return {
+          error: 'Failed to fetch action history',
           message: error instanceof Error ? error.message : 'Unknown error',
         };
       }
@@ -544,10 +726,10 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Params: { id: string }; Body: { reason?: string } }>(
     '/api/action-proposals/:id/approve',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { id } = request.params;
-      const userId = (request as any)?.user?.id || null; // Allow null for anonymous
+      const userId = (request as any)?.user?.id || null;
 
       const reason = toNullableString(request.body?.reason);
 
@@ -620,10 +802,10 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Params: { id: string }; Body: { reason?: string } }>(
     '/api/action-proposals/:id/reject',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { id } = request.params;
-      const userId = (request as any)?.user?.id || null; // Allow null for anonymous
+      const userId = (request as any)?.user?.id || null;
 
       const reason = toNullableString(request.body?.reason);
 
@@ -696,10 +878,10 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Params: { id: string }; Body: { dryRun?: boolean } }>(
     '/api/action-proposals/:id/execute',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { id } = request.params;
-      const userId = (request as any)?.user?.id || null; // Allow null for anonymous
+      const userId = (request as any)?.user?.id || null;
 
       const writebackEnabled = String(process.env.META_WRITEBACK_ENABLED || '').trim().toLowerCase() === 'true';
       const requestedDryRun = typeof request.body?.dryRun === 'boolean' ? request.body.dryRun : true;
@@ -847,7 +1029,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { period?: string; startDate?: string; endDate?: string; campaignId?: string; actions?: string[] } | undefined;
   }>(
     '/api/clients/:clientId/action-proposals/generate',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       try {
         const { clientId } = request.params;
@@ -1013,6 +1195,66 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
           createdIds = insertResult.rows.map((r: any) => String(r.id));
         }
 
+        // ─── Auto-approve eligible proposals ───
+        let autoApproved = 0;
+        let autoSkipped = 0;
+
+        let autoApproveEnabled = false;
+        try {
+          const targetsResult = await pool.query(
+            `SELECT optimization_targets FROM clients WHERE id = $1`,
+            [clientId]
+          );
+          const raw = targetsResult.rows?.[0]?.optimization_targets;
+          if (raw && typeof raw === 'object' && raw.autoApproveEnabled === true) {
+            autoApproveEnabled = true;
+          }
+        } catch (_) {}
+
+        if (autoApproveEnabled && createdIds.length > 0) {
+          const autoApproveMaxSpend = 500;
+          const maxAutoApprovals = 5;
+
+          for (const proposalId of createdIds) {
+            if (autoApproved >= maxAutoApprovals) {
+              autoSkipped++;
+              continue;
+            }
+
+            const matching = toInsert.find((r) => r.id === proposalId);
+            if (!matching) { autoSkipped++; continue; }
+
+            const payload = matching.recommendedPayload;
+            const metrics = payload?.metrics ?? {};
+            const ruleId = matching.ruleId ?? '';
+            const spend = parseFloat(metrics.spend ?? metrics.spendLast7 ?? 0) || 0;
+            const conversations = parseInt(metrics.conversations ?? metrics.conversationsLast7 ?? 0) || 0;
+
+            const isLoser = ruleId.includes('loser') && spend >= 200 && conversations === 0;
+            const isFatigued = ruleId.includes('fatigued');
+
+            if (!isLoser && !isFatigued) { autoSkipped++; continue; }
+            if (spend > autoApproveMaxSpend) { autoSkipped++; continue; }
+
+            try {
+              const approvalId = uuidv4();
+              await pool.query(
+                `INSERT INTO action_approvals
+                  (id, proposal_id, decision, reason, decided_by_user_id, decided_at, created_at)
+                 VALUES ($1, $2, 'approved', $3, NULL, NOW(), NOW())`,
+                [approvalId, proposalId, `Auto-approved: ${ruleId} (spend=${spend}, conv=${conversations})`]
+              );
+              await pool.query(
+                `UPDATE action_proposals SET status = 'approved', updated_at = NOW() WHERE id = $1`,
+                [proposalId]
+              );
+              autoApproved++;
+            } catch (_) {
+              autoSkipped++;
+            }
+          }
+        }
+
         return {
           clientId,
           playbookVersion,
@@ -1021,6 +1263,8 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
           created: createdCount,
           createdIds,
           skipped: candidates.length - createdCount,
+          autoApproved,
+          autoSkipped,
         };
       } catch (error) {
         reply.status(500);

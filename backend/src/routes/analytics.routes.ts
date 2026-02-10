@@ -10,8 +10,16 @@ import optimizationCenterRoutes from './analytics/optimization-center.routes';
 import playbookRoutes from './analytics/playbooks.routes';
 import temporalAnalysisRoutes from './analytics/temporal-analysis.routes';
 import budgetPacingRoutes from './analytics/budget-pacing.routes';
+import creativeWinnersRoutes from './analytics/creative-winners.routes';
+import copyGeneratorRoutes from './analytics/copy-generator.routes';
+import audienceInsightsRoutes from './analytics/audience-insights.routes';
+import anomalyDetectionRoutes from './analytics/anomaly-detection.routes';
+import campaignHealthRoutes from './analytics/campaign-health.routes';
+import weeklySummaryRoutes from './analytics/weekly-summary.routes';
+import { authenticate } from '../middleware/auth';
 
 const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
   fastify.register(playbookRoutes);
   fastify.register(copyInsightsRoutes);
   fastify.register(campaignCreativeMetricsRoutes);
@@ -23,6 +31,12 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.register(businessMetricsRoutes);
   fastify.register(optimizationCenterRoutes);
   fastify.register(budgetPacingRoutes);
+  fastify.register(creativeWinnersRoutes);
+  fastify.register(copyGeneratorRoutes);
+  fastify.register(audienceInsightsRoutes);
+  fastify.register(anomalyDetectionRoutes);
+  fastify.register(campaignHealthRoutes);
+  fastify.register(weeklySummaryRoutes);
 };
 
 export default analyticsRoutes;

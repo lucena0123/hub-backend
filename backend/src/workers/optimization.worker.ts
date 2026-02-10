@@ -12,6 +12,9 @@ import { QUEUE_NAMES } from '../config/queues';
 import { buildOptimizationCenter } from '../routes/analytics/optimization-center/handler';
 import { NotificationService } from '../services/notification-service';
 import { AnalyticsService } from '../services/analytics/analytics-service';
+import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
+import type { OptimizationItem } from '../services/optimization-playbook/optimization-center/engine/types';
+import { prisma } from '../config/prisma';
 
 type OptimizationJobData = { clientId: string };
 
@@ -176,6 +179,19 @@ export function createOptimizationWorker(pool: Pool, connection: IORedis, analyt
           metadata: { created: createdCount, candidates: candidates.length },
           expiresInHours: 72,
         }).catch(() => { });
+      }
+
+      // -----------------------------------------------------------------------
+      // GENERATE AUTOMATED TASKS (Agency OS)
+      // -----------------------------------------------------------------------
+      try {
+        const taskGenerator = new OptimizationTaskGenerator(prisma);
+        const taskStats = await taskGenerator.generateTasksFromInsights(clientId, items as OptimizationItem[]);
+        if (taskStats.created > 0) {
+          console.log(`[optimization-worker] Generated ${taskStats.created} intervention tasks for client ${clientId}`);
+        }
+      } catch (err) {
+        console.error('[optimization-worker] Failed to generate intervention tasks:', err);
       }
 
       return {

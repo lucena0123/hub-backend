@@ -51,9 +51,26 @@ export class CacheService {
    */
   async invalidatePattern(pattern: string): Promise<void> {
     try {
-      const keys = await this.redis.keys(pattern);
-      if (keys.length > 0) {
+      const deleteBatch = async (keys: string[]) => {
+        if (keys.length === 0) return;
+        const unlink = (this.redis as unknown as { unlink?: (keys: string[]) => Promise<number> }).unlink;
+        if (typeof unlink === 'function') {
+          await unlink(keys);
+          return;
+        }
         await this.redis.del(keys);
+      };
+
+      const batch: string[] = [];
+      for await (const key of this.redis.scanIterator({ MATCH: pattern, COUNT: 500 })) {
+        batch.push(key);
+        if (batch.length >= 500) {
+          await deleteBatch(batch.splice(0, batch.length));
+        }
+      }
+
+      if (batch.length > 0) {
+        await deleteBatch(batch);
       }
     } catch {
       // Silent fail

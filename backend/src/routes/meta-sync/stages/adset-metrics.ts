@@ -1,6 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getBatchSize } from '../utils';
-import { leadTypes, messagingConversationTypes, messagingReplyTypes, parseNumber, purchaseTypes, sumActions } from '../insights';
+import {
+  landingPageViewTypes,
+  leadTypes,
+  linkClickTypes,
+  messagingConversationTypes,
+  messagingReplyTypes,
+  parseNumber,
+  purchaseTypes,
+  sumActions,
+} from '../insights';
 import type { MetaSyncContext } from '../types';
 
 export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
@@ -37,6 +46,8 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
         const reach = Math.round(parseNumber(row.reach));
         const clicks = Math.round(parseNumber(row.clicks));
         const spend = parseNumber(row.spend);
+        const linkClicks = sumActions(row.actions, linkClickTypes);
+        const landingPageViews = sumActions(row.actions, landingPageViewTypes);
         const conversations = sumActions(row.actions, messagingConversationTypes);
         const replies = sumActions(row.actions, messagingReplyTypes);
         const leads = sumActions(row.actions, leadTypes);
@@ -50,7 +61,7 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
         const cpl = contacts > 0 ? spend / contacts : 0;
 
         const rowPh: string[] = [];
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 22; i++) {
           rowPh.push(`$${adsetParamIndex++}`);
         }
         adsetPlaceholders.push(`(${rowPh.join(', ')})`);
@@ -60,10 +71,12 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
           campaignId,
           row.adset_id,
           row.adset_name || null,
-          row.date_start,
+          new Date(row.date_start),
           impressions,
           reach,
           clicks,
+          linkClicks,
+          landingPageViews,
           spend,
           conversions,
           leads,
@@ -82,13 +95,15 @@ export const syncAdsetMetricsStage = async (ctx: MetaSyncContext) => {
       if (adsetPlaceholders.length > 0) {
         await ctx.prisma.$executeRawUnsafe(
           `INSERT INTO adset_metrics
-           (id, campaign_id, adset_id, adset_name, date, impressions, reach, clicks, spend, conversions, leads, messaging_conversations, messaging_first_reply, ctr, cpc, cpl, cpm, frequency, quality_ranking, platform)
+           (id, campaign_id, adset_id, adset_name, date, impressions, reach, clicks, link_clicks, landing_page_views, spend, conversions, leads, messaging_conversations, messaging_first_reply, ctr, cpc, cpl, cpm, frequency, quality_ranking, platform)
            VALUES ${adsetPlaceholders.join(', ')}
            ON CONFLICT (adset_id, date, platform)
            DO UPDATE SET
              impressions = EXCLUDED.impressions,
              reach = EXCLUDED.reach,
              clicks = EXCLUDED.clicks,
+             link_clicks = EXCLUDED.link_clicks,
+             landing_page_views = EXCLUDED.landing_page_views,
              spend = EXCLUDED.spend,
              conversions = EXCLUDED.conversions,
              leads = EXCLUDED.leads,

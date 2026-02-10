@@ -1,5 +1,6 @@
 # IDE / Editor
 .claude/
+.agent/
 .vscode/
 .idea/
 
@@ -9,8 +10,10 @@ backend/node_modules/
 
 # Generated files
 backend/reports/
+backend/coverage/
 dist/
 *.js.map
+*.bak
 
 # Environment
 .env

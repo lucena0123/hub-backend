@@ -2,8 +2,16 @@ import { buildApp } from './app';
 import { PORT, HOST } from './config/env';
 import { startWorkers, stopWorkers } from './workers';
 import { redis } from './config/redis';
+import { optimizationActionRoutes } from './routes/optimization-actions.routes';
+import creativeLinterRoutes from './routes/creative-linter.routes';
+import executiveDashboardRoutes from './routes/analytics/executive-dashboard.routes';
+import queueRoutes from './routes/queue.routes';
 
 const fastify = buildApp();
+fastify.register(optimizationActionRoutes, { prefix: '/api/optimization' });
+fastify.register(creativeLinterRoutes);
+fastify.register(executiveDashboardRoutes);
+fastify.register(queueRoutes);
 let workers: ReturnType<typeof startWorkers> = [];
 
 // Graceful shutdown

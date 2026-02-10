@@ -55,6 +55,7 @@ export const mapCreativeRows = (params: { rows: any[]; adsetNameById: Map<string
       descriptions: row.descriptions || null,
       ctaTypes: row.cta_types || null,
       destinationUrls: row.destination_urls || null,
+      visualAttributes: row.visual_attributes || null,
       campaigns: toStringArray(row.campaigns),
       adNames: toStringArray(row.ad_names),
       adsets,

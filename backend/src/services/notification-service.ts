@@ -11,7 +11,11 @@ export type NotificationType =
   | 'sync_completed'
   | 'sync_failed'
   | 'pacing_warning'
-  | 'pacing_critical';
+  | 'pacing_critical'
+  | 'anomaly_cpl_spike'
+  | 'anomaly_conversations_drop'
+  | 'anomaly_overspend'
+  | 'anomaly_ctr_drop';
 
 export type NotificationSeverity = 'info' | 'warning' | 'critical';
 

@@ -1,12 +1,15 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateReportGenerate, validateWeeklyReportGenerate } from '../validators/report';
+import { authenticate } from '../middleware/auth';
+import { requireRoles } from '../middleware/rbac';
 
 const reportRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
   const { prisma } = fastify;
   const { reports: reportGenerator } = fastify.services;
 
   // Generate monthly report for a client
-  fastify.post('/api/reports/generate/:clientId', async (request, reply) => {
+  fastify.post('/api/reports/generate/:clientId', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
       const { clientId } = request.params as { clientId: string };
 
@@ -42,7 +45,7 @@ const reportRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Generate weekly report for a client (custom date range)
-  fastify.post('/api/reports/generate-weekly/:clientId', async (request, reply) => {
+  fastify.post('/api/reports/generate-weekly/:clientId', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
       const { clientId } = request.params as { clientId: string };
 

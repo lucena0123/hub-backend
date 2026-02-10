@@ -1,7 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
 import { MetaAdsService } from '../services/meta-ads-service';
+import { authenticate } from '../middleware/auth';
 
 const metaDiscoveryRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
 
   // Test Meta API connection
   fastify.get('/api/meta/test', async (_request, reply) => {

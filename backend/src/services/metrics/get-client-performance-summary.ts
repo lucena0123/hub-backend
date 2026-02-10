@@ -30,6 +30,8 @@ export const getClientPerformanceSummary = async (
       id: true,
       name: true,
       platform: true,
+      optimizationThemeKey: true,
+      optimizationSubthemeKey: true,
       budget: true, // Prisma returns Decimal or null? Check schema type. Schema says String or Float? Actually in schema it is usually Float or Decimal.
       status: true,
       updatedAt: true,
@@ -284,6 +286,8 @@ export const getClientPerformanceSummary = async (
       campaignId: campaign.id,
       campaignName: campaign.name,
       platform: campaign.platform,
+      optimizationThemeKey: campaign.optimizationThemeKey ?? null,
+      optimizationSubthemeKey: campaign.optimizationSubthemeKey ?? null,
       period: { start: Dates.start, end: Dates.end }, // use Dates computed above
       totalImpressions: aggregated.totalImpressions,
       totalClicks: aggregated.totalClicks,

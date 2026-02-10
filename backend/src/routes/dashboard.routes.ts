@@ -1,5 +1,4 @@
 import { FastifyPluginAsync } from 'fastify';
-
 import { authenticate } from '../middleware/auth';
 
 const dashboardRoutes: FastifyPluginAsync = async (fastify) => {

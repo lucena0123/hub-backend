@@ -92,8 +92,9 @@ export function isValidEmail(email: string): boolean {
 /**
  * Determines client tier based on budget
  */
-export function calculateTier(budget: number): 'basic' | 'premium' | 'enterprise' {
-  if (budget >= 50000) return 'enterprise';
+export function calculateTier(budget: number): 'basic' | 'standard' | 'premium' | 'enterprise' {
+  if (budget >= 15000) return 'enterprise';
   if (budget >= 10000) return 'premium';
+  if (budget >= 5000) return 'standard';
   return 'basic';
 }

@@ -63,12 +63,12 @@ export class MetricsService {
       messagingFirstReply: m._sum.messagingFirstReply || 0,
       linkClicks: m._sum.linkClicks || 0,
       landingPageViews: m._sum.landingPageViews || 0,
-      spend: m._sum.spend || 0,
-      revenue: m._sum.revenue || 0,
-      ctr: m._avg.ctr || 0,
-      cpc: m._avg.cpc || 0,
-      cpl: m._avg.cpl || 0,
-      roas: m._avg.roas || 0,
+      spend: Number(m._sum.spend ?? 0),
+      revenue: Number(m._sum.revenue ?? 0),
+      ctr: Number(m._avg.ctr ?? 0),
+      cpc: Number(m._avg.cpc ?? 0),
+      cpl: Number(m._avg.cpl ?? 0),
+      roas: Number(m._avg.roas ?? 0),
     }));
   }
 

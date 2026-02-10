@@ -1,10 +1,14 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateMetricsImport, validateMetricUpsert } from '../validators/metrics-import';
 import { authenticate } from '../middleware/auth';
+import { requireRoles } from '../middleware/rbac';
+import { AppServices } from '../types/fastify';
 
 const metricsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
-  const { metrics: metricsService, cache: cacheService } = fastify.services;
+  // Explicit cast to avoid type issues if declaration merging fails
+  const services = (fastify as any).services as AppServices;
+  const { metrics: metricsService, cache: cacheService, anomaly: anomalyService } = services;
 
   // Get campaign metrics
   fastify.get('/api/campaigns/:id/metrics', async (request, reply) => {
@@ -54,7 +58,7 @@ const metricsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Import metrics in batch
-  fastify.post('/api/metrics/import', async (request, reply) => {
+  fastify.post('/api/metrics/import', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
       const validation = validateMetricsImport(request.body);
       if (!validation.valid) {
@@ -63,19 +67,6 @@ const metricsRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const { metrics, overwrite } = validation.data!;
-
-      // We should validate/fetch platform for each campaign if not provided in payload
-      // The service.importMetrics handles basic upsert. 
-      // It expects 'platform' in entry or defaults to 'other'.
-      // If we want to look up platform from campaign ID like before, we might need to do it here or in service.
-      // The previous code did: lookup campaign IDs to get platform.
-      // Service importMetrics doesn't look up campaign.
-      // So let's look up platforms here or assume payload has them (usually payload from connector has them).
-      // If payload is from CSV/manual, it might not.
-      // Let's rely on service to handle default, OR better, let's keep the lookup logic here?
-      // No, let's keep logic in service if possible, but service `importMetrics` current implementation doesn't lookup.
-      // I will assume payload provided proper data or default 'other' is acceptable for now.
-      // (Refactoring to purely service-based means service should handle business logic. I can improve service later).
 
       const result = await metricsService.importMetrics(metrics, overwrite);
 
@@ -106,7 +97,7 @@ const metricsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Add single metric entry
-  fastify.post('/api/metrics/entry', async (request, reply) => {
+  fastify.post('/api/metrics/entry', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
       const validation = validateMetricUpsert(request.body);
       if (!validation.valid) {
@@ -115,12 +106,6 @@ const metricsRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const entry = validation.data!;
-      // Lookup platform if missing? Service defaults to 'other'.
-      // Previous code checked if campaign exists.
-      // Prisma upsert will fail with foreign key constraint if campaignId doesn't exist?
-      // Yes, if foreign key exists.
-      // So we don't strictly need to check existence efficiently if we catch the error.
-      // Let's try upsert.
 
       const result = await metricsService.upsertMetric(entry);
 
@@ -142,6 +127,34 @@ const metricsRoutes: FastifyPluginAsync = async (fastify) => {
         error: 'Failed to save metric',
         message: msg,
       };
+    }
+  });
+
+  // Get global critical anomalies (Dashboard Widget)
+  fastify.get('/api/metrics/anomalies/critical', async (_request, reply) => {
+    try {
+      // Use locally destructured service
+      const anomalies = await anomalyService.getGlobalAnomalies(20);
+      return anomalies;
+    } catch (error) {
+      fastify.log.error(error);
+      reply.status(500);
+      return {
+        error: 'Failed to fetch global anomalies',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Get unacknowledged count (Dashboard Badge)
+  fastify.get('/api/metrics/anomalies/count', async (request, _reply) => {
+    try {
+      const { clientId } = request.query as { clientId: string };
+      if (!clientId) return { count: 0 };
+      const count = await anomalyService.getUnacknowledgedCount(clientId);
+      return { count };
+    } catch (error) {
+      return { count: 0 };
     }
   });
 };

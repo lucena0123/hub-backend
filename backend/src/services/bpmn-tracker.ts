@@ -11,6 +11,9 @@ const BPMN_SUBPROCESSES = {
   '5.3': { name: 'Testes A/B', stage: 'monitoring' },
 };
 
+const toISOStringOrUndefined = (value: Date | null | undefined) => (value ? value.toISOString() : undefined);
+const toISOStringOrNow = (value: Date | null | undefined) => (value ? value.toISOString() : new Date().toISOString());
+
 export class BPMNTracker {
   constructor(private prisma: PrismaClient) { }
 
@@ -32,19 +35,19 @@ export class BPMNTracker {
       clientId: row.clientId,
       currentSubprocess: row.currentSubprocess,
       status: row.status as any,
-      progressPercentage: row.progressPercentage,
+      progressPercentage: row.progressPercentage ?? 0,
       completedTasks: row.completedTasks,
       pendingTasks: row.pendingTasks,
       blockedTasks: row.blockedTasks,
-      startedAt: row.startedAt?.toISOString(),
-      estimatedCompletion: row.estimatedCompletion?.toISOString(),
-      completedAt: row.completedAt?.toISOString(),
+      startedAt: toISOStringOrUndefined(row.startedAt),
+      estimatedCompletion: toISOStringOrUndefined(row.estimatedCompletion),
+      completedAt: toISOStringOrUndefined(row.completedAt),
       notes: row.notes || undefined,
       blockers: row.blockers as any[],
       subprocessHistory: row.subprocessHistory as any[],
       metadata: row.metadata as any,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+      createdAt: toISOStringOrNow(row.createdAt),
+      updatedAt: toISOStringOrNow(row.updatedAt),
     };
   }
 
@@ -59,15 +62,29 @@ export class BPMNTracker {
     const existing = await this.getProgress(clientId);
     if (existing) return existing;
 
-    const row = await this.prisma.clientBPMNProgress.create({
-      data: {
-        clientId,
-        currentSubprocess: startingSubprocess,
-        status: 'in_progress',
-        progressPercentage: 0,
-        startedAt: new Date(),
-      }
-    });
+    let row;
+
+    try {
+      row = await this.prisma.clientBPMNProgress.create({
+        data: {
+          clientId,
+          currentSubprocess: startingSubprocess,
+          status: 'in_progress',
+          progressPercentage: 0,
+          completedTasks: [],
+          pendingTasks: [],
+          blockedTasks: [],
+          blockers: [],
+          subprocessHistory: [],
+          metadata: {},
+          startedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      const progress = await this.getProgress(clientId);
+      if (progress) return progress;
+      throw error;
+    }
 
     // Return in correct format
     return {
@@ -75,19 +92,19 @@ export class BPMNTracker {
       clientId: row.clientId,
       currentSubprocess: row.currentSubprocess,
       status: row.status as any,
-      progressPercentage: row.progressPercentage,
+      progressPercentage: row.progressPercentage ?? 0,
       completedTasks: row.completedTasks,
       pendingTasks: row.pendingTasks,
       blockedTasks: row.blockedTasks,
-      startedAt: row.startedAt?.toISOString(),
-      estimatedCompletion: row.estimatedCompletion?.toISOString(),
-      completedAt: row.completedAt?.toISOString(),
+      startedAt: toISOStringOrUndefined(row.startedAt),
+      estimatedCompletion: toISOStringOrUndefined(row.estimatedCompletion),
+      completedAt: toISOStringOrUndefined(row.completedAt),
       notes: row.notes || undefined,
       blockers: row.blockers as any[],
       subprocessHistory: row.subprocessHistory as any[],
       metadata: row.metadata as any,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+      createdAt: toISOStringOrNow(row.createdAt),
+      updatedAt: toISOStringOrNow(row.updatedAt),
     };
   }
 
@@ -171,19 +188,19 @@ export class BPMNTracker {
       clientId: row.clientId,
       currentSubprocess: row.currentSubprocess,
       status: row.status as any,
-      progressPercentage: row.progressPercentage,
+      progressPercentage: row.progressPercentage ?? 0,
       completedTasks: row.completedTasks,
       pendingTasks: row.pendingTasks,
       blockedTasks: row.blockedTasks,
-      startedAt: row.startedAt?.toISOString(),
-      estimatedCompletion: row.estimatedCompletion?.toISOString(),
-      completedAt: row.completedAt?.toISOString(),
+      startedAt: toISOStringOrUndefined(row.startedAt),
+      estimatedCompletion: toISOStringOrUndefined(row.estimatedCompletion),
+      completedAt: toISOStringOrUndefined(row.completedAt),
       notes: row.notes || undefined,
       blockers: row.blockers as any[],
       subprocessHistory: row.subprocessHistory as any[],
       metadata: row.metadata as any,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+      createdAt: toISOStringOrNow(row.createdAt),
+      updatedAt: toISOStringOrNow(row.updatedAt),
     }));
   }
 

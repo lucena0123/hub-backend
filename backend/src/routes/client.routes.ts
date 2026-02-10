@@ -1,13 +1,11 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateClientCreate, validateClientUpdate } from '../validators/client';
 import { authenticate } from '../middleware/auth';
+import { requireRoles } from '../middleware/rbac';
 
 const clientRoutes: FastifyPluginAsync = async (fastify) => {
-  const { clients: clientService } = fastify.services;
-
-  // Apply global protection to this plugin scope? Or individual routes?
-  // Fastify plugin encapsulation means we can add a hook here for all routes in this file.
   fastify.addHook('preHandler', authenticate);
+  const { clients: clientService } = fastify.services;
 
   // List clients
   fastify.get('/api/clients', async (_request, reply) => {
@@ -47,7 +45,7 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Create client
-  fastify.post('/api/clients', async (request, reply) => {
+  fastify.post('/api/clients', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       const validation = validateClientCreate(request.body);
       if (!validation.valid) {
@@ -76,7 +74,7 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Update client
-  fastify.put('/api/clients/:id', async (request, reply) => {
+  fastify.put('/api/clients/:id', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const validation = validateClientUpdate(request.body);
@@ -112,7 +110,7 @@ const clientRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Delete client
-  fastify.delete('/api/clients/:id', async (request, reply) => {
+  fastify.delete('/api/clients/:id', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const result = await clientService.deleteClient(id);

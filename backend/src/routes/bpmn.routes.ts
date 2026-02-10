@@ -1,8 +1,10 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateBpmnInit, validateBpmnUpdate } from '../validators/bpmn';
 import { BpmnDefinitionInvalidError, BpmnDefinitionNotFoundError } from '../services/bpmn-definition-service';
+import { authenticate } from '../middleware/auth';
 
 const bpmnRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
   const { bpmn: bpmnTracker, bpmnDefinitions } = fastify.services;
 
   // Get client BPMN progress
@@ -11,13 +13,19 @@ const bpmnRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
 
       const progress = await bpmnTracker.getProgress(id);
+      if (progress) return progress;
 
-      if (!progress) {
+      const client = await fastify.prisma.client.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (!client) {
         reply.status(404);
-        return { error: 'BPMN progress not found for this client' };
+        return { error: 'Client not found' };
       }
 
-      return progress;
+      return bpmnTracker.initializeProgress(id, '4.1');
     } catch (error) {
       fastify.log.error(error);
       reply.status(500);

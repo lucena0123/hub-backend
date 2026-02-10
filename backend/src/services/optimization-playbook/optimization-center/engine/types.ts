@@ -15,9 +15,16 @@ export type OptimizationThemeInfo = {
 };
 
 export type OptimizationEntityInfo = {
-  type: 'campaign' | 'creative';
+  type: 'campaign' | 'creative' | 'adset';
   id: string;
   name?: string | null;
+};
+
+export type OptimizationActionPayload = {
+  type: 'pause_ad' | 'resume_ad' | 'set_adset_budget' | 'set_campaign_budget';
+  entityId: string;
+  amount?: number; // For budget changes
+  reason: string;
 };
 
 export type OptimizationItem = {
@@ -32,6 +39,7 @@ export type OptimizationItem = {
   entity?: OptimizationEntityInfo;
   metrics?: Record<string, number | string | null>;
   thresholds?: Record<string, number | string | null>;
+  autoAction?: OptimizationActionPayload;
 };
 
 export type LeadTrackingAgg = { recordsLast7: number; qualifiedLast7: number; qualifiedPrev7: number };
@@ -48,6 +56,8 @@ export type OptimizationRuleContext = {
   targets: OptimizationThemeTargets;
   playbookCopy: { preferredCtaTypes: string[]; prohibitedPhrases: string[] };
   clientTargetOverrides?: Partial<OptimizationThemeTargets> | null;
+  adsetRows?: any[];
+  adsetsByCampaign?: Map<string, any[]>;
 };
 
 export type OptimizationRuleModule = {

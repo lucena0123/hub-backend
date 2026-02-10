@@ -2,13 +2,14 @@ import { AnalyticsService } from '../../../services/analytics/analytics-service'
 import {
   OPTIMIZATION_CENTER_PLAYBOOK_V1,
   getOptimizationTargetsForTheme,
-  inferOptimizationTheme,
+  resolveOptimizationTheme,
 } from '../../../services/optimization-playbook';
 import { shiftIsoDateUtc, toIsoDateUtc, toStringArray } from '../../../utils';
 import { getDaysForPeriod, pickText, safeFloat, safeInt, toJsonStringArray } from './helpers';
 import { resolveBudgetAndMinSpend } from './budget';
 import { scoreCreatives } from './creative-scoring';
 import { evaluateOptimizationCenterRules } from '../../../services/optimization-playbook/optimization-center/engine/registry';
+import { evaluateCustomPlaybookRules, type CustomPlaybookRule } from '../../../services/optimization-playbook/optimization-center/engine/custom-rules';
 import type { OptimizationSeverity } from './types';
 
 export type OptimizationCenterQuery = {
@@ -43,6 +44,29 @@ export const buildOptimizationCenter = async (params: {
     // Column may not exist yet (migration not run) — ignore gracefully
   }
 
+  let ruleConfigById: Map<string, { enabled?: boolean; parameters?: any }> | undefined;
+  try {
+    const ruleConfigs = await analytics.getClientRuleConfigs(clientId);
+    ruleConfigById = new Map(
+      ruleConfigs.map((cfg) => [cfg.ruleId, { enabled: cfg.enabled, parameters: cfg.parameters }])
+    );
+  } catch (_) {
+    // Non-fatal: if configs aren't available yet, default to all enabled.
+  }
+
+  const customRules = (await analytics.getOptimizationPlaybookRules()).filter((rule) => {
+    return (
+      typeof rule.id === 'string' &&
+      typeof rule.title === 'string' &&
+      typeof rule.description === 'string' &&
+      typeof rule.condition === 'string' &&
+      typeof rule.level === 'string' &&
+      typeof rule.severity === 'string' &&
+      typeof rule.category === 'string' &&
+      typeof rule.action === 'string'
+    );
+  }) as CustomPlaybookRule[];
+
   const campaignsRows = await analytics.getCampaignOptimizationStats(
     clientId,
     start,
@@ -52,9 +76,12 @@ export const buildOptimizationCenter = async (params: {
     campaignId || null
   );
 
-  const primaryCampaignName =
-    campaignsRows.length > 0 ? String((campaignsRows[0] as any).campaign_name || '') : '';
-  const primaryTheme = primaryCampaignName ? inferOptimizationTheme(primaryCampaignName) : inferOptimizationTheme('');
+  const primaryRow = campaignsRows.length > 0 ? (campaignsRows[0] as any) : null;
+  const primaryTheme = resolveOptimizationTheme({
+    campaignName: primaryRow ? String(primaryRow.campaign_name || '') : '',
+    themeKey: primaryRow?.optimization_theme_key ?? null,
+    subthemeKey: primaryRow?.optimization_subtheme_key ?? null,
+  });
   const targets = getOptimizationTargetsForTheme(primaryTheme.themeKey, clientTargetOverrides);
 
   const adsetBudgetsByCampaign = new Map<string, { dailyBudget: number; lifetimeBudget: number }>();
@@ -74,7 +101,11 @@ export const buildOptimizationCenter = async (params: {
   const budgetDiagnostics = (campaignsRows as any[]).map((row) => {
     const campaignIdValue = String(row.campaign_id);
     const campaignName = String(row.campaign_name || '');
-    const campaignTheme = inferOptimizationTheme(campaignName);
+    const campaignTheme = resolveOptimizationTheme({
+      campaignName,
+      themeKey: row.optimization_theme_key ?? null,
+      subthemeKey: row.optimization_subtheme_key ?? null,
+    });
     const campaignTargets = getOptimizationTargetsForTheme(campaignTheme.themeKey, clientTargetOverrides);
 
     const campaignBudget = safeFloat(row.budget);
@@ -177,7 +208,7 @@ export const buildOptimizationCenter = async (params: {
 
     const conversationsPct =
       convPrev7 > 0 ? ((convLast7 - convPrev7) / convPrev7) * 100 : null;
-    const cplPct = cplPrev7 && cplLast7 ? ((cplLast7 - cplPrev7) / cplPrev7) * 100 : null;
+      const cplPct = cplPrev7 && cplLast7 ? ((cplLast7 - cplPrev7) / cplPrev7) * 100 : null;
 
     return {
       snapshotId: String(row.creative_snapshot_id),
@@ -200,6 +231,8 @@ export const buildOptimizationCenter = async (params: {
       copyInsightsStatus: row.copy_insights_status || null,
       copyInsightsUpdatedAt: row.copy_insights_updated_at || null,
       campaigns: toStringArray(row.campaigns),
+      campaignThemeKeys: toStringArray(row.optimization_theme_keys),
+      campaignSubthemeKeys: toStringArray(row.optimization_subtheme_keys),
       objectives: toStringArray(row.objectives),
       adNames: toStringArray(row.ad_names),
       adsCount: safeInt(row.ads_count),
@@ -229,22 +262,69 @@ export const buildOptimizationCenter = async (params: {
 
   const { enrichedCreatives, winners } = scoreCreatives(creatives, targets);
 
-  const items = evaluateOptimizationCenterRules({
-    campaignRows: campaignsRows,
-    leadTrackingByCampaign,
-    reasonsByCampaign,
-    adsetBudgetsByCampaign,
-    primaryTheme,
-    primaryTargets: targets,
-    enrichedCreatives,
-    winners,
-    targets,
-    playbookCopy: {
-      preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
-      prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+  // Load adset-level stats for adset rules
+  let adsetRows: any[] = [];
+  const adsetsByCampaign = new Map<string, any[]>();
+  try {
+    adsetRows = await analytics.getAdSetOptimizationStats(
+      clientId, start, end, endMinus6, endMinus13, campaignId || null
+    );
+    for (const row of adsetRows) {
+      const cId = String(row.campaign_id);
+      const list = adsetsByCampaign.get(cId) ?? [];
+      list.push(row);
+      adsetsByCampaign.set(cId, list);
+    }
+  } catch (_error) {
+    // Non-fatal: adset rules simply won't fire if data is unavailable
+  }
+
+  const systemItems = evaluateOptimizationCenterRules(
+    {
+      campaignRows: campaignsRows,
+      leadTrackingByCampaign,
+      reasonsByCampaign,
+      adsetBudgetsByCampaign,
+      primaryTheme,
+      primaryTargets: targets,
+      enrichedCreatives,
+      winners,
+      targets,
+      playbookCopy: {
+        preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
+        prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+      },
+      clientTargetOverrides,
+      adsetRows,
+      adsetsByCampaign,
     },
-    clientTargetOverrides,
-  });
+    { ruleConfigById }
+  );
+
+  const customItems = evaluateCustomPlaybookRules(
+    {
+      campaignRows: campaignsRows,
+      leadTrackingByCampaign,
+      reasonsByCampaign,
+      adsetBudgetsByCampaign,
+      primaryTheme,
+      primaryTargets: targets,
+      enrichedCreatives,
+      winners,
+      targets,
+      playbookCopy: {
+        preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
+        prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+      },
+      clientTargetOverrides,
+      adsetRows,
+      adsetsByCampaign,
+    },
+    customRules,
+    { ruleConfigById }
+  );
+
+  const items = [...systemItems, ...customItems];
 
   const summary = { critical: 0, warning: 0, info: 0, opportunity: 0 };
   for (const item of items) summary[item.severity] += 1;

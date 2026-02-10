@@ -91,7 +91,7 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           chunkDays,
           chunksTotal: dateChunks.length,
           progress: {
-            overallTotal: dateChunks.length * 4 + dateChunks.length * 3, // campaign + adset + ad + breakdowns
+            overallTotal: dateChunks.length * 4 + dateChunks.length * 5, // campaign + adset + ad + breakdowns
             overallCompleted: 0,
             stage: 'campaign',
             stageTotal: dateChunks.length,
@@ -102,23 +102,67 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
         },
       });
 
+      const isRecord = (value: unknown): value is Record<string, unknown> =>
+        typeof value === 'object' && value !== null && !Array.isArray(value);
+
+      const mergeRecords = (target: Record<string, unknown>, patch: Record<string, unknown>) => {
+        const output: Record<string, unknown> = { ...target };
+        for (const [key, value] of Object.entries(patch)) {
+          if (isRecord(value) && isRecord(output[key])) {
+            output[key] = mergeRecords(output[key] as Record<string, unknown>, value);
+          } else {
+            output[key] = value;
+          }
+        }
+        return output;
+      };
+
+      let syncMetadata: Record<string, unknown> = {
+        state: 'running',
+        syncLevel: 'full',
+        chunkDays,
+        chunksTotal: dateChunks.length,
+        progress: {
+          overallTotal: dateChunks.length * 4 + dateChunks.length * 3,
+          overallCompleted: 0,
+          stage: 'campaign',
+          stageTotal: dateChunks.length,
+          stageCompleted: 0,
+          message: 'Sincronização automática iniciada...',
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      const updateProgress = async (next: Partial<Record<string, unknown>>) => {
+        const currentProgress = (syncMetadata.progress as Record<string, unknown>) || {};
+        syncMetadata = {
+          ...syncMetadata,
+          progress: {
+            ...currentProgress,
+            ...next,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+      };
+
+      const updateMetadata = async (patch: Record<string, unknown>) => {
+        syncMetadata = mergeRecords(syncMetadata, patch);
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+      };
+
       let overallCompleted = 0;
       let stageCompleted = 0;
 
       const progressTracker = {
         setStage: async (stage: string, stageTotal: number, message: string) => {
           stageCompleted = 0;
-          await syncHistoryService.updateSyncMetadata(syncId, {
-            state: 'running',
-            syncLevel: 'full',
-            progress: {
-              overallCompleted,
-              stage,
-              stageTotal,
-              stageCompleted,
-              message,
-              updatedAt: new Date().toISOString(),
-            },
+          await updateProgress({
+            overallCompleted,
+            stage,
+            stageTotal,
+            stageCompleted,
+            message,
           });
         },
         completeUnit: async (currentSince: string | null, currentUntil: string | null, message?: string) => {
@@ -126,25 +170,23 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           stageCompleted += 1;
           // update progress periodically, not every unit
           if (overallCompleted % 3 === 0 || message) {
-            await syncHistoryService.updateSyncMetadata(syncId, {
-              state: 'running',
-              syncLevel: 'full',
-              progress: {
-                overallCompleted,
-                stageCompleted,
-                currentSince,
-                currentUntil,
-                ...(message ? { message } : {}),
-                updatedAt: new Date().toISOString(),
-              },
+            await updateProgress({
+              overallCompleted,
+              stageCompleted,
+              currentSince,
+              currentUntil,
+              ...(message ? { message } : {}),
             });
           }
+        },
+        setMetadata: async (patch: Record<string, unknown>) => {
+          await updateMetadata(patch);
         },
       };
 
       try {
         const result = await runMetaSyncWork({
-          pool,
+          prisma,
           metaService,
           body: { syncLevel: 'full' as const, dryRun: false, async: false, clientId },
           dateChunks,

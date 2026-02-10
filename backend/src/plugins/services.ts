@@ -12,6 +12,7 @@ import { BPMNTracker } from '../services/bpmn-tracker';
 import { ReportGenerator } from '../services/report-generator';
 import { DashboardService } from '../services/dashboard-service';
 import { CacheService } from '../services/cache-service';
+import { AiOutputService } from '../services/ai-output-service';
 import { SyncHistoryService } from '../services/sync-history-service';
 import { AnalyticsService } from '../services/analytics/analytics-service';
 import { LeadTrackingService } from '../services/lead-tracking-service';
@@ -19,6 +20,9 @@ import { BpmnDefinitionService } from '../services/bpmn-definition-service';
 import { QueueService } from '../services/queue-service';
 import { NotificationService } from '../services/notification-service';
 import { CampaignService } from '../services/campaign.service';
+import { AnomalyDetectionService } from '../services/anomaly-detection-service';
+import { OptimizationActionService } from '../services/optimization-playbook/optimization-action-service';
+import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import type { AppServices } from '../types/fastify';
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -39,6 +43,7 @@ export default fp(async (fastify: FastifyInstance) => {
   }
 
   const cacheService = new CacheService(redis as any);
+  const aiOutputService = new AiOutputService(pool);
 
   // Initialize BullMQ queue service (gracefully degrades if Redis < 5.0)
   const queueService = new QueueService(pool);
@@ -60,7 +65,7 @@ export default fp(async (fastify: FastifyInstance) => {
   const metricsService = new MetricsService(prisma);
   const bpmnTracker = new BPMNTracker(prisma);
   const bpmnDefinitionService = new BpmnDefinitionService();
-  const reportGenerator = new ReportGenerator(prisma, metricsService);
+  const reportGenerator = new ReportGenerator(prisma, metricsService, aiOutputService);
   const dashboardService = new DashboardService(prisma, pool);
   const syncHistoryService = new SyncHistoryService(prisma);
   const analyticsService = new AnalyticsService(prisma);
@@ -68,9 +73,12 @@ export default fp(async (fastify: FastifyInstance) => {
   const clientAudit = new ClientAudit(pool);
   const clientService = new ClientService(prisma, clientAudit);
   const notificationService = new NotificationService(pool);
+  const anomalyService = new AnomalyDetectionService(pool, notificationService);
   const campaignService = new CampaignService(prisma);
   const authService = new AuthService(prisma);
   const processService = new ProcessService(prisma);
+  const optimizationActionService = new OptimizationActionService(prisma);
+  const optimizationTaskGenerator = new OptimizationTaskGenerator(prisma);
 
   const services: AppServices = {
     metrics: metricsService,
@@ -79,6 +87,7 @@ export default fp(async (fastify: FastifyInstance) => {
     reports: reportGenerator,
     dashboard: dashboardService,
     cache: cacheService,
+    aiOutputs: aiOutputService,
     syncHistory: syncHistoryService,
     leadTracking: leadTrackingService,
     clientAudit: clientAudit,
@@ -89,6 +98,10 @@ export default fp(async (fastify: FastifyInstance) => {
     auth: authService,
     processes: processService,
     analytics: analyticsService,
+    anomaly: anomalyService,
+    optimizationAction: optimizationActionService,
+    optimizationTaskGenerator: optimizationTaskGenerator,
+    metaAds: undefined as any, // MetaAdsService is now instantiated dynamically per request
   };
 
   // Decorate fastify instance

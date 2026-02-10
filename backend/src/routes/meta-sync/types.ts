@@ -7,6 +7,7 @@ import type { IsoDateRange } from './utils';
 export type MetaSyncProgress = {
   setStage: (stage: string, stageTotal: number, message: string) => Promise<void>;
   completeUnit: (currentSince: string | null, currentUntil: string | null, message?: string) => Promise<void>;
+  setMetadata: (patch: Record<string, unknown>) => Promise<void>;
 };
 
 export type MetaSyncContext = {
@@ -20,4 +21,3 @@ export type MetaSyncContext = {
   progress: MetaSyncProgress;
   log: FastifyBaseLogger;
 };
-

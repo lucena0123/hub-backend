@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { inferOptimizationTheme } from '../../services/optimization-playbook';
+import { resolveOptimizationTheme } from '../../services/optimization-playbook';
 import { generateCopyInsights } from '../../services/creative-copy-insights';
 
 const copyInsightsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -59,16 +59,27 @@ const copyInsightsRoutes: FastifyPluginAsync = async (fastify) => {
         typeof body.themeName === 'string' && body.themeName.trim() ? body.themeName.trim() : null;
 
       let campaignName: string | null = null;
+      let campaignThemeKey: string | null = null;
+      let campaignSubthemeKey: string | null = null;
+
       if (!themeKeyFromBody) {
-        campaignName = await analytics.getCampaignNameBySnapshotId(snapshotId);
+        const campaignTheme = await analytics.getCampaignThemeBySnapshotId(snapshotId);
+        campaignName = campaignTheme?.campaignName ?? null;
+        campaignThemeKey = campaignTheme?.themeKey ?? null;
+        campaignSubthemeKey = campaignTheme?.subthemeKey ?? null;
       }
 
-      const inferred = inferOptimizationTheme(themeNameFromBody ?? campaignName ?? '');
+      const resolved = resolveOptimizationTheme({
+        campaignName: themeNameFromBody ?? campaignName ?? '',
+        themeKey: themeKeyFromBody ?? campaignThemeKey ?? null,
+        subthemeKey: campaignSubthemeKey ?? null,
+      });
+
       const theme = {
-        themeKey: themeKeyFromBody ?? inferred.themeKey,
-        themeName: themeNameFromBody ?? inferred.themeName,
-        matchedBy: themeKeyFromBody ? 'tag' : inferred.matchedBy,
-        matchedValue: themeKeyFromBody ? themeKeyFromBody : inferred.matchedValue,
+        themeKey: resolved.themeKey,
+        themeName: themeNameFromBody ?? resolved.themeName,
+        matchedBy: themeKeyFromBody ? 'manual' : resolved.matchedBy,
+        matchedValue: themeKeyFromBody ? themeKeyFromBody : resolved.matchedValue,
       } as any;
 
       const insights = await generateCopyInsights({
@@ -89,6 +100,7 @@ const copyInsightsRoutes: FastifyPluginAsync = async (fastify) => {
         },
         theme,
         force,
+        aiOutputs: fastify.services.aiOutputs,
       });
 
       await analytics.upsertCopyInsight({
@@ -97,6 +109,7 @@ const copyInsightsRoutes: FastifyPluginAsync = async (fastify) => {
         themeName: theme.themeName ?? null,
         status: insights.status,
         model: insights.model ?? null,
+        promptId: insights.promptId ?? null,
         promptVersion: insights.promptVersion,
         analysis: JSON.stringify(insights.analysis),
         errorMessage: insights.errorMessage ?? null,
@@ -114,4 +127,3 @@ const copyInsightsRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default copyInsightsRoutes;
-

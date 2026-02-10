@@ -48,28 +48,50 @@ export const ensureMetaAdSetsImported = async (params: {
         const dailyBudget = parseMetaBudget(adset.daily_budget);
         const lifetimeBudget = parseMetaBudget(adset.lifetime_budget);
 
-        await prisma.adSet.upsert({
-          where: { adsetId }, // Using unique adsetId
-          update: {
-            campaignId,
-            name,
+        const platform = 'meta';
+        const recordId = `${platform}:${adsetId}`;
+
+        await prisma.$executeRaw`
+          INSERT INTO adsets (
+            id,
+            campaign_id,
+            adset_id,
+            adset_name,
             status,
-            effectiveStatus,
-            dailyBudget: dailyBudget > 0 ? dailyBudget : undefined,
-            lifetimeBudget: lifetimeBudget > 0 ? lifetimeBudget : undefined,
-            updatedAt: new Date(),
-          },
-          create: {
-            adsetId,
-            campaignId,
-            platform: 'meta',
-            name,
-            status,
-            effectiveStatus,
-            dailyBudget,
-            lifetimeBudget,
-          },
-        });
+            effective_status,
+            daily_budget,
+            lifetime_budget,
+            platform,
+            created_at,
+            updated_at
+          ) VALUES (
+            ${recordId},
+            ${campaignId},
+            ${adsetId},
+            ${name},
+            ${status},
+            ${effectiveStatus},
+            ${dailyBudget},
+            ${lifetimeBudget},
+            ${platform},
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (adset_id, platform) DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id,
+            adset_name = EXCLUDED.adset_name,
+            status = EXCLUDED.status,
+            effective_status = EXCLUDED.effective_status,
+            daily_budget = CASE
+              WHEN EXCLUDED.daily_budget > 0 THEN EXCLUDED.daily_budget
+              ELSE adsets.daily_budget
+            END,
+            lifetime_budget = CASE
+              WHEN EXCLUDED.lifetime_budget > 0 THEN EXCLUDED.lifetime_budget
+              ELSE adsets.lifetime_budget
+            END,
+            updated_at = NOW()
+        `;
         mappedCount++;
       })
     );

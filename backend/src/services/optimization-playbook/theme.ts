@@ -18,6 +18,13 @@ const normalize = (value: string) =>
     .replace(/\p{Diacritic}/gu, '')
     .trim();
 
+const normalizeKey = (value: string) => normalize(value).replace(/\s+/g, '_');
+
+const findThemeByKey = (themeKey: string) => {
+  const key = normalizeKey(themeKey);
+  return OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((theme) => normalizeKey(theme.key) === key);
+};
+
 export const inferOptimizationTheme = (campaignName: string): OptimizationThemeMatch => {
   const name = campaignName || '';
   const bracketTag = name.match(/\[([^\]]+)\]/)?.[1] ?? null;
@@ -55,4 +62,38 @@ export const inferOptimizationTheme = (campaignName: string): OptimizationThemeM
 
   const fallback = OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES.find((t) => t.key === 'geral')!;
   return { themeKey: fallback.key, themeName: fallback.name, matchedBy: 'default', matchedValue: null };
+};
+
+export const resolveOptimizationTheme = (opts: {
+  campaignName?: string | null;
+  themeKey?: string | null;
+  subthemeKey?: string | null;
+}): OptimizationThemeMatch => {
+  const campaignName = opts.campaignName ?? '';
+
+  if (opts.subthemeKey) {
+    const subtheme = findThemeByKey(opts.subthemeKey);
+    if (subtheme) {
+      return {
+        themeKey: subtheme.key,
+        themeName: subtheme.name,
+        matchedBy: 'manual',
+        matchedValue: opts.subthemeKey,
+      };
+    }
+  }
+
+  if (opts.themeKey) {
+    const theme = findThemeByKey(opts.themeKey);
+    if (theme) {
+      return {
+        themeKey: theme.key,
+        themeName: theme.name,
+        matchedBy: 'manual',
+        matchedValue: opts.themeKey,
+      };
+    }
+  }
+
+  return inferOptimizationTheme(campaignName);
 };

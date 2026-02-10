@@ -45,6 +45,11 @@ export const creativeLoserRule: OptimizationRuleModule = {
           creativeMinSpendLoser: ctx.targets.creativeMinSpendLoser,
           creativeLoserCplMultiplier: ctx.targets.creativeLoserCplMultiplier,
         },
+        autoAction: {
+          type: 'pause_ad',
+          entityId: c.snapshotId,
+          reason: 'Creative Loser: High spend with low/no results',
+        },
       });
     }
 

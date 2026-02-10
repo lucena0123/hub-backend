@@ -1,11 +1,55 @@
 import type { ClientPerformanceSummary, AIReportContent, ClientLeadFunnelSummary } from '../types/metrics';
+import type { AiOutputService, AiOutputLogInput } from './ai-output-service';
+import { getPromptDefinition } from './ai-prompts';
+import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../utils/ai-output';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-const generateWithPrompt = async (prompt: string, fallback: AIReportContent): Promise<AIReportContent> => {
-  if (!OPENAI_API_KEY) return fallback;
+type ReportAiTelemetry = {
+  aiOutputs?: AiOutputService;
+  entityId: string;
+  type: 'report-monthly' | 'report-weekly';
+};
+
+const logAiOutput = async (
+  telemetry: ReportAiTelemetry | undefined,
+  input: Omit<AiOutputLogInput, 'type' | 'entityId'>
+) => {
+  if (!telemetry?.aiOutputs) return;
+  await telemetry.aiOutputs.logOutput({
+    type: telemetry.type,
+    entityId: telemetry.entityId,
+    ...input,
+  });
+};
+
+const generateWithPrompt = async (
+  prompt: string,
+  fallback: AIReportContent,
+  options?: {
+    telemetry?: ReportAiTelemetry;
+    inputHash?: string | null;
+    promptId?: string | null;
+    promptVersion?: string | null;
+  }
+): Promise<AIReportContent> => {
+  if (!OPENAI_API_KEY) {
+    await logAiOutput(options?.telemetry, {
+      status: 'skipped',
+      payload: fallback,
+      error: { reason: 'missing_api_key' },
+      latencyMs: null,
+      inputHash: options?.inputHash ?? null,
+      model: null,
+      promptId: options?.promptId ?? null,
+      promptVersion: options?.promptVersion ?? null,
+    });
+    return fallback;
+  }
 
   try {
+    const startedAt = Date.now();
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -13,7 +57,7 @@ const generateWithPrompt = async (prompt: string, fallback: AIReportContent): Pr
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: OPENAI_MODEL,
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.7,
@@ -25,15 +69,38 @@ const generateWithPrompt = async (prompt: string, fallback: AIReportContent): Pr
     const data = (await response.json()) as any;
     const content = JSON.parse(data.choices[0].message.content);
 
-    return {
+    const parsed = {
       executiveSummary: content.executiveSummary || fallback.executiveSummary,
       interpretation: content.interpretation || fallback.interpretation,
       positives: content.positives || fallback.positives,
       improvements: content.improvements || fallback.improvements,
       recommendations: content.recommendations || fallback.recommendations,
     };
+
+    await logAiOutput(options?.telemetry, {
+      status: 'success',
+      payload: parsed,
+      error: null,
+      latencyMs: Date.now() - startedAt,
+      inputHash: options?.inputHash ?? null,
+      model: OPENAI_MODEL,
+      promptId: options?.promptId ?? null,
+      promptVersion: options?.promptVersion ?? null,
+    });
+
+    return parsed;
   } catch (error) {
     console.warn('Error generating report content:', error);
+    await logAiOutput(options?.telemetry, {
+      status: 'failed',
+      payload: fallback,
+      error: normalizeAiError(error),
+      latencyMs: null,
+      inputHash: options?.inputHash ?? null,
+      model: OPENAI_MODEL,
+      promptId: options?.promptId ?? null,
+      promptVersion: options?.promptVersion ?? null,
+    });
     return fallback;
   }
 };
@@ -67,7 +134,8 @@ const formatReasonsLine = (reasons: Record<string, number> | undefined, max: num
 
 export async function generateClientReportContent(
   performance: ClientPerformanceSummary,
-  leadFunnel?: ClientLeadFunnelSummary | null
+  leadFunnel?: ClientLeadFunnelSummary | null,
+  telemetry?: ReportAiTelemetry
 ): Promise<AIReportContent> {
   const totalContacts =
     performance.totalMessagingConversations || performance.totalLeads || performance.totalConversions;
@@ -94,57 +162,60 @@ export async function generateClientReportContent(
     ${reasonsLine ? `- Principais motivos de desqualificação: ${reasonsLine}` : ''}`
       : `- Qualificação (WhatsApp): não registrada neste período.`;
 
-  const prompt = `
-    Gere um RELATÓRIO MENSAL PARA O CLIENTE no formato ideal para escritórios de advocacia.
-    Este relatório não deve conter termos técnicos, deve ser simples, direto, elegante e focado em RESULTADO.
+  const promptDef = getPromptDefinition('report-monthly');
+  const prompt = promptDef.build({
+    clientName: performance.clientName,
+    totalSpend: performance.totalSpend,
+    totalContacts,
+    costPerContact,
+    bestCampaignName: bestCampaign.campaignName,
+    qualifiedLine,
+  });
 
-    DADOS DO MÊS:
-    - Cliente: ${performance.clientName}
-    - Investimento Total: R$ ${performance.totalSpend.toFixed(2)}
-    - Contatos (Conversas Iniciadas): ${totalContacts}
-    - Custo por Contato: R$ ${costPerContact.toFixed(2)}
-    - Campanha de maior desempenho: ${bestCampaign.campaignName}
+  const inputHash = telemetry
+    ? hashAiInput({
+        type: telemetry.type,
+        entityId: telemetry.entityId,
+        model: OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        prompt,
+      })
+    : null;
 
-    DADOS DE QUALIFICAÇÃO (MANUAL):
-    ${qualifiedLine}
-
-    SIGA EXATAMENTE A ESTRUTURA ABAIXO E RETORNE APENAS UM JSON:
-
-    1. Resumo Executivo (executiveSummary)
-    Explique o mês em 3–4 linhas, com linguagem simples e humana.
-
-    2. Interpretação dos Resultados (interpretation)
-    Transforme os números em significado real.
-
-    3. O que Funcionou Bem (positives)
-    Lista de 2 a 3 pontos curtos.
-
-    4. Oportunidades de Melhoria (improvements)
-    Lista de 2 a 3 pontos. SEM termos técnicos.
-
-    5. Recomendações para o Próximo Mês (recommendations)
-    Lista de 2 a 3 pontos. SEM termos técnicos.
-
-    REGRAS RÍGIDAS:
-    - PROIBIDO: CTR, CPC, CPM, Frequência, ROAS, Impressões.
-    - Fale a língua do cliente (Advogado/Dono de negócio).
-
-    FORMATO JSON DE RESPOSTA:
-    {
-      "executiveSummary": "texto...",
-      "interpretation": "texto...",
-      "positives": ["item", "item"],
-      "improvements": ["item", "item"],
-      "recommendations": ["item", "item"]
+  if (telemetry?.aiOutputs && inputHash) {
+    const cached = await telemetry.aiOutputs.getCachedOutput({
+      type: telemetry.type,
+      inputHash,
+      maxAgeHours: getAiOutputCacheHours(),
+    });
+    if (cached?.payload) {
+      await logAiOutput(telemetry, {
+        status: 'cached',
+        payload: cached.payload,
+        error: null,
+        latencyMs: 0,
+        inputHash,
+        model: cached.model ?? OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+      });
+      return cached.payload as AIReportContent;
     }
-  `;
+  }
 
-  return generateWithPrompt(prompt, fallback);
+  return generateWithPrompt(prompt, fallback, {
+    telemetry,
+    inputHash,
+    promptId: promptDef.id,
+    promptVersion: promptDef.version,
+  });
 }
 
 export async function generateClientWeeklyReportContent(
   performance: ClientPerformanceSummary,
-  leadFunnel?: ClientLeadFunnelSummary | null
+  leadFunnel?: ClientLeadFunnelSummary | null,
+  telemetry?: ReportAiTelemetry
 ): Promise<AIReportContent> {
   const fallback: AIReportContent = {
     executiveSummary: 'Esta semana tivemos um volume consistente de contatos, com investimento dentro do planejado.',
@@ -170,51 +241,54 @@ export async function generateClientWeeklyReportContent(
     ${reasonsLine ? `- Principais motivos de desqualificação: ${reasonsLine}` : ''}`
       : `- Qualificação (WhatsApp): não registrada nesta semana.`;
 
-  const prompt = `
-    Gere um RELATÓRIO SEMANAL PARA O CLIENTE no formato ideal para escritórios de advocacia.
-    Este relatório não deve conter termos técnicos, deve ser simples, direto, elegante e focado em RESULTADO.
+  const promptDef = getPromptDefinition('report-weekly');
+  const prompt = promptDef.build({
+    clientName: performance.clientName,
+    periodStart: performance.period.start,
+    periodEnd: performance.period.end,
+    totalSpend: performance.totalSpend,
+    totalContacts,
+    costPerContact,
+    bestCampaignName: bestCampaign.campaignName,
+    qualifiedLine,
+  });
 
-    DADOS DA SEMANA:
-    - Cliente: ${performance.clientName}
-    - Período: ${performance.period.start} a ${performance.period.end}
-    - Investimento Total: R$ ${performance.totalSpend.toFixed(2)}
-    - Contatos (Conversas Iniciadas): ${totalContacts}
-    - Custo por Contato: R$ ${costPerContact.toFixed(2)}
-    - Campanha de maior desempenho: ${bestCampaign.campaignName}
+  const inputHash = telemetry
+    ? hashAiInput({
+        type: telemetry.type,
+        entityId: telemetry.entityId,
+        model: OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        prompt,
+      })
+    : null;
 
-    DADOS DE QUALIFICAÇÃO (MANUAL):
-    ${qualifiedLine}
-
-    SIGA EXATAMENTE A ESTRUTURA ABAIXO E RETORNE APENAS UM JSON:
-
-    1. Resumo Executivo (executiveSummary)
-    Explique a semana em 3–4 linhas, com linguagem simples e humana.
-
-    2. Interpretação dos Resultados (interpretation)
-    Transforme os números em significado real.
-
-    3. O que Funcionou Bem (positives)
-    Lista de 2 a 3 pontos curtos.
-
-    4. Oportunidades de Melhoria (improvements)
-    Lista de 2 a 3 pontos. SEM termos técnicos.
-
-    5. Recomendações para a Próxima Semana (recommendations)
-    Lista de 2 a 3 pontos. SEM termos técnicos.
-
-    REGRAS RÍGIDAS:
-    - PROIBIDO: CTR, CPC, CPM, Frequência, ROAS, Impressões.
-    - Fale a língua do cliente (Advogado/Dono de negócio).
-
-    FORMATO JSON DE RESPOSTA:
-    {
-      "executiveSummary": "texto...",
-      "interpretation": "texto...",
-      "positives": ["item", "item"],
-      "improvements": ["item", "item"],
-      "recommendations": ["item", "item"]
+  if (telemetry?.aiOutputs && inputHash) {
+    const cached = await telemetry.aiOutputs.getCachedOutput({
+      type: telemetry.type,
+      inputHash,
+      maxAgeHours: getAiOutputCacheHours(),
+    });
+    if (cached?.payload) {
+      await logAiOutput(telemetry, {
+        status: 'cached',
+        payload: cached.payload,
+        error: null,
+        latencyMs: 0,
+        inputHash,
+        model: cached.model ?? OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+      });
+      return cached.payload as AIReportContent;
     }
-  `;
+  }
 
-  return generateWithPrompt(prompt, fallback);
+  return generateWithPrompt(prompt, fallback, {
+    telemetry,
+    inputHash,
+    promptId: promptDef.id,
+    promptVersion: promptDef.version,
+  });
 }

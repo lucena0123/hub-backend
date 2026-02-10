@@ -14,7 +14,7 @@ import type { MetaSyncContext } from '../types';
 
 type MappedCampaignMetric = {
   campaignId: string;
-  date: string;
+  date: Date;
   impressions: number;
   clicks: number;
   spend: number;
@@ -179,7 +179,7 @@ export const syncCampaignMetricsStage = async (ctx: MetaSyncContext): Promise<Ca
 
         mappedMetrics.push({
           campaignId,
-          date: row.date_start,
+          date: new Date(row.date_start),
           impressions,
           clicks,
           spend,

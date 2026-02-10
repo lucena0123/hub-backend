@@ -4,7 +4,7 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
-import { optionalAuth } from '../../middleware/auth';
+import { authenticate } from '../../middleware/auth';
 import { BudgetPacingService } from '../../services/budget-pacing-service';
 
 const budgetPacingRoutes: FastifyPluginAsync = async (fastify) => {
@@ -12,7 +12,7 @@ const budgetPacingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { clientId: string } }>(
     '/api/clients/:clientId/budget-pacing',
-    { preHandler: [optionalAuth] },
+    { preHandler: [authenticate] },
     async (request) => {
       const { clientId } = request.params;
       const campaigns = await budgetPacingService.calculatePacing(clientId);

@@ -100,6 +100,8 @@ export interface PerformanceSummary {
   campaignId: string;
   campaignName: string;
   platform: string;
+  optimizationThemeKey?: string | null;
+  optimizationSubthemeKey?: string | null;
   period: {
     start: string;
     end: string;
@@ -265,6 +267,11 @@ export interface MonthlyReport {
     performance: ClientPerformanceSummary;
     aiContent?: AIReportContent;
     leadFunnel?: ClientLeadFunnelSummary | null;
+    aiMeta?: {
+      promptId?: string | null;
+      promptVersion?: string | null;
+      model?: string | null;
+    };
     insights?: string[];
     recommendations?: string[];
     highlights?: string[];

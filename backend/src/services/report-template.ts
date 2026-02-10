@@ -22,7 +22,11 @@ export function generateReportHTML(
   performance: ClientPerformanceSummary,
   aiContent: AIReportContent,
   title: string,
-  options?: { recommendationsHeading?: string; leadFunnel?: ClientLeadFunnelSummary | null }
+  options?: {
+    recommendationsHeading?: string;
+    leadFunnel?: ClientLeadFunnelSummary | null;
+    aiMeta?: { promptId?: string | null; promptVersion?: string | null; model?: string | null };
+  }
 ): string {
   const recommendationsHeading = options?.recommendationsHeading ?? 'Recomendações para o Próximo Mês';
   const preferMessaging = (performance.totalMessagingConversations || 0) > 0;
@@ -44,6 +48,14 @@ export function generateReportHTML(
     .slice(0, 3)
     .map(([key, count]) => `${DISQUALIFICATION_LABELS[key] ?? key.replaceAll('_', ' ')} (${count})`)
     .join(', ');
+
+  const aiMeta = options?.aiMeta ?? null;
+  const aiMetaParts = [
+    aiMeta?.model ? `model ${aiMeta.model}` : null,
+    aiMeta?.promptVersion ? `prompt ${aiMeta.promptVersion}` : null,
+    aiMeta?.promptId ? `id ${aiMeta.promptId}` : null,
+  ].filter(Boolean);
+  const aiMetaLine = aiMetaParts.length > 0 ? `IA: ${aiMetaParts.join(' · ')}` : '';
 
   return `
 <!DOCTYPE html>
@@ -79,6 +91,21 @@ export function generateReportHTML(
       font-size: 18px;
       color: #64748b;
       margin-top: 8px;
+    }
+
+    .ai-meta {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .ai-meta-box {
+      font-size: 13px;
+      color: #475569;
+      background: #f8fafc;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px dashed #e2e8f0;
     }
 
     .section {
@@ -189,19 +216,28 @@ export function generateReportHTML(
   <div class="header-container">
     <h1 class="report-title">${title}</h1>
     <div class="client-name">Cliente: ${performance.clientName} | Período: ${performance.period.start} a ${performance.period.end}</div>
+    ${aiMetaLine ? `<div class="ai-meta">${aiMetaLine}</div>` : ''}
   </div>
 
-  <!-- 2. RESUMO EXECUTIVO -->
+  ${aiMetaLine ? `
+  <!-- 2. METADADOS DE IA -->
   <div class="section">
-    <h2 class="section-title">2. Resumo Executivo</h2>
+    <h2 class="section-title">2. Metadados de IA</h2>
+    <div class="ai-meta-box">${aiMetaLine}</div>
+  </div>
+  ` : ''}
+
+  <!-- 3. RESUMO EXECUTIVO -->
+  <div class="section">
+    <h2 class="section-title">3. Resumo Executivo</h2>
     <div class="executive-text">
       ${aiContent.executiveSummary}
     </div>
   </div>
 
-  <!-- 3. NÚMEROS PRINCIPAIS -->
+  <!-- 4. NÚMEROS PRINCIPAIS -->
   <div class="section">
-    <h2 class="section-title">3. Números Principais</h2>
+    <h2 class="section-title">4. Números Principais</h2>
     <div class="numbers-grid">
       <div class="number-card">
         <div class="number-label">Investimento Total</div>
@@ -248,33 +284,33 @@ export function generateReportHTML(
     ` : ''}
   </div>
 
-  <!-- 4. INTERPRETAÇÃO DOS RESULTADOS -->
+  <!-- 5. INTERPRETAÇÃO DOS RESULTADOS -->
   <div class="section">
-    <h2 class="section-title">4. Interpretação dos Resultados</h2>
+    <h2 class="section-title">5. Interpretação dos Resultados</h2>
     <div class="interpretation-text" style="border-left-color: #8b5cf6; background: #fdf4ff;">
       ${aiContent.interpretation}
     </div>
   </div>
 
-  <!-- 5. O QUE FUNCIONOU BEM -->
+  <!-- 6. O QUE FUNCIONOU BEM -->
   <div class="section" style="page-break-inside: avoid;">
-    <h2 class="section-title">5. O que Funcionou Bem</h2>
+    <h2 class="section-title">6. O que Funcionou Bem</h2>
     <ul class="custom-list positive-list">
       ${aiContent.positives.map(item => `<li>${item}</li>`).join('')}
     </ul>
   </div>
 
-  <!-- 6. OPORTUNIDADES DE MELHORIA -->
+  <!-- 7. OPORTUNIDADES DE MELHORIA -->
   <div class="section" style="page-break-inside: avoid;">
-    <h2 class="section-title">6. Oportunidades de Melhoria</h2>
+    <h2 class="section-title">7. Oportunidades de Melhoria</h2>
     <ul class="custom-list improvement-list">
       ${aiContent.improvements.map(item => `<li>${item}</li>`).join('')}
     </ul>
   </div>
 
-  <!-- 7. RECOMENDAÇÕES -->
+  <!-- 8. RECOMENDAÇÕES -->
   <div class="section" style="page-break-inside: avoid;">
-    <h2 class="section-title">7. ${recommendationsHeading}</h2>
+    <h2 class="section-title">8. ${recommendationsHeading}</h2>
     <ul class="custom-list recommendation-list">
       ${aiContent.recommendations.map(item => `<li>${item}</li>`).join('')}
     </ul>

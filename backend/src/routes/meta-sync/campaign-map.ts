@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { v4 as uuidv4 } from 'uuid';
 import { PrismaClient } from '@prisma/client';
 import type { MetaAdsService } from '../../services/meta-ads-service';
+import { inferOptimizationTheme } from '../../services/optimization-playbook';
 
 export const ensureMetaCampaignsImported = async (params: {
   prisma: PrismaClient;
@@ -36,6 +36,13 @@ export const ensureMetaCampaignsImported = async (params: {
     };
 
     let count = 0;
+    const existingCampaigns = await prisma.campaign.findMany({
+      where: { externalId: { in: campaigns.map((camp) => camp.id) } },
+      select: { externalId: true, clientId: true, platform: true },
+    });
+    const existingByExternalId = new Map(
+      existingCampaigns.map((row) => [row.externalId, row])
+    );
 
     // Process campaigns in parallel or sequence? 
     // Parallel is fine since we are upserting by externalId
@@ -45,7 +52,22 @@ export const ensureMetaCampaignsImported = async (params: {
         const name = camp.name;
         const status = normalizeStatus(camp.status);
         const budget = resolveBudget(camp);
-        const objective = camp.objective || null;
+        const objective = typeof camp.objective === 'string' && camp.objective.trim() ? camp.objective.trim() : null;
+        const inferredTheme = inferOptimizationTheme(name);
+        const existing = existingByExternalId.get(externalId);
+        if (existing && (existing.clientId !== clientId || existing.platform !== 'meta')) {
+          log.warn(
+            {
+              externalId,
+              campaignName: name,
+              fromClientId: existing.clientId,
+              toClientId: clientId,
+              fromPlatform: existing.platform,
+              toPlatform: 'meta',
+            },
+            'Reassigning Meta campaign ownership/platform during sync'
+          );
+        }
 
         // Upsert logic
         await prisma.campaign.upsert({
@@ -53,7 +75,10 @@ export const ensureMetaCampaignsImported = async (params: {
           update: {
             name,
             status,
+            platform: 'meta',
+            clientId,
             budget: budget > 0 ? budget : undefined, // Only update budget if > 0? Legacy code had CASE logic. 
+            objective: objective ?? undefined,
             // CASE WHEN EXCLUDED.budget > 0 THEN EXCLUDED.budget ELSE campaigns.budget END
             // Prisma doesn't support conditional update directly in the update object easily without raw query or explicit conditional logic before.
             // But here we are iterating. We can check current value if we fetch, but efficiency is key.
@@ -93,6 +118,9 @@ export const ensureMetaCampaignsImported = async (params: {
             status,
             clientId,
             budget,
+            objective,
+            optimizationThemeKey: inferredTheme.themeKey,
+            optimizationSubthemeKey: null,
             // objective undefined in schema?
             // Wait, checking schema...
             // Campaign model:

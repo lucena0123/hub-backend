@@ -1,5 +1,5 @@
 import type { OptimizationThemeMatch, OptimizationThemeTargets } from '../../types';
-import { getOptimizationTargetsForTheme, inferOptimizationTheme } from '../../theme';
+import { getOptimizationTargetsForTheme, resolveOptimizationTheme } from '../../theme';
 import { safeFloat } from './helpers';
 import type { OptimizationRuleContext } from './types';
 import { safeText } from './helpers';
@@ -46,9 +46,20 @@ export const getImportantCopyCandidates = (ctx: OptimizationRuleContext): CopyCa
   for (const creative of copyCandidates as any[]) {
     const snapshotId = String(creative.snapshotId);
     const campaignName = Array.isArray(creative.campaigns) && creative.campaigns.length > 0 ? String(creative.campaigns[0] || '') : '';
+    const campaignThemeKeys = Array.isArray(creative.campaignThemeKeys) ? creative.campaignThemeKeys : [];
+    const campaignSubthemeKeys = Array.isArray(creative.campaignSubthemeKeys) ? creative.campaignSubthemeKeys : [];
+    const themeKey = campaignThemeKeys.find((key: unknown) => typeof key === 'string' && key.trim());
+    const subthemeKey = campaignSubthemeKeys.find((key: unknown) => typeof key === 'string' && key.trim());
     const objectives = Array.isArray(creative.objectives) ? creative.objectives.map(String) : [];
     const adNames = Array.isArray(creative.adNames) ? creative.adNames.map(String) : [];
-    const creativeTheme = campaignName ? inferOptimizationTheme(campaignName) : primaryTheme;
+    let creativeTheme = resolveOptimizationTheme({
+      campaignName,
+      themeKey: typeof themeKey === 'string' ? themeKey : null,
+      subthemeKey: typeof subthemeKey === 'string' ? subthemeKey : null,
+    });
+    if (!campaignName && !themeKey && !subthemeKey) {
+      creativeTheme = primaryTheme;
+    }
     const creativeTargets = getOptimizationTargetsForTheme(creativeTheme.themeKey, ctx.clientTargetOverrides);
 
     const spend = safeFloat(creative.metrics?.totalSpend);
@@ -93,4 +104,3 @@ export const getImportantCopyCandidates = (ctx: OptimizationRuleContext): CopyCa
 };
 
 export const normalizeCopyForMatch = normalizeCopyText;
-

@@ -20,6 +20,8 @@ export const getPerformanceSummary = async (
       name: true,
       platform: true,
       budget: true,
+      optimizationThemeKey: true,
+      optimizationSubthemeKey: true,
     },
   });
 
@@ -97,15 +99,15 @@ export const getPerformanceSummary = async (
   const totalImpressions = sums.impressions || 0;
   const totalClicks = sums.clicks || 0;
   const totalConversions = sums.conversions || 0;
-  const totalSpend = sums.spend || 0;
-  const totalRevenue = sums.revenue || 0;
+  const totalSpend = Number(sums.spend ?? 0);
+  const totalRevenue = Number(sums.revenue ?? 0);
   const totalLeads = sums.leads || 0;
   const totalMessagingConversations = sums.messagingConversations || 0;
   const totalMessagingFirstReply = sums.messagingFirstReply || 0;
   const totalLinkClicks = sums.linkClicks || 0;
   const totalLandingPageViews = sums.landingPageViews || 0;
   const totalReach = sums.reach || 0;
-  const avgFrequency = avgs.frequency || 0;
+  const avgFrequency = Number(avgs.frequency ?? 0);
 
   const avgCpm = calculateCPM(totalSpend, totalImpressions);
 
@@ -148,6 +150,8 @@ export const getPerformanceSummary = async (
     campaignId,
     campaignName: campaign.name,
     platform: campaign.platform,
+    optimizationThemeKey: campaign.optimizationThemeKey ?? null,
+    optimizationSubthemeKey: campaign.optimizationSubthemeKey ?? null,
     period: {
       start: dates.start,
       end: dates.end,

@@ -8,7 +8,11 @@ export const generateReportPdf = async (params: {
   aiContent: AIReportContent;
   outputPath: string;
   title: string;
-  options?: { recommendationsHeading?: string; leadFunnel?: ClientLeadFunnelSummary | null };
+  options?: {
+    recommendationsHeading?: string;
+    leadFunnel?: ClientLeadFunnelSummary | null;
+    aiMeta?: { promptId?: string | null; promptVersion?: string | null; model?: string | null };
+  };
 }): Promise<void> => {
   const { performance, aiContent, outputPath, title, options } = params;
 
@@ -46,4 +50,3 @@ export const generateReportPdf = async (params: {
 
   await browser.close();
 };
-

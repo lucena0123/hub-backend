@@ -7,7 +7,7 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
-import { optionalAuth } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 
 const notificationRoutes: FastifyPluginAsync = async (fastify) => {
   const { notification } = fastify.services;
@@ -16,7 +16,7 @@ const notificationRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { clientId?: string; read?: string; limit?: string; offset?: string };
   }>(
     '/api/notifications',
-    { preHandler: [optionalAuth] },
+    { preHandler: [authenticate] },
     async (request) => {
       const { clientId, read, limit, offset } = request.query;
 
@@ -33,7 +33,7 @@ const notificationRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { clientId?: string } }>(
     '/api/notifications/unread-count',
-    { preHandler: [optionalAuth] },
+    { preHandler: [authenticate] },
     async (request) => {
       const count = await notification.countUnread(request.query.clientId || undefined);
       return { count };
@@ -42,7 +42,7 @@ const notificationRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Params: { id: string } }>(
     '/api/notifications/:id/read',
-    { preHandler: [optionalAuth] },
+    { preHandler: [authenticate] },
     async (request) => {
       await notification.markAsRead(request.params.id);
       return { success: true };
@@ -51,7 +51,7 @@ const notificationRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Querystring: { clientId?: string } }>(
     '/api/notifications/mark-all-read',
-    { preHandler: [optionalAuth] },
+    { preHandler: [authenticate] },
     async (request) => {
       const updated = await notification.markAllAsRead(request.query.clientId || undefined);
       return { success: true, updated };

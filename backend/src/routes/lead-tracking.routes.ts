@@ -1,6 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
+import { authenticate } from '../middleware/auth';
+import { requireRoles } from '../middleware/rbac';
 
 const leadTrackingRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook('preHandler', authenticate);
   const { leadTracking: leadTrackingService, cache: cacheService } = fastify.services;
 
   // Upsert lead tracking data for a campaign
@@ -17,7 +20,7 @@ const leadTrackingRoutes: FastifyPluginAsync = async (fastify) => {
       responseTimeHours?: number;
       notes?: string;
     };
-  }>('/api/lead-tracking', async (request, reply) => {
+  }>('/api/lead-tracking', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
       const result = await leadTrackingService.upsertLeadTracking(request.body);
 
@@ -104,7 +107,7 @@ const leadTrackingRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.delete<{
     Params: { campaignId: string };
     Querystring: { date: string };
-  }>('/api/campaigns/:campaignId/lead-tracking', async (request, reply) => {
+  }>('/api/campaigns/:campaignId/lead-tracking', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       const { campaignId } = request.params;
       const { date } = request.query;

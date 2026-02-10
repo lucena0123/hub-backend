@@ -16,7 +16,7 @@ export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 /** Shared ioredis connection for BullMQ (separate from the `redis` v4 client used by CacheService). */
 export function createBullConnection() {
-  const url = process.env.REDIS_URL || 'redis://localhost:6379';
+  const url = process.env.REDIS_URL || 'redis://localhost:6380';
   return new IORedis(url, { maxRetriesPerRequest: null });
 }
 

@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { validateCampaignCreate, validateCampaignUpdate } from '../validators/campaign';
 import { authenticate } from '../middleware/auth';
+import { requireRoles } from '../middleware/rbac';
 
 const campaignRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
@@ -37,7 +38,7 @@ const campaignRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Create new campaign
-  fastify.post('/api/campaigns', async (request, reply) => {
+  fastify.post('/api/campaigns', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     const validation = validateCampaignCreate(request.body);
     if (!validation.valid) {
       // Let global error handler catch ValidationError if we threw it,
@@ -64,7 +65,7 @@ const campaignRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Update campaign
-  fastify.put('/api/campaigns/:id', async (request, reply) => {
+  fastify.put('/api/campaigns/:id', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const validation = validateCampaignUpdate(request.body);
 
@@ -83,7 +84,7 @@ const campaignRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Delete campaign
-  fastify.delete('/api/campaigns/:id', async (request) => {
+  fastify.delete('/api/campaigns/:id', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request) => {
     const { id } = request.params as { id: string };
     await campaigns.delete(id);
 

@@ -10,7 +10,7 @@ const breakdownsRoutes: FastifyPluginAsync = async (fastify) => {
   }>('/api/campaigns/:campaignId/breakdowns/:type', async (request, reply) => {
     try {
       const { campaignId, type } = request.params;
-      const validTypes = ['age_gender', 'platform_position', 'device'];
+      const validTypes = ['age_gender', 'platform_position', 'device', 'region', 'country'];
       if (!validTypes.includes(type)) {
         reply.status(400);
         return { error: `Invalid breakdown type. Valid types: ${validTypes.join(', ')}` };
@@ -37,4 +37,3 @@ const breakdownsRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default breakdownsRoutes;
-

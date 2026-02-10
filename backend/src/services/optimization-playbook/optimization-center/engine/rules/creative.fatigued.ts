@@ -45,6 +45,11 @@ export const creativeFatiguedRule: OptimizationRuleModule = {
           creativeFatigueDropPct: ctx.targets.creativeFatigueDropPct,
           creativeFatigueCplMultiplier: ctx.targets.creativeFatigueCplMultiplier,
         },
+        autoAction: {
+          type: 'pause_ad',
+          entityId: c.snapshotId,
+          reason: 'Creative Fatigued: Performance drop detected',
+        },
       });
     }
 

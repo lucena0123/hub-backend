@@ -94,7 +94,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
         }
       }
 
-      const breakdownUnits = body.syncLevel === 'full' ? dateChunks.length * 3 : 0;
+      const breakdownUnits = body.syncLevel === 'full' ? dateChunks.length * 5 : 0;
       const adUnits = body.syncLevel === 'ad' || body.syncLevel === 'full' ? dateChunks.length + 1 : 0; // +1 = creative metadata linking
       const totalUnits =
         dateChunks.length + // campaign metrics always
@@ -146,6 +146,21 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
         },
       };
 
+      const isRecord = (value: unknown): value is Record<string, unknown> =>
+        typeof value === 'object' && value !== null && !Array.isArray(value);
+
+      const mergeRecords = (target: Record<string, unknown>, patch: Record<string, unknown>) => {
+        const output: Record<string, unknown> = { ...target };
+        for (const [key, value] of Object.entries(patch)) {
+          if (isRecord(value) && isRecord(output[key])) {
+            output[key] = mergeRecords(output[key] as Record<string, unknown>, value);
+          } else {
+            output[key] = value;
+          }
+        }
+        return output;
+      };
+
       const updateProgress = async (next: Partial<Record<string, unknown>>) => {
         if (!syncId || !syncMetadata) return;
         const currentProgress = (syncMetadata.progress as Record<string, unknown>) || {};
@@ -157,6 +172,13 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             updatedAt: new Date().toISOString(),
           },
         };
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
+      };
+
+      const updateMetadata = async (patch: Record<string, unknown>) => {
+        if (!syncId) return;
+        const current = syncMetadata && isRecord(syncMetadata) ? syncMetadata : {};
+        syncMetadata = mergeRecords(current, patch);
         await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
       };
 
@@ -192,6 +214,9 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             currentUntil,
             ...(message ? { message } : {}),
           });
+        },
+        setMetadata: async (patch: Record<string, unknown>) => {
+          await updateMetadata(patch);
         },
       };
 

@@ -1,6 +1,9 @@
 import 'dotenv/config';
 
 import { inferOptimizationTheme, type OptimizationThemeMatch } from './optimization-playbook';
+import { getPromptDefinition } from './ai-prompts';
+import type { AiOutputService } from './ai-output-service';
+import { getAiOutputCacheHours, hashAiInput, normalizeAiError } from '../utils/ai-output';
 
 type CreativeSnapshotInput = {
   snapshotId: string;
@@ -26,6 +29,7 @@ export type CreativeCopyInsightsRecord = {
   themeName: string | null;
   status: CopyInsightsStatus;
   model: string | null;
+  promptId: string | null;
   promptVersion: string | null;
   analysis: any | null;
   errorMessage: string | null;
@@ -37,11 +41,11 @@ export type GenerateCopyInsightsInput = {
   snapshot: CreativeSnapshotInput;
   theme?: OptimizationThemeMatch | null;
   force?: boolean;
+  aiOutputs?: AiOutputService;
 };
 
-const COPY_PROMPT_VERSION = 'copy-v1';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.1';
 
 const normalizeList = (value: unknown): string[] | null => {
   if (!Array.isArray(value)) return null;
@@ -55,64 +59,6 @@ const safeText = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-};
-
-export const buildCopyInsightsPrompt = (input: {
-  themeName: string;
-  themeKey: string;
-  snapshot: CreativeSnapshotInput;
-}) => {
-  const { themeName, themeKey, snapshot } = input;
-  const fallbackHeadline = snapshot.headline ?? (snapshot.headlines?.[0] ?? null);
-  const fallbackPrimary = snapshot.primaryText ?? (snapshot.primaryTexts?.[0] ?? null);
-  const fallbackDescription = snapshot.description ?? (snapshot.descriptions?.[0] ?? null);
-
-  return `
-Você é um especialista em copy para anúncios (Meta Ads) com foco em geração de conversas no WhatsApp para escritórios de advocacia.
-Analise o criativo abaixo e sugira melhorias de copy (títulos, textos e CTA), respeitando o tema.
-
-TEMA DETECTADO:
-- themeKey: ${themeKey}
-- themeName: ${themeName}
-
-CRIATIVO (snapshot):
-- headline: ${fallbackHeadline ?? 'N/A'}
-- primary_text: ${fallbackPrimary ?? 'N/A'}
-- description: ${fallbackDescription ?? 'N/A'}
-- cta_type: ${snapshot.ctaType ?? 'N/A'}
-- destination_url: ${snapshot.destinationUrl ?? 'N/A'}
-- is_dynamic: ${snapshot.isDynamic ? 'true' : 'false'}
-- format: ${snapshot.format ?? 'N/A'}
-
-VARIAÇÕES (se existirem em dynamic creative):
-- headlines: ${snapshot.headlines ? JSON.stringify(snapshot.headlines.slice(0, 8)) : '[]'}
-- primary_texts: ${snapshot.primaryTexts ? JSON.stringify(snapshot.primaryTexts.slice(0, 6)) : '[]'}
-- descriptions: ${snapshot.descriptions ? JSON.stringify(snapshot.descriptions.slice(0, 6)) : '[]'}
-- cta_types: ${snapshot.ctaTypes ? JSON.stringify(snapshot.ctaTypes.slice(0, 8)) : '[]'}
-
-RETORNE APENAS UM JSON (sem markdown) seguindo este formato:
-{
-  "angle": {
-    "name": "ex: dor, urgência, prova social, benefício, autoridade, passo-a-passo",
-    "reason": "por que esse ângulo descreve o criativo"
-  },
-  "persona": "quem é a pessoa alvo",
-  "hook": "como o criativo prende atenção no começo (ou como melhorar)",
-  "clarityIssues": ["lista curta do que está confuso/ruim (máx 5)"],
-  "complianceRisks": ["cuidados para não prometer demais/evitar linguagem proibida (máx 5)"],
-  "suggestions": {
-    "headlines": ["5 a 8 opções objetivas e humanas"],
-    "primaryTexts": ["3 a 6 opções curtas para WhatsApp"],
-    "ctas": ["2 a 4 opções de CTA (texto)"],
-    "experiments": ["3 testes A/B sugeridos (ex: gancho X vs Y)"]
-  }
-}
-
-REGRAS:
-- Não invente dados.
-- Evite promessas absolutas ("garantido", "100%").
-- Linguagem simples e direta em português (pt-BR).
-`;
 };
 
 const extractJsonObject = async (response: Response) => {
@@ -248,30 +194,86 @@ const buildFallbackCopyInsights = (input: {
 
 export const generateCopyInsights = async (
   input: GenerateCopyInsightsInput
-): Promise<{ status: CopyInsightsStatus; model: string | null; promptVersion: string; analysis: any | null; errorMessage: string | null }> => {
+): Promise<{ status: CopyInsightsStatus; model: string | null; promptId: string; promptVersion: string; analysis: any | null; errorMessage: string | null }> => {
   const theme = input.theme ?? inferOptimizationTheme(input.snapshot.headline || input.snapshot.primaryText || '');
-  const prompt = buildCopyInsightsPrompt({
+  const promptDef = getPromptDefinition('copy-insights');
+  const prompt = promptDef.build({
     themeName: theme.themeName,
     themeKey: theme.themeKey,
     snapshot: input.snapshot,
   });
+  const inputHash = hashAiInput({
+    type: 'copy-insights',
+    entityId: input.snapshot.snapshotId,
+    model: OPENAI_MODEL,
+    promptId: promptDef.id,
+    promptVersion: promptDef.version,
+    prompt,
+  });
+
+  if (input.aiOutputs && !input.force) {
+    const cached = await input.aiOutputs.getCachedOutput({
+      type: 'copy-insights',
+      inputHash,
+      maxAgeHours: getAiOutputCacheHours(),
+    });
+    if (cached?.payload) {
+      await input.aiOutputs.logOutput({
+        type: 'copy-insights',
+        entityId: input.snapshot.snapshotId,
+        model: cached.model ?? OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        status: 'cached',
+        payload: cached.payload,
+        error: null,
+        latencyMs: 0,
+        inputHash,
+      });
+      return {
+        status: 'success',
+        model: cached.model ?? OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        analysis: cached.payload,
+        errorMessage: null,
+      };
+    }
+  }
 
   if (!OPENAI_API_KEY) {
+    const fallback = buildFallbackCopyInsights({
+      themeKey: theme.themeKey,
+      themeName: theme.themeName,
+      snapshot: input.snapshot,
+      reason: 'OPENAI_API_KEY não configurada',
+    });
+    if (input.aiOutputs) {
+      await input.aiOutputs.logOutput({
+        type: 'copy-insights',
+        entityId: input.snapshot.snapshotId,
+        model: null,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        status: 'skipped',
+        payload: fallback,
+        error: { reason: 'missing_api_key' },
+        latencyMs: null,
+        inputHash,
+      });
+    }
     return {
       status: 'success',
       model: null,
-      promptVersion: COPY_PROMPT_VERSION,
-      analysis: buildFallbackCopyInsights({
-        themeKey: theme.themeKey,
-        themeName: theme.themeName,
-        snapshot: input.snapshot,
-        reason: 'OPENAI_API_KEY não configurada',
-      }),
+      promptId: promptDef.id,
+      promptVersion: promptDef.version,
+      analysis: fallback,
       errorMessage: null,
     };
   }
 
   try {
+    const startedAt = Date.now();
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -310,19 +312,57 @@ export const generateCopyInsights = async (
       aiUsed: true,
     };
 
-    return { status: 'success', model: OPENAI_MODEL, promptVersion: COPY_PROMPT_VERSION, analysis: normalized, errorMessage: null };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (input.aiOutputs) {
+      await input.aiOutputs.logOutput({
+        type: 'copy-insights',
+        entityId: input.snapshot.snapshotId,
+        model: OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        status: 'success',
+        payload: normalized,
+        error: null,
+        latencyMs: Date.now() - startedAt,
+        inputHash,
+      });
+    }
+
     return {
       status: 'success',
       model: OPENAI_MODEL,
-      promptVersion: COPY_PROMPT_VERSION,
-      analysis: buildFallbackCopyInsights({
-        themeKey: theme.themeKey,
-        themeName: theme.themeName,
-        snapshot: input.snapshot,
-        reason: errorMessage,
-      }),
+      promptId: promptDef.id,
+      promptVersion: promptDef.version,
+      analysis: normalized,
+      errorMessage: null,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const fallback = buildFallbackCopyInsights({
+      themeKey: theme.themeKey,
+      themeName: theme.themeName,
+      snapshot: input.snapshot,
+      reason: errorMessage,
+    });
+    if (input.aiOutputs) {
+      await input.aiOutputs.logOutput({
+        type: 'copy-insights',
+        entityId: input.snapshot.snapshotId,
+        model: OPENAI_MODEL,
+        promptId: promptDef.id,
+        promptVersion: promptDef.version,
+        status: 'failed',
+        payload: fallback,
+        error: normalizeAiError(error),
+        latencyMs: null,
+        inputHash,
+      });
+    }
+    return {
+      status: 'success',
+      model: OPENAI_MODEL,
+      promptId: promptDef.id,
+      promptVersion: promptDef.version,
+      analysis: fallback,
       errorMessage,
     };
   }

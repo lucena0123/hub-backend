@@ -5,8 +5,8 @@ export interface SyncHistoryRecord {
   id: string;
   platform: string;
   accountId?: string;
-  dateRangeStart: string;
-  dateRangeEnd: string;
+  dateRangeStart: string | Date;
+  dateRangeEnd: string | Date;
   status: 'success' | 'failed' | 'partial';
   totalInsights: number;
   mappedCampaigns: number;
@@ -47,8 +47,8 @@ export class SyncHistoryService {
         id,
         platform: data.platform,
         accountId: data.accountId,
-        dateRangeStart: data.dateRangeStart,
-        dateRangeEnd: data.dateRangeEnd,
+        dateRangeStart: new Date(data.dateRangeStart),
+        dateRangeEnd: new Date(data.dateRangeEnd),
         status: 'success', // Initial status, will be updated later? typically 'running'
         // The original code set it to 'success' initially, which is odd. 
         // Logic might be: create record -> do work -> update record.

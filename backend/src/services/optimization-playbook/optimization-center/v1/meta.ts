@@ -1,4 +1,5 @@
 import type { OptimizationCenterPlaybook } from '../../types';
+import { getPromptDefinition } from '../../../ai-prompts';
 
 export const OPTIMIZATION_CENTER_PLAYBOOK_V1_META = {
   key: 'optimization-center',
@@ -16,8 +17,8 @@ export const OPTIMIZATION_CENTER_PLAYBOOK_V1_META = {
       enabled: true,
       requiresEnv: 'OPENAI_API_KEY',
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      promptVersion: 'copy-v1',
+      promptId: getPromptDefinition('copy-generator').id,
+      promptVersion: getPromptDefinition('copy-generator').version,
     },
   },
 } satisfies Pick<OptimizationCenterPlaybook, 'key' | 'version' | 'updatedAt' | 'description' | 'copy' | 'ai'>;
-

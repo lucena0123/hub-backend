@@ -1,6 +1,3 @@
-// This is your Prisma schema file for BPMN System
-// Learn more: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,247 +7,778 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// CLIENTES
-// ============================================================================
-
 model Client {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  tier         String   // "premium", "standard", "basic"
-  status       String   // "active", "suspended", "churned"
-  contractStart DateTime
-  contractEnd   DateTime?
-  budget       Float
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Relações
-  processes    ProcessInstance[]
-  campaigns    Campaign[]
-  metrics      Metric[]
+  id                             String                  @id @default(uuid())
+  name                           String
+  email                          String                  @unique
+  tier                           String
+  status                         String
+  contractStart                  DateTime                @db.Timestamp(6)
+  contractEnd                    DateTime?               @db.Timestamp(6)
+  budget                         Float
+  createdAt                      DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt                      DateTime                @updatedAt @db.Timestamp(6)
+  avg_client_lifetime_months     Decimal?                @db.Decimal(6, 1)
+  avg_monthly_revenue_per_client Decimal?                @db.Decimal(12, 2)
+  metaAdAccountId                String?
+  optimization_targets           Json?
+  action_proposals               action_proposals[]
+  anomaly_detections             anomaly_detections[]
+  campaigns                      Campaign[]
+  client_bpmn_progress           ClientBPMNProgress[]
+  metrics                        metrics[]
+  monthlyReports                 MonthlyReport[]
+  notifications                  notifications[]
+  processes                      ProcessInstance[]
+  weekly_summaries               weekly_summaries[]
+  ai_copy_suggestions            ai_copy_suggestions[]
+  auto_approval_history          auto_approval_history[]
+  client_rule_configs            ClientRuleConfig[]
 
   @@map("clients")
 }
 
-// ============================================================================
-// PROCESSOS BPMN
-// ============================================================================
-
 model ProcessInstance {
-  id              String   @id @default(uuid())
-  processId       String   // "5.2", "6.1", etc
-  version         String   // "1.0.0"
-  status          String   // "running", "completed", "failed", "paused"
-  priority        Int      @default(5)
+  id           String    @id @default(uuid())
+  processId    String
+  version      String
+  status       String
+  priority     Int       @default(5)
+  clientId     String
+  startedAt    DateTime  @default(now()) @db.Timestamp(6)
+  completedAt  DateTime? @db.Timestamp(6)
+  expectedSla  String
+  slaBreached  Boolean   @default(false)
+  currentPhase String?
+  currentTask  String?
+  state        Json
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tasks        Task[]
 
-  clientId        String
-  client          Client   @relation(fields: [clientId], references: [id])
-
-  startedAt       DateTime @default(now())
-  completedAt     DateTime?
-  expectedSla     String   // "2h", "1d", etc
-  slaBreached     Boolean  @default(false)
-
-  // State da execução
-  currentPhase    String?
-  currentTask     String?
-  state           Json     // Estado atual do processo
-
-  // Relações
-  tasks           Task[]
-
-  @@map("process_instances")
   @@index([clientId])
   @@index([status])
   @@index([processId])
+  @@map("process_instances")
 }
 
-// ============================================================================
-// TAREFAS
-// ============================================================================
-
 model Task {
-  id              String   @id @default(uuid())
-  taskId          String   // ID da task no BPMN
-  name            String
-  lane            String   // Responsável
-  status          String   // "pending", "in_progress", "completed", "failed"
-  priority        Int      @default(5)
-
+  id                String          @id @default(uuid())
+  taskId            String
+  name              String
+  lane              String
+  status            String
+  priority          Int             @default(5)
   processInstanceId String
-  processInstance   ProcessInstance @relation(fields: [processInstanceId], references: [id])
+  assignedTo        String?
+  startedAt         DateTime?       @db.Timestamp(6)
+  completedAt       DateTime?       @db.Timestamp(6)
+  durationMs        Int?
+  input             Json?
+  output            Json?
+  error             String?
+  processInstance   ProcessInstance @relation(fields: [processInstanceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  assignedTo      String?  // userId
-  startedAt       DateTime?
-  completedAt     DateTime?
-  durationMs      Int?
-
-  input           Json?    // Dados de entrada
-  output          Json?    // Dados de saída
-  error           String?
-
-  @@map("tasks")
   @@index([processInstanceId])
   @@index([status])
   @@index([assignedTo])
+  @@map("tasks")
 }
-
-// ============================================================================
-// CAMPANHAS (META/GOOGLE ADS)
-// ============================================================================
 
 model Campaign {
-  id              String   @id @default(uuid())
-  externalId      String   @unique // ID do Meta/Google
-  platform        String   // "meta", "google"
-  name            String
-  status          String   // "active", "paused", "archived"
+  id                     String                   @id @default(uuid())
+  externalId             String                   @unique
+  platform               String
+  name                   String
+  status                 String
+  clientId               String
+  budget                 Float
+  spent                  Float                    @default(0)
+  createdAt              DateTime                 @default(now()) @db.Timestamp(6)
+  updatedAt              DateTime                 @updatedAt @db.Timestamp(6)
+  objective              String?
+  optimizationThemeKey   String?                  @map("optimization_theme_key")
+  optimizationSubthemeKey String?                 @map("optimization_subtheme_key")
+  ad_creative_metrics    AdMetric[]
+  adsets                 AdSet[]
+  adset_metrics          AdSetMetric[]
+  campaign_ads           campaign_ads[]
+  campaign_lead_tracking campaign_lead_tracking[]
+  metrics                CampaignMetric[]
+  client                 Client                   @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  simple_metrics         metrics[]
+  breakdowns             MetricsBreakdown[]
 
-  clientId        String
-  client          Client   @relation(fields: [clientId], references: [id])
-
-  budget          Float
-  spent           Float    @default(0)
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relações
-  metrics         Metric[]
-
-  @@map("campaigns")
   @@index([clientId])
   @@index([platform])
+  @@map("campaigns")
 }
 
-// ============================================================================
-// MÉTRICAS DIÁRIAS
-// ============================================================================
+model AdSet {
+  id              String    @id
+  campaignId      String    @map("campaign_id")
+  adsetId         String    @map("adset_id")
+  adsetName       String?   @map("adset_name")
+  status          String?
+  effectiveStatus String?   @map("effective_status")
+  dailyBudget     Decimal?  @default(0) @map("daily_budget") @db.Decimal(10, 2)
+  lifetimeBudget  Decimal?  @default(0) @map("lifetime_budget") @db.Decimal(10, 2)
+  platform        String?   @default("meta")
+  metadata        Json?
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-model Metric {
+  @@unique([adsetId, platform])
+  @@index([campaignId], map: "idx_adsets_campaign")
+  @@index([adsetId], map: "idx_adsets_adset")
+  @@index([platform], map: "idx_adsets_platform")
+  @@map("adsets")
+}
+
+model CampaignMetric {
+  id                     String    @id @default(uuid())
+  campaignId             String    @map("campaign_id")
+  date                   DateTime  @db.Date
+  impressions            Int?      @default(0)
+  clicks                 Int?      @default(0)
+  conversions            Int?      @default(0)
+  spend                  Decimal?  @default(0) @db.Decimal(10, 2)
+  ctr                    Decimal?  @default(0) @db.Decimal(5, 2)
+  cpc                    Decimal?  @default(0) @db.Decimal(10, 2)
+  cpl                    Decimal?  @default(0) @db.Decimal(10, 2)
+  cpa                    Decimal?  @default(0) @db.Decimal(10, 2)
+  roas                   Decimal?  @default(0) @db.Decimal(10, 2)
+  leads                  Int?      @default(0)
+  qualified_leads        Int?      @default(0)
+  revenue                Decimal?  @default(0) @db.Decimal(10, 2)
+  platform               String?
+  metadata               Json?
+  createdAt              DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  messagingConversations Int?      @default(0) @map("messaging_conversations")
+  messagingFirstReply    Int?      @default(0) @map("messaging_first_reply")
+  linkClicks             Int?      @default(0) @map("link_clicks")
+  landingPageViews       Int?      @default(0) @map("landing_page_views")
+  reach                  Int?      @default(0)
+  frequency              Decimal?  @default(0) @db.Decimal(8, 4)
+  cpm                    Decimal?  @default(0) @db.Decimal(10, 2)
+  qualityRanking         String?   @map("quality_ranking")
+  engagementRateRanking  String?   @map("engagement_rate_ranking")
+  conversionRateRanking  String?   @map("conversion_rate_ranking")
+  campaign               Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([campaignId, date, platform])
+  @@index([campaignId, date(sort: Desc)], map: "idx_campaign_metrics_campaign_date")
+  @@index([campaignId], map: "idx_campaign_metrics_campaign_id")
+  @@index([date], map: "idx_campaign_metrics_date")
+  @@index([platform], map: "idx_campaign_metrics_platform")
+  @@map("campaign_metrics")
+}
+
+model AdSetMetric {
+  id                      String    @id @default(uuid())
+  campaign_id             String
+  adSetId                 String    @map("adset_id")
+  adset_name              String?
+  date                    DateTime  @db.Date
+  impressions             Int?      @default(0)
+  reach                   Int?      @default(0)
+  clicks                  Int?      @default(0)
+  linkClicks              Int?      @default(0) @map("link_clicks")
+  landingPageViews        Int?      @default(0) @map("landing_page_views")
+  spend                   Decimal?  @default(0) @db.Decimal(10, 2)
+  conversions             Int?      @default(0)
+  leads                   Int?      @default(0)
+  messagingConversations  Int?      @default(0) @map("messaging_conversations")
+  messaging_first_reply   Int?      @default(0)
+  ctr                     Decimal?  @default(0) @db.Decimal(5, 2)
+  cpc                     Decimal?  @default(0) @db.Decimal(10, 2)
+  cpl                     Decimal?  @default(0) @db.Decimal(10, 2)
+  cpm                     Decimal?  @default(0) @db.Decimal(10, 2)
+  frequency               Decimal?  @default(0) @db.Decimal(8, 4)
+  quality_ranking         String?
+  engagement_rate_ranking String?
+  conversion_rate_ranking String?
+  platform                String?   @default("meta")
+  metadata                Json?
+  createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt               DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  campaigns               Campaign  @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([adSetId, date, platform])
+  @@index([adSetId], map: "idx_adset_metrics_adset")
+  @@index([campaign_id], map: "idx_adset_metrics_campaign")
+  @@index([campaign_id, date(sort: Desc)], map: "idx_adset_metrics_campaign_date")
+  @@index([date(sort: Desc)], map: "idx_adset_metrics_date")
+  @@map("adset_metrics")
+}
+
+model AdMetric {
+  id                      String    @id @default(uuid())
+  campaignId              String    @map("campaign_id")
+  adsetId                 String?   @map("adset_id")
+  adId                    String    @map("ad_id")
+  adName                  String?   @map("ad_name")
+  date                    DateTime  @db.Date
+  impressions             Int?      @default(0)
+  reach                   Int?      @default(0)
+  clicks                  Int?      @default(0)
+  linkClicks              Int?      @default(0) @map("link_clicks")
+  landingPageViews        Int?      @default(0) @map("landing_page_views")
+  spend                   Decimal?  @default(0) @db.Decimal(10, 2)
+  conversions             Int?      @default(0)
+  messagingConversations  Int?      @default(0) @map("messaging_conversations")
+  ctr                     Decimal?  @default(0) @db.Decimal(5, 2)
+  cpc                     Decimal?  @default(0) @db.Decimal(10, 2)
+  cpl                     Decimal?  @default(0) @db.Decimal(10, 2)
+  cpm                     Decimal?  @default(0) @db.Decimal(10, 2)
+  videoThruplay           Int?      @default(0) @map("video_thruplay")
+  videoP25                Int?      @default(0) @map("video_p25")
+  videoP50                Int?      @default(0) @map("video_p50")
+  videoP75                Int?      @default(0) @map("video_p75")
+  videoP100               Int?      @default(0) @map("video_p100")
+  video3SecViews          Int?      @default(0) @map("video_3sec_views")
+  hookRate                Decimal?  @default(0) @map("hook_rate") @db.Decimal(5, 2)
+  holdRate                Decimal?  @default(0) @map("hold_rate") @db.Decimal(5, 2)
+  quality_ranking         String?
+  engagement_rate_ranking String?
+  conversion_rate_ranking String?
+  platform                String?   @default("meta")
+  metadata                Json?
+  createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt               DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  creativeId              String?   @map("creative_id")
+  creativeSnapshotId      String?   @map("creative_snapshot_id")
+  campaigns               Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([adId, date, platform])
+  @@index([adId], map: "idx_ad_creative_ad")
+  @@index([adsetId], map: "idx_ad_creative_adset")
+  @@index([campaignId], map: "idx_ad_creative_campaign")
+  @@index([date(sort: Desc)], map: "idx_ad_creative_date")
+  @@index([creativeId], map: "idx_ad_creative_metrics_creative_id")
+  @@index([creativeSnapshotId], map: "idx_ad_creative_metrics_snapshot_id")
+  @@map("ad_creative_metrics")
+}
+
+model AdCreativeSnapshot {
+  id                     String                  @id @default(uuid())
+  creativeId             String                  @map("creative_id")
+  platform               String?                 @default("meta")
+  contentHash            String                  @map("content_hash")
+  captured_at            DateTime?               @default(now()) @db.Timestamp(6)
+  lastSeenAt             DateTime?               @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  headline               String?
+  primaryText            String?                 @map("primary_text")
+  description            String?
+  ctaType                String?                 @map("cta_type")
+  destinationUrl         String?                 @map("destination_url")
+  imageUrl               String?                 @map("image_url")
+  thumbnailUrl           String?                 @map("thumbnail_url")
+  videoId                String?                 @map("video_id")
+  format                 String?
+  isDynamic              Boolean?                @default(false) @map("is_dynamic")
+  headlines              Json?
+  primaryTexts           Json?                   @map("primary_texts")
+  descriptions           Json?
+  ctaTypes               Json?                   @map("cta_types")
+  destinationUrls        Json?                   @map("destination_urls")
+  objectStorySpec        Json?                   @map("object_story_spec")
+  assetFeedSpec          Json?                   @map("asset_feed_spec")
+  raw                    Json?
+  visualAttributes       Json?                   @map("visual_attributes")
+  creative_copy_insights creative_copy_insights?
+
+  @@unique([creativeId, contentHash, platform])
+  @@index([creativeId], map: "idx_ad_creative_snapshots_creative")
+  @@index([lastSeenAt(sort: Desc)], map: "idx_ad_creative_snapshots_last_seen")
+  @@index([platform], map: "idx_ad_creative_snapshots_platform")
+  @@map("ad_creative_snapshots")
+}
+
+model MetricsBreakdown {
+  id               String    @id @default(uuid())
+  campaignId       String    @map("campaign_id")
+  date             DateTime  @db.Date
+  breakdownType    String    @map("breakdown_type")
+  breakdownData    Json      @default("[]") @map("breakdown_data")
+  totalSpend       Decimal?  @default(0) @map("total_spend") @db.Decimal(10, 2)
+  totalImpressions Int?      @default(0) @map("total_impressions")
+  totalConversions Int?      @default(0) @map("total_conversions")
+  platform         String?   @default("meta")
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  campaign         Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([campaignId, date, breakdownType, platform])
+  @@index([campaignId], map: "idx_breakdowns_campaign")
+  @@index([campaignId, breakdownType, date(sort: Desc)], map: "idx_breakdowns_campaign_type")
+  @@index([date(sort: Desc)], map: "idx_breakdowns_date")
+  @@index([breakdownType], map: "idx_breakdowns_type")
+  @@map("metrics_breakdowns")
+}
+
+model AuditEvent {
   id              String   @id @default(uuid())
-  date            DateTime
-
+  eventType       String
+  processId       String?
   clientId        String
-  client          Client   @relation(fields: [clientId], references: [id])
+  userId          String
+  userRole        String
+  resource        Json
+  action          String
+  changes         Json?
+  metadata        Json
+  complianceFlags Json
+  timestamp       DateTime @default(now()) @db.Timestamp(6)
 
-  campaignId      String?
-  campaign        Campaign? @relation(fields: [campaignId], references: [id])
+  @@index([clientId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("audit_events")
+}
 
-  // Métricas
-  impressions     Int      @default(0)
-  clicks          Int      @default(0)
-  conversions     Int      @default(0)
-  spent           Float    @default(0)
-  revenue         Float    @default(0)
+model User {
+  id                String              @id @default(uuid())
+  email             String              @unique
+  name              String
+  role              String
+  passwordHash      String
+  createdAt         DateTime            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime            @updatedAt @db.Timestamp(6)
+  action_approvals  action_approvals[]
+  action_executions action_executions[]
+  action_proposals  action_proposals[]
 
-  // Calculados
-  ctr             Float?   // Click-through rate
-  cpc             Float?   // Cost per click
-  cpa             Float?   // Cost per acquisition
-  roas            Float?   // Return on ad spend
+  @@map("users")
+}
 
-  createdAt       DateTime @default(now())
+model Lock {
+  id           String   @id @default(uuid())
+  resourceType String
+  resourceId   String
+  clientId     String
+  holderId     String
+  holderType   String
+  priority     Int
+  status       String
+  acquiredAt   DateTime @default(now()) @db.Timestamp(6)
+  expiresAt    DateTime @db.Timestamp(6)
 
-  @@map("metrics")
+  @@unique([resourceType, resourceId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("locks")
+}
+
+model ProcessVersion {
+  id              String    @id @default(uuid())
+  processId       String
+  version         String
+  status          String
+  description     String
+  breaking        Boolean   @default(false)
+  rollbackVersion String?
+  deployedAt      DateTime  @default(now()) @db.Timestamp(6)
+  deprecatedAt    DateTime? @db.Timestamp(6)
+  metadata        Json
+
+  @@unique([processId, version])
+  @@index([processId])
+  @@index([status])
+  @@map("process_versions")
+}
+
+model ClientBPMNProgress {
+  id                  String    @id @default(uuid())
+  clientId            String    @map("client_id")
+  currentSubprocess   String    @map("current_subprocess")
+  status              String?   @default("in_progress")
+  progressPercentage  Int?      @default(0) @map("progress_percentage")
+  completedTasks      String[]  @map("completed_tasks")
+  pendingTasks        String[]  @map("pending_tasks")
+  blockedTasks        String[]  @map("blocked_tasks")
+  startedAt           DateTime? @map("started_at") @db.Timestamp(6)
+  estimatedCompletion DateTime? @map("estimated_completion") @db.Timestamp(6)
+  completedAt         DateTime? @map("completed_at") @db.Timestamp(6)
+  notes               String?
+  blockers            Json?
+  metadata            Json?
+  subprocessHistory   Json?     @map("subprocess_history")
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  clients             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([clientId, currentSubprocess])
+  @@index([clientId], map: "idx_client_bpmn_progress_client_id")
+  @@index([status], map: "idx_client_bpmn_progress_status")
+  @@index([currentSubprocess], map: "idx_client_bpmn_progress_subprocess")
+  @@map("client_bpmn_progress")
+}
+
+model MonthlyReport {
+  id          String    @id @default(uuid())
+  clientId    String    @map("client_id")
+  reportType  String?   @default("monthly") @map("report_type")
+  periodStart DateTime  @map("period_start") @db.Date
+  periodEnd   DateTime  @map("period_end") @db.Date
+  title       String
+  summaryData Json      @map("summary_data")
+  filePath    String?   @map("file_path")
+  fileSize    Int?      @map("file_size")
+  pdfUrl      String?   @map("pdf_url")
+  generatedBy String?   @map("generated_by")
+  generatedAt DateTime? @default(now()) @map("generated_at") @db.Timestamp(6)
+  version     Int?      @default(1)
+  status      String?   @default("generated")
+  metadata    Json?
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([clientId], map: "idx_monthly_reports_client_id")
+  @@index([clientId, periodStart(sort: Desc)], map: "idx_monthly_reports_client_period")
+  @@index([generatedAt(sort: Desc)], map: "idx_monthly_reports_generated_at")
+  @@index([periodStart, periodEnd], map: "idx_monthly_reports_period")
+  @@map("monthly_reports")
+}
+
+model SyncHistory {
+  id                String    @id @default(uuid())
+  platform          String    @default("meta")
+  accountId         String?   @map("account_id")
+  dateRangeStart    DateTime  @map("date_range_start") @db.Date
+  dateRangeEnd      DateTime  @map("date_range_end") @db.Date
+  status            String
+  totalInsights     Int?      @default(0) @map("total_insights")
+  mappedCampaigns   Int?      @default(0) @map("mapped_campaigns")
+  updatedMetrics    Int?      @default(0) @map("updated_metrics")
+  unmappedCampaigns String[]  @map("unmapped_campaigns")
+  durationMs        Int?      @map("duration_ms")
+  startedAt         DateTime  @map("started_at") @db.Timestamp(6)
+  completedAt       DateTime? @map("completed_at") @db.Timestamp(6)
+  errorMessage      String?   @map("error_message")
+  errorStack        String?   @map("error_stack")
+  dryRun            Boolean?  @default(false) @map("dry_run")
+  triggeredBy       String?   @map("triggered_by")
+  metadata          Json?
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([accountId, startedAt(sort: Desc)], map: "idx_sync_history_account")
+  @@index([platform], map: "idx_sync_history_platform")
+  @@index([startedAt(sort: Desc)], map: "idx_sync_history_started_at")
+  @@index([status], map: "idx_sync_history_status")
+  @@map("sync_history")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model action_approvals {
+  id                 String           @id
+  proposal_id        String
+  decision           String
+  reason             String?
+  decided_by_user_id String?
+  decided_at         DateTime?        @default(now()) @db.Timestamp(6)
+  created_at         DateTime?        @default(now()) @db.Timestamp(6)
+  users              User?            @relation(fields: [decided_by_user_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  action_proposals   action_proposals @relation(fields: [proposal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([proposal_id, decided_at(sort: Desc)], map: "idx_action_approvals_proposal")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model action_executions {
+  id                  String           @id
+  proposal_id         String
+  status              String
+  attempts            Int?             @default(0)
+  idempotency_key     String?          @unique
+  dry_run             Boolean?         @default(false)
+  request_payload     Json?
+  meta_response       Json?
+  error_message       String?
+  error_stack         String?
+  started_at          DateTime?        @db.Timestamp(6)
+  completed_at        DateTime?        @db.Timestamp(6)
+  executed_by_type    String           @default("system")
+  executed_by_user_id String?
+  created_at          DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at          DateTime?        @default(now()) @db.Timestamp(6)
+  users               User?            @relation(fields: [executed_by_user_id], references: [id], onUpdate: NoAction)
+  action_proposals    action_proposals @relation(fields: [proposal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([proposal_id, created_at(sort: Desc)], map: "idx_action_executions_proposal")
+  @@index([status, created_at(sort: Desc)], map: "idx_action_executions_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model action_proposals {
+  id                    String                  @id
+  client_id             String
+  platform              String                  @default("meta")
+  account_id            String?
+  source                String                  @default("optimization_center")
+  source_item_id        String?
+  rule_id               String?
+  playbook_version      String?
+  severity              String?
+  category              String?
+  action                String?
+  title                 String?
+  description           String?
+  entity_type           String?
+  entity_id             String?
+  recommended_payload   Json?
+  status                String                  @default("pending")
+  created_by_type       String                  @default("system")
+  created_by_user_id    String?
+  created_at            DateTime?               @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamp(6)
+  action_approvals      action_approvals[]
+  action_executions     action_executions[]
+  auto_approval_history auto_approval_history[] @relation("AutoApprovalHistoryProposal")
+  clients               Client                  @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 User?                   @relation(fields: [created_by_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([client_id, status, created_at(sort: Desc)], map: "idx_action_proposals_client_status")
+  @@index([entity_type, entity_id, created_at(sort: Desc)], map: "idx_action_proposals_entity")
+  @@index([source, source_item_id], map: "idx_action_proposals_source")
+}
+
+model anomaly_detections {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  client_id       String
+  campaign_id     String
+  campaign_name   String?
+  anomaly_type    String
+  severity        String    @default("warning")
+  metric_current  Decimal?  @db.Decimal(12, 2)
+  metric_baseline Decimal?  @db.Decimal(12, 2)
+  change_pct      Decimal?  @db.Decimal(8, 2)
+  description     String?
+  acknowledged    Boolean?  @default(false)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  clients         Client    @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([client_id, created_at(sort: Desc)], map: "idx_anomaly_client")
+  @@index([anomaly_type], map: "idx_anomaly_type")
+}
+
+model campaign_ads {
+  id                String    @id
+  campaign_id       String
+  ad_name           String
+  ad_type           String?
+  status            String?   @default("active")
+  headline          String?
+  description       String?
+  call_to_action    String?
+  image_url         String?
+  video_url         String?
+  landing_page_url  String?
+  total_impressions Int?      @default(0)
+  total_clicks      Int?      @default(0)
+  total_conversions Int?      @default(0)
+  total_spend       Decimal?  @default(0) @db.Decimal(10, 2)
+  avg_ctr           Decimal?  @default(0) @db.Decimal(5, 2)
+  avg_cpc           Decimal?  @default(0) @db.Decimal(10, 2)
+  platform          String?
+  platform_ad_id    String?
+  metadata          Json?
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  updated_at        DateTime? @default(now()) @db.Timestamp(6)
+  campaigns         Campaign  @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([campaign_id], map: "idx_campaign_ads_campaign_id")
+  @@index([platform], map: "idx_campaign_ads_platform")
+  @@index([status], map: "idx_campaign_ads_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model campaign_lead_tracking {
+  id                       String    @id
+  campaign_id              String
+  date                     DateTime  @db.Date
+  qualified_leads          Int?      @default(0)
+  contracts_closed         Int?      @default(0)
+  average_ticket           Decimal?  @default(0) @db.Decimal(10, 2)
+  revenue_generated        Decimal?  @default(0) @db.Decimal(10, 2)
+  leads_responded          Int?      @default(0)
+  response_time_hours      Decimal?  @db.Decimal(8, 2)
+  notes                    String?
+  lead_qualification_rate  Decimal?  @db.Decimal(5, 2)
+  closing_rate             Decimal?  @db.Decimal(5, 2)
+  roi                      Decimal?  @db.Decimal(10, 2)
+  cost_per_contract        Decimal?  @db.Decimal(10, 2)
+  created_at               DateTime? @default(now()) @db.Timestamp(6)
+  updated_at               DateTime? @default(now()) @db.Timestamp(6)
+  disqualification_reasons Json?
+  campaigns                Campaign  @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([campaign_id, date])
+  @@index([campaign_id], map: "idx_lead_tracking_campaign")
+  @@index([campaign_id, date(sort: Desc)], map: "idx_lead_tracking_campaign_date")
+  @@index([date(sort: Desc)], map: "idx_lead_tracking_date")
+}
+
+model creative_copy_insights {
+  snapshot_id           String             @id
+  theme_key             String?
+  theme_name            String?
+  status                String             @default("pending")
+  model                 String?
+  promptId              String?            @map("prompt_id")
+  prompt_version        String?
+  analysis              Json?
+  error_message         String?
+  created_at            DateTime?          @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?          @default(now()) @db.Timestamp(6)
+  ad_creative_snapshots AdCreativeSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status], map: "idx_creative_copy_insights_status")
+  @@index([theme_key], map: "idx_creative_copy_insights_theme_key")
+}
+
+model metrics {
+  id          String    @id
+  date        DateTime  @db.Timestamp(6)
+  clientId    String
+  campaignId  String?
+  impressions Int       @default(0)
+  clicks      Int       @default(0)
+  conversions Int       @default(0)
+  spent       Float     @default(0)
+  revenue     Float     @default(0)
+  ctr         Float?
+  cpc         Float?
+  cpa         Float?
+  roas        Float?
+  createdAt   DateTime  @default(now()) @db.Timestamp(6)
+  campaigns   Campaign? @relation(fields: [campaignId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clients     Client    @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
   @@unique([clientId, campaignId, date])
   @@index([clientId])
   @@index([date])
 }
 
-// ============================================================================
-// AUDIT TRAIL
-// ============================================================================
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model notifications {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  client_id  String?
+  type       String
+  severity   String    @default("info")
+  title      String
+  message    String
+  metadata   Json?     @default("{}")
+  read       Boolean?  @default(false)
+  read_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  expires_at DateTime? @db.Timestamptz(6)
+  clients    Client?   @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-model AuditEvent {
-  id              String   @id @default(uuid())
-  eventType       String
-
-  processId       String?
-  clientId        String
-  userId          String
-  userRole        String
-
-  resource        Json     // { type, id, name }
-  action          String
-  changes         Json?    // { before, after }
-
-  metadata        Json     // { ipAddress, userAgent, etc }
-  complianceFlags Json     // { gdpr, lgpd, etc }
-
-  timestamp       DateTime @default(now())
-
-  @@map("audit_events")
-  @@index([clientId])
-  @@index([eventType])
-  @@index([timestamp])
+  @@index([client_id, created_at(sort: Desc)], map: "idx_notifications_client")
 }
 
-// ============================================================================
-// USUÁRIOS DO SISTEMA
-// ============================================================================
+model weekly_summaries {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  client_id        String
+  week_start       DateTime  @db.Date
+  week_end         DateTime  @db.Date
+  model            String?
+  promptId         String?   @map("prompt_id")
+  promptVersion    String?   @map("prompt_version")
+  summary          Json      @default("{}")
+  metrics_snapshot Json?
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  clients          Client    @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-model User {
-  id              String   @id @default(uuid())
-  email           String   @unique
-  name            String
-  role            String   // "admin", "gestor_trafego", "cs", etc
-  passwordHash    String
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@map("users")
+  @@unique([client_id, week_start])
+  @@index([client_id, week_start(sort: Desc)], map: "idx_weekly_summaries_client")
 }
 
-// ============================================================================
-// LOCKS DISTRIBUÍDOS
-// ============================================================================
+model ai_copy_suggestions {
+  id             String    @id
+  client_id      String
+  theme_key      String?
+  model          String?
+  promptId       String?   @map("prompt_id")
+  prompt_version String?
+  suggestions    Json      @default("[]")
+  winner_context Json?
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  clients        Client    @relation(fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-model Lock {
-  id              String   @id @default(uuid())
-  resourceType    String   // "campaign", "client", etc
-  resourceId      String
-  clientId        String
-  holderId        String   // process_X.Y_instance_NNN
-  holderType      String   // "optimization", "offboarding", etc
-
-  priority        Int
-  status          String   // "active", "expired", "released"
-
-  acquiredAt      DateTime @default(now())
-  expiresAt       DateTime
-
-  @@map("locks")
-  @@unique([resourceType, resourceId])
-  @@index([status])
-  @@index([expiresAt])
+  @@index([client_id], map: "idx_ai_copy_suggestions_client")
 }
 
-// ============================================================================
-// VERSÕES DE PROCESSOS
-// ============================================================================
+model ai_outputs {
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  type           String
+  entity_id      String
+  model          String?
+  promptId       String?   @map("prompt_id")
+  prompt_version String?
+  status         String
+  payload        Json?
+  error          Json?
+  latency_ms     Int?
+  input_hash     String?
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
 
-model ProcessVersion {
-  id              String   @id @default(uuid())
-  processId       String   // "5.2", "6.1", etc
-  version         String   // "1.0.0", "2.0.0", etc
-  status          String   // "active", "deprecated", "archived"
+  @@index([type, entity_id, created_at(sort: Desc)], map: "idx_ai_outputs_type_entity")
+  @@index([input_hash, created_at(sort: Desc)], map: "idx_ai_outputs_input_hash")
+  @@index([status, created_at(sort: Desc)], map: "idx_ai_outputs_status")
+  @@map("ai_outputs")
+}
 
-  description     String
-  breaking        Boolean  @default(false)
-  rollbackVersion String?
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auto_approval_history {
+  id          String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  client_id   String
+  proposal_id String
+  rule_type   String
+  decision    String
+  reason      String?
+  metadata    Json?
+  created_at  DateTime?        @default(now()) @db.Timestamp(6)
+  clients     Client           @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  proposal    action_proposals @relation("AutoApprovalHistoryProposal", fields: [proposal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  deployedAt      DateTime @default(now())
-  deprecatedAt    DateTime?
+  @@index([client_id, created_at(sort: Desc)], map: "idx_auto_approval_history_client")
+  @@index([proposal_id], map: "idx_auto_approval_history_proposal")
+}
 
-  metadata        Json     // { author, changelog, testsPass, approvedBy }
+model ClientRuleConfig {
+  id       String @id @default(uuid())
+  clientId String @map("client_id")
+  client   Client @relation(fields: [clientId], references: [id])
 
-  @@map("process_versions")
-  @@unique([processId, version])
-  @@index([processId])
-  @@index([status])
+  ruleId  String  @map("rule_id")
+  enabled Boolean @default(true)
+
+  parameters Json?
+
+  updatedBy String?  @map("updated_by")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([clientId, ruleId])
+  @@map("client_rule_configs")
+}
+
+model OptimizationPlaybookRule {
+  id                 String   @id
+  title              String
+  description        String
+  condition          String
+  level              String
+  severity           String
+  category           String
+  action             String
+  parametersSchema   Json?    @map("parameters_schema")
+  parametersTemplate Json?    @map("parameters_template")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("optimization_playbook_rules")
 }

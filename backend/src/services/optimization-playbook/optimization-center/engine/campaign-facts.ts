@@ -1,4 +1,4 @@
-import { getOptimizationTargetsForTheme, inferOptimizationTheme } from '../../theme';
+import { getOptimizationTargetsForTheme, resolveOptimizationTheme } from '../../theme';
 import { resolveBudgetAndMinSpend } from './budget';
 import { percentChange, safeFloat, safeInt } from './helpers';
 import type { LeadTrackingAgg, OptimizationRuleContext } from './types';
@@ -9,7 +9,7 @@ export type CampaignFacts = {
   campaignStatus: string;
   campaignBudget: number;
   minSpendForEvaluation: number;
-  theme: ReturnType<typeof inferOptimizationTheme>;
+  theme: ReturnType<typeof resolveOptimizationTheme>;
   targets: ReturnType<typeof getOptimizationTargetsForTheme>;
   spendTotal: number;
   impressionsTotal: number;
@@ -36,7 +36,11 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
   const campaignName = String(row.campaign_name || '');
   const campaignStatus = String(row.campaign_status || '');
 
-  const theme = inferOptimizationTheme(campaignName);
+  const theme = resolveOptimizationTheme({
+    campaignName,
+    themeKey: row.optimization_theme_key ?? null,
+    subthemeKey: row.optimization_subtheme_key ?? null,
+  });
   const targets = getOptimizationTargetsForTheme(theme.themeKey, ctx.clientTargetOverrides);
 
   const spendTotal = safeFloat(row.spend_total);
@@ -127,4 +131,3 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
     topReasons,
   };
 };
-

@@ -38,11 +38,14 @@ export const campaignCplHighRule: OptimizationRuleModule = {
         description: `CPL atual ${formatCurrency(facts.costPerContact)} está acima do ideal para o tema (${facts.theme.themeName}). Recomendado: revisar criativos, públicos e proposta para reduzir custo por contato.`,
         theme: toThemeInfo(facts.theme),
         entity: { type: 'campaign', id: facts.campaignId, name: facts.campaignName },
-        metrics: { cplLast7: facts.costPerContact, contactsLast7: facts.contactsLast7, spendLast7: facts.spendLast7 },
         thresholds: {
-          targetCplGoodMax: facts.targets.targetCplGoodMax,
-          targetCplOkMax: facts.targets.targetCplOkMax,
           targetCplBadMin: facts.targets.targetCplBadMin,
+        },
+        autoAction: {
+          type: 'set_campaign_budget',
+          entityId: facts.campaignId,
+          amount: Math.floor(facts.campaignBudget * 0.8), // Suggest 20% reduction
+          reason: 'High CPL: Reducing budget to control inefficiency',
         },
       });
     }

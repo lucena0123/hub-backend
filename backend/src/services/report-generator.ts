@@ -3,22 +3,28 @@ import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MetricsService } from './metrics-service';
+import type { AiOutputService } from './ai-output-service';
 import type { MonthlyReport } from '../types/metrics';
 import { toIsoDateUtc } from '../utils/date';
 import { generateClientReportContent, generateClientWeeklyReportContent } from './report-analysis';
 import { getClientLeadFunnelSummary } from './reports/lead-funnel-summary';
 import { generateReportPdf } from './reports/pdf';
+import { getPromptDefinition } from './ai-prompts';
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
+const REPORT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+const toIsoOrNow = (value: Date | null | undefined) => (value ? value.toISOString() : new Date().toISOString());
 
 export class ReportGenerator {
-
-
-  constructor(private prisma: PrismaClient, private metricsService: MetricsService) {
-  }
+  constructor(
+    private prisma: PrismaClient,
+    private metricsService: MetricsService,
+    private aiOutputs?: AiOutputService
+  ) {}
 
   async generateMonthlyReport(
     clientId: string,
@@ -46,7 +52,12 @@ export class ReportGenerator {
     });
 
     // Generate AI Content using the new Structure
-    const aiContent = await generateClientReportContent(performanceData, leadFunnel);
+    const aiContent = await generateClientReportContent(performanceData, leadFunnel, {
+      aiOutputs: this.aiOutputs,
+      entityId: clientId,
+      type: 'report-monthly',
+    });
+    const monthlyPrompt = getPromptDefinition('report-monthly');
 
     const reportId = uuidv4();
     const title = `Relatório Mensal - ${MONTH_NAMES[month - 1]} ${year}`;
@@ -55,6 +66,11 @@ export class ReportGenerator {
       performance: performanceData,
       aiContent,
       leadFunnel,
+      aiMeta: {
+        promptId: monthlyPrompt.id,
+        promptVersion: monthlyPrompt.version,
+        model: REPORT_MODEL,
+      },
     };
 
     const reportsDir = path.join(process.cwd(), 'reports');
@@ -66,7 +82,20 @@ export class ReportGenerator {
     const fileName = `${clientId}_${year}-${String(month).padStart(2, '0')}_${reportId}.pdf`;
     const filePath = path.join(reportsDir, fileName);
 
-    await generateReportPdf({ performance: performanceData, aiContent, outputPath: filePath, title, options: { leadFunnel } });
+    await generateReportPdf({
+      performance: performanceData,
+      aiContent,
+      outputPath: filePath,
+      title,
+      options: {
+        leadFunnel,
+        aiMeta: {
+          promptId: monthlyPrompt.id,
+          promptVersion: monthlyPrompt.version,
+          model: REPORT_MODEL,
+        },
+      },
+    });
 
     const fileSize = fs.statSync(filePath).size;
 
@@ -83,6 +112,13 @@ export class ReportGenerator {
         fileSize,
         status: 'generated',
         generatedAt: new Date(),
+        metadata: {
+          ai: {
+            promptId: monthlyPrompt.id,
+            promptVersion: monthlyPrompt.version,
+            model: 'gpt-4o-mini',
+          },
+        },
       }
     });
 
@@ -104,12 +140,12 @@ export class ReportGenerator {
       fileSize: report.fileSize || undefined,
       pdfUrl: report.pdfUrl || undefined,
       generatedBy: report.generatedBy || undefined,
-      generatedAt: report.generatedAt.toISOString(),
+      generatedAt: toIsoOrNow(report.generatedAt),
       version: report.version || 1,
       status: report.status as any,
       metadata: report.metadata,
-      createdAt: report.createdAt.toISOString(),
-      updatedAt: report.updatedAt.toISOString(),
+      createdAt: toIsoOrNow(report.createdAt),
+      updatedAt: toIsoOrNow(report.updatedAt),
     };
   }
 
@@ -127,7 +163,12 @@ export class ReportGenerator {
       performance: performanceData,
     });
 
-    const aiContent = await generateClientWeeklyReportContent(performanceData, leadFunnel);
+    const aiContent = await generateClientWeeklyReportContent(performanceData, leadFunnel, {
+      aiOutputs: this.aiOutputs,
+      entityId: clientId,
+      type: 'report-weekly',
+    });
+    const weeklyPrompt = getPromptDefinition('report-weekly');
 
     const reportId = uuidv4();
     const title = `Relatório Semanal - ${startDate} a ${endDate}`;
@@ -136,6 +177,11 @@ export class ReportGenerator {
       performance: performanceData,
       aiContent,
       leadFunnel,
+      aiMeta: {
+        promptId: weeklyPrompt.id,
+        promptVersion: weeklyPrompt.version,
+        model: REPORT_MODEL,
+      },
     };
 
     const reportsDir = path.join(process.cwd(), 'reports');
@@ -151,7 +197,15 @@ export class ReportGenerator {
       aiContent,
       outputPath: filePath,
       title,
-      options: { recommendationsHeading: 'Recomendações para a Próxima Semana', leadFunnel },
+      options: {
+        recommendationsHeading: 'Recomendações para a Próxima Semana',
+        leadFunnel,
+        aiMeta: {
+          promptId: weeklyPrompt.id,
+          promptVersion: weeklyPrompt.version,
+          model: REPORT_MODEL,
+        },
+      },
     });
 
     const fileSize = fs.statSync(filePath).size;
@@ -169,6 +223,13 @@ export class ReportGenerator {
         fileSize,
         status: 'generated',
         generatedAt: new Date(),
+        metadata: {
+          ai: {
+            promptId: weeklyPrompt.id,
+            promptVersion: weeklyPrompt.version,
+            model: 'gpt-4o-mini',
+          },
+        },
       }
     });
 
@@ -184,12 +245,12 @@ export class ReportGenerator {
       fileSize: report.fileSize || undefined,
       pdfUrl: report.pdfUrl || undefined,
       generatedBy: report.generatedBy || undefined,
-      generatedAt: report.generatedAt.toISOString(),
+      generatedAt: toIsoOrNow(report.generatedAt),
       version: report.version || 1,
       status: report.status as any,
       metadata: report.metadata,
-      createdAt: report.createdAt.toISOString(),
-      updatedAt: report.updatedAt.toISOString(),
+      createdAt: toIsoOrNow(report.createdAt),
+      updatedAt: toIsoOrNow(report.updatedAt),
     };
   }
 
@@ -211,12 +272,12 @@ export class ReportGenerator {
       fileSize: report.fileSize || undefined,
       pdfUrl: report.pdfUrl || undefined,
       generatedBy: report.generatedBy || undefined,
-      generatedAt: report.generatedAt.toISOString(),
+      generatedAt: toIsoOrNow(report.generatedAt),
       version: report.version || 1,
       status: report.status as any,
       metadata: report.metadata,
-      createdAt: report.createdAt.toISOString(),
-      updatedAt: report.updatedAt.toISOString(),
+      createdAt: toIsoOrNow(report.createdAt),
+      updatedAt: toIsoOrNow(report.updatedAt),
     }));
   }
 
@@ -241,12 +302,12 @@ export class ReportGenerator {
       fileSize: report.fileSize || undefined,
       pdfUrl: report.pdfUrl || undefined,
       generatedBy: report.generatedBy || undefined,
-      generatedAt: report.generatedAt.toISOString(),
+      generatedAt: toIsoOrNow(report.generatedAt),
       version: report.version || 1,
       status: report.status as any,
       metadata: report.metadata,
-      createdAt: report.createdAt.toISOString(),
-      updatedAt: report.updatedAt.toISOString(),
+      createdAt: toIsoOrNow(report.createdAt),
+      updatedAt: toIsoOrNow(report.updatedAt),
     };
   }
 }

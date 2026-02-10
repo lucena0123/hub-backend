@@ -216,7 +216,7 @@ export class DashboardService {
 
     return {
       totalGenerated: total,
-      lastGenerated: last?.generatedAt.toISOString() || null,
+      lastGenerated: last?.generatedAt ? last.generatedAt.toISOString() : null,
     };
   }
 
@@ -230,6 +230,7 @@ export class DashboardService {
     });
 
     reports.forEach((r: any) => {
+      if (!r?.generatedAt) return;
       activities.push({
         type: 'report',
         description: `Relatório gerado: ${r.title}`,

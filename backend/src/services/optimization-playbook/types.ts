@@ -1,11 +1,11 @@
 export type OptimizationCenterSeverity = 'critical' | 'warning' | 'info' | 'opportunity';
-export type OptimizationCenterCategory = 'campaign' | 'creative' | 'qualification' | 'data';
+export type OptimizationCenterCategory = 'campaign' | 'creative' | 'adset' | 'qualification' | 'data';
 export type OptimizationCenterAction = 'review' | 'pause' | 'refresh' | 'scale' | 'track' | 'sync';
 
 export type OptimizationThemeMatch = {
   themeKey: string;
   themeName: string;
-  matchedBy: 'tag' | 'keyword' | 'default';
+  matchedBy: 'tag' | 'keyword' | 'default' | 'manual';
   matchedValue: string | null;
 };
 
@@ -62,7 +62,7 @@ export type OptimizationTheme = {
 
 export type OptimizationCenterRule = {
   id: string;
-  level: 'campaign' | 'creative' | 'qualification' | 'data';
+  level: 'campaign' | 'creative' | 'adset' | 'qualification' | 'data';
   severity: OptimizationCenterSeverity;
   category: OptimizationCenterCategory;
   action: OptimizationCenterAction;
@@ -87,6 +87,7 @@ export type OptimizationCenterPlaybook = {
       enabled: boolean;
       requiresEnv: 'OPENAI_API_KEY';
       model: string;
+      promptId?: string;
       promptVersion: string;
     };
   };
@@ -94,4 +95,3 @@ export type OptimizationCenterPlaybook = {
   themes: OptimizationTheme[];
   rules: OptimizationCenterRule[];
 };
-
