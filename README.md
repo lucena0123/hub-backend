@@ -1,4 +1,11 @@
 # Hub - Sistema de Automacao B2B (Marketing & Vendas)
+![Node.js](https://img.shields.io/badge/node-20%2B-339933?logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-5-3178C6?logo=typescript&logoColor=white)
+![Fastify](https://img.shields.io/badge/fastify-5-black?logo=fastify&logoColor=white)
+![Next.js](https://img.shields.io/badge/next.js-16-black?logo=next.js&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/redis-7-DC382D?logo=redis&logoColor=white)
+![Prisma](https://img.shields.io/badge/prisma-6-2D3748?logo=prisma&logoColor=white)
 
 Plataforma de automacao para operacoes de marketing e vendas B2B, com foco em performance, otimizacao baseada em dados e suporte a analise com IA. O projeto integra coleta de metricas, playbooks de otimizacao, monitoramento e geracao de relatorios, com backend robusto e frontend moderno.
 
