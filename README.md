@@ -7,7 +7,7 @@
 ![Redis](https://img.shields.io/badge/redis-7-DC382D?logo=redis&logoColor=white)
 ![Prisma](https://img.shields.io/badge/prisma-6-2D3748?logo=prisma&logoColor=white)
 
-Plataforma de automacao para operacoes de marketing e vendas B2B, com foco em performance, otimizacao baseada em dados e suporte a analise com IA. O projeto integra coleta de metricas, playbooks de otimizacao, monitoramento e geracao de relatorios, com backend robusto e frontend moderno.
+Plataforma de automacao para operacoes de marketing e vendas B2B com foco em performance, governanca e operacao orientada a dados. O sistema integra coleta de metricas, playbooks de otimizacao, monitoramento e geracao de relatorios com backend robusto e frontend moderno.
 
 ## Visao geral
 - **Backend**: API Fastify com servicos de negocio, processamento de tarefas e integracao com Meta Ads.
@@ -37,6 +37,12 @@ Hub/
 - **DB**: PostgreSQL 16, Prisma
 - **Cache/Filas**: Redis 7, BullMQ
 - **UI**: TailwindCSS 4, shadcn/ui, Recharts
+
+## Arquitetura
+- **API**: Fastify com camadas de servicos e validacao tipada.
+- **Dados**: PostgreSQL via Prisma, com analytics em tabelas de metrics.
+- **Cache e filas**: Redis e BullMQ para tarefas e agendamentos.
+- **IA**: Camada de prompts e telemetria para outputs e cache.
 
 ## Setup rapido (dev)
 Requisitos: Node.js 20+, Docker Desktop.
@@ -90,6 +96,12 @@ Frontend:
 
 ## Observabilidade e IA
 Execucoes de IA sao registradas na tabela `ai_outputs` com status, latencia, payload e hash de input, permitindo auditoria e cache de respostas recentes.
+
+## Roadmap
+O planejamento e backlog sao acompanhados no Linear.
+
+## Contribuicao
+Este repositorio e de uso interno. Padrao de commits semanticos e validacao de PRs quando aplicavel.
 
 ## Licenca
 Privado. Uso interno.
