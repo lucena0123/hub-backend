@@ -4,6 +4,58 @@ import { calculateCPA, calculateCPM, calculateCPC, calculateCPL, calculateCTR, c
 import { getDateRange } from './date-range';
 import { determinePerformanceStatus } from './performance-status';
 
+type RankingCategory =
+  | 'ABOVE_AVERAGE'
+  | 'AVERAGE'
+  | 'BELOW_AVERAGE_35'
+  | 'BELOW_AVERAGE_20'
+  | 'BELOW_AVERAGE_10'
+  | 'UNKNOWN';
+
+const MIN_IMPRESSIONS_FOR_ENGAGEMENT = 500;
+const MIN_CLICKS_FOR_CONVERSION = 25;
+const MIN_CONTACTS_FOR_QUALITY = 5;
+
+const rankingFromPercentile = (percentile: number): RankingCategory => {
+  if (percentile < 0.1) return 'BELOW_AVERAGE_10';
+  if (percentile < 0.2) return 'BELOW_AVERAGE_20';
+  if (percentile < 0.35) return 'BELOW_AVERAGE_35';
+  if (percentile < 0.65) return 'AVERAGE';
+  return 'ABOVE_AVERAGE';
+};
+
+const buildPercentileRankings = (
+  entries: Array<{ campaignId: string; value: number }>,
+  higherIsBetter: boolean
+): Map<string, RankingCategory> => {
+  const valid = entries.filter((entry) => Number.isFinite(entry.value));
+  if (valid.length === 0) return new Map();
+
+  const sorted = [...valid].sort((a, b) => a.value - b.value);
+  const total = sorted.length;
+  const map = new Map<string, RankingCategory>();
+
+  sorted.forEach((entry, index) => {
+    const percentile = total === 1 ? 0.5 : index / (total - 1);
+    const adjusted = higherIsBetter ? percentile : 1 - percentile;
+    map.set(entry.campaignId, rankingFromPercentile(adjusted));
+  });
+
+  return map;
+};
+
+const resolveRanking = (
+  meta: string | null | undefined,
+  computed: RankingCategory | undefined,
+  platform: string
+): string | null => {
+  if (platform !== 'meta') return meta ?? null;
+  if (meta && meta !== 'UNKNOWN') return meta;
+  if (computed) return computed;
+  if (meta === 'UNKNOWN') return meta;
+  return 'UNKNOWN';
+};
+
 export const getClientPerformanceSummary = async (
   prisma: PrismaClient,
   clientId: string,
@@ -21,6 +73,7 @@ export const getClientPerformanceSummary = async (
   // Ensure dates are Date objects for Prisma
   const startDate = new Date(Dates.start);
   const endDate = new Date(Dates.end);
+  const periodDays = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
   const platform = query.platform;
 
   // 2. Fetch Campaigns
@@ -30,6 +83,7 @@ export const getClientPerformanceSummary = async (
       id: true,
       name: true,
       platform: true,
+      objective: true,
       optimizationThemeKey: true,
       optimizationSubthemeKey: true,
       budget: true, // Prisma returns Decimal or null? Check schema type. Schema says String or Float? Actually in schema it is usually Float or Decimal.
@@ -134,7 +188,11 @@ export const getClientPerformanceSummary = async (
     FROM campaign_metrics cm
     JOIN campaigns c ON c.id = cm.campaign_id
     WHERE ${whereClause}
-      AND cm.quality_ranking IS NOT NULL
+      AND (
+        cm.quality_ranking IS NOT NULL
+        OR cm.engagement_rate_ranking IS NOT NULL
+        OR cm.conversion_rate_ranking IS NOT NULL
+      )
     ORDER BY cm.campaign_id, cm.date DESC`;
 
   const rankingsByCampaign = new Map<string, any>();
@@ -164,6 +222,60 @@ export const getClientPerformanceSummary = async (
       adsetBudgetsByCampaign.set(String(row.campaign_id), {
         dailyBudget: Number(row.daily_budget),
         lifetimeBudget: Number(row.lifetime_budget),
+      });
+    });
+  } catch (error) {
+    // Silent fail if table doesn't exist or other error
+  }
+
+  const leadTrackingByCampaign = new Map<string, { leadsResponded: number; avgResponseTimeHours: number | null }>();
+  try {
+    const leadTrackingRows = await prisma.$queryRaw<any[]>`
+      SELECT
+        campaign_id,
+        COALESCE(SUM(leads_responded), 0) as leads_responded,
+        AVG(response_time_hours) as avg_response_time_hours
+      FROM campaign_lead_tracking
+      WHERE date >= ${startDate}
+        AND date <= ${endDate}
+      GROUP BY campaign_id`;
+
+    leadTrackingRows.forEach((row) => {
+      leadTrackingByCampaign.set(String(row.campaign_id), {
+        leadsResponded: Number(row.leads_responded),
+        avgResponseTimeHours:
+          row.avg_response_time_hours != null && Number.isFinite(Number(row.avg_response_time_hours))
+            ? Number(row.avg_response_time_hours)
+            : null,
+      });
+    });
+  } catch (error) {
+    // Silent fail if table doesn't exist or other error
+  }
+
+  const adsetObjectiveByCampaign = new Map<
+    string,
+    { optimizationGoal?: string | null; destinationType?: string | null; billingEvent?: string | null }
+  >();
+  try {
+    const adsetMetaRows = await prisma.$queryRaw<any[]>`
+      SELECT
+        a.campaign_id,
+        a.metadata
+      FROM adsets a
+      JOIN campaigns c ON c.id = a.campaign_id
+      WHERE c."clientId" = ${clientId}
+        AND a.platform = 'meta'`;
+
+    adsetMetaRows.forEach((row) => {
+      const campaignId = String(row.campaign_id);
+      if (adsetObjectiveByCampaign.has(campaignId)) return;
+      const metadata = row.metadata as Record<string, unknown> | null;
+      if (!metadata) return;
+      adsetObjectiveByCampaign.set(campaignId, {
+        optimizationGoal: typeof metadata.optimizationGoal === 'string' ? metadata.optimizationGoal : null,
+        destinationType: typeof metadata.destinationType === 'string' ? metadata.destinationType : null,
+        billingEvent: typeof metadata.billingEvent === 'string' ? metadata.billingEvent : null,
       });
     });
   } catch (error) {
@@ -222,6 +334,83 @@ export const getClientPerformanceSummary = async (
     dailyByCampaign.get(campaignId)!.push(metric);
   });
 
+  const campaignStats = campaigns.map((campaign) => {
+    const aggregated = aggregatedByCampaign.get(campaign.id) || {
+      totalImpressions: 0,
+      totalClicks: 0,
+      totalConversions: 0,
+      totalSpend: 0,
+      totalRevenue: 0,
+      totalLeads: 0,
+      totalMessagingConversations: 0,
+      totalMessagingFirstReply: 0,
+      totalLinkClicks: 0,
+      totalLandingPageViews: 0,
+      totalReach: 0,
+      avgFrequency: 0,
+      avgCpm: 0,
+    };
+
+    const totalContacts =
+      aggregated.totalLeads > 0
+        ? aggregated.totalLeads
+        : aggregated.totalMessagingConversations > 0
+          ? aggregated.totalMessagingConversations
+          : aggregated.totalConversions;
+
+    const avgCtr = calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
+    const avgCpl = calculateCPL(aggregated.totalSpend, totalContacts);
+    const conversionRate = aggregated.totalClicks > 0 ? (totalContacts / aggregated.totalClicks) * 100 : 0;
+
+    return {
+      campaignId: campaign.id,
+      totalImpressions: aggregated.totalImpressions,
+      totalClicks: aggregated.totalClicks,
+      totalContacts,
+      avgCtr,
+      avgCpl,
+      conversionRate,
+    };
+  });
+
+  const qualityRankings = buildPercentileRankings(
+    campaignStats
+      .filter((stat) => stat.totalContacts >= MIN_CONTACTS_FOR_QUALITY && stat.avgCpl > 0)
+      .map((stat) => ({ campaignId: stat.campaignId, value: stat.avgCpl })),
+    false
+  );
+
+  const engagementRankings = buildPercentileRankings(
+    campaignStats
+      .filter((stat) => stat.totalImpressions >= MIN_IMPRESSIONS_FOR_ENGAGEMENT)
+      .map((stat) => ({ campaignId: stat.campaignId, value: stat.avgCtr })),
+    true
+  );
+
+  const conversionRankings = buildPercentileRankings(
+    campaignStats
+      .filter((stat) => stat.totalClicks >= MIN_CLICKS_FOR_CONVERSION)
+      .map((stat) => ({ campaignId: stat.campaignId, value: stat.conversionRate })),
+    true
+  );
+
+  const computedRankings = new Map<
+    string,
+    {
+      qualityRanking?: RankingCategory;
+      engagementRateRanking?: RankingCategory;
+      conversionRateRanking?: RankingCategory;
+    }
+  >();
+
+  campaigns.forEach((campaign) => {
+    computedRankings.set(campaign.id, {
+      qualityRanking: qualityRankings.get(campaign.id),
+      engagementRateRanking: engagementRankings.get(campaign.id),
+      conversionRateRanking: conversionRankings.get(campaign.id),
+    });
+  });
+
   // Calculate Aggregations & Status (Logic largely same as before)
   const campaignsPerformance: PerformanceSummary[] = campaigns.map((campaign) => {
     const aggregated = aggregatedByCampaign.get(campaign.id) || {
@@ -241,6 +430,7 @@ export const getClientPerformanceSummary = async (
     };
 
     const rankings = rankingsByCampaign.get(campaign.id);
+    const computed = computedRankings.get(campaign.id);
 
     const avgCtr = calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
     const avgCpc = calculateCPC(aggregated.totalSpend, aggregated.totalClicks);
@@ -258,9 +448,6 @@ export const getClientPerformanceSummary = async (
     // Schema says budget is Float? Let's check. Assuming it is number.
     const budget = Number(campaign.budget) || 0;
     const budgetUsed = aggregated.totalSpend;
-    const budgetRemaining = budget > 0 ? budget - budgetUsed : 0;
-    const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
-
     const adsetBudgets = adsetBudgetsByCampaign.get(campaign.id);
     const adsetDailyBudget = adsetBudgets?.dailyBudget || 0;
     const adsetLifetimeBudget = adsetBudgets?.lifetimeBudget || 0;
@@ -272,6 +459,32 @@ export const getClientPerformanceSummary = async (
     if (hasCampaignBudget && hasAdsetBudget) budgetMode = 'mixed';
     else if (hasCampaignBudget) budgetMode = 'cbo';
     else if (hasAdsetBudget) budgetMode = 'abo';
+
+    let budgetType: 'daily' | 'lifetime' | 'adset_daily' | 'adset_lifetime' | 'unknown' = 'unknown';
+    let budgetPeriod = budget;
+
+    if ((budgetMode === 'abo' || budgetMode === 'mixed') && (adsetDailyBudget > 0 || adsetLifetimeBudget > 0)) {
+      if (adsetDailyBudget > 0) {
+        budgetType = 'adset_daily';
+        budgetPeriod = adsetDailyBudget * periodDays;
+      } else if (adsetLifetimeBudget > 0) {
+        budgetType = 'adset_lifetime';
+        budgetPeriod = adsetLifetimeBudget;
+      }
+    }
+
+    if (budgetType === 'unknown' && budget > 0) {
+      if (periodDays > 1 && budgetUsed > budget * 1.2) {
+        budgetType = 'daily';
+        budgetPeriod = budget * periodDays;
+      } else {
+        budgetType = 'lifetime';
+        budgetPeriod = budget;
+      }
+    }
+
+    const budgetRemaining = budgetPeriod > 0 ? budgetPeriod - budgetUsed : 0;
+    const budgetUtilization = budgetPeriod > 0 ? (budgetUsed / budgetPeriod) * 100 : 0;
 
     const dailyMetrics = dailyByCampaign.get(campaign.id) ?? [];
 
@@ -286,6 +499,10 @@ export const getClientPerformanceSummary = async (
       campaignId: campaign.id,
       campaignName: campaign.name,
       platform: campaign.platform,
+      objective: campaign.objective ?? null,
+      objectiveMeta: adsetObjectiveByCampaign.get(campaign.id) ?? null,
+      leadsResponded: leadTrackingByCampaign.get(campaign.id)?.leadsResponded ?? 0,
+      avgResponseTimeHours: leadTrackingByCampaign.get(campaign.id)?.avgResponseTimeHours ?? null,
       optimizationThemeKey: campaign.optimizationThemeKey ?? null,
       optimizationSubthemeKey: campaign.optimizationSubthemeKey ?? null,
       period: { start: Dates.start, end: Dates.end }, // use Dates computed above
@@ -302,9 +519,17 @@ export const getClientPerformanceSummary = async (
       totalReach: aggregated.totalReach,
       avgFrequency: Number(aggregated.avgFrequency.toFixed(2)),
       avgCpm: Number(aggregated.avgCpm.toFixed(2)),
-      qualityRanking: rankings?.qualityRanking ?? null,
-      engagementRateRanking: rankings?.engagementRateRanking ?? null,
-      conversionRateRanking: rankings?.conversionRateRanking ?? null,
+      qualityRanking: resolveRanking(rankings?.qualityRanking, computed?.qualityRanking, campaign.platform),
+      engagementRateRanking: resolveRanking(
+        rankings?.engagementRateRanking,
+        computed?.engagementRateRanking,
+        campaign.platform
+      ),
+      conversionRateRanking: resolveRanking(
+        rankings?.conversionRateRanking,
+        computed?.conversionRateRanking,
+        campaign.platform
+      ),
       avgCtr,
       avgCpc,
       avgCpl,
@@ -315,6 +540,8 @@ export const getClientPerformanceSummary = async (
       budgetRemaining,
       budgetUtilization: Number(budgetUtilization.toFixed(2)),
       budgetMode,
+      budgetType,
+      budgetPeriod: Number.isFinite(budgetPeriod) ? Number(budgetPeriod.toFixed(2)) : 0,
       dailyMetrics,
       status,
     };

@@ -35,22 +35,28 @@ export interface BusinessMetrics {
 }
 
 export interface AdSetMetric {
-    adsetId: string;
-    adsetName: string;
-    totalImpressions: number;
-    totalReach: number;
-    totalClicks: number;
-    totalLinkClicks: number;
-    totalLandingPageViews: number;
-    totalSpend: number;
-    totalConversions: number;
-    totalMessagingConversations: number;
-    totalMessagingFirstReply: number;
-    avgCtr: number;
-    avgCpc: number;
-    avgCpm: number;
-    avgFrequency: number;
-    cpl: number;
+  adsetId: string;
+  adsetName: string;
+  totalImpressions: number;
+  totalReach: number;
+  totalClicks: number;
+  totalLinkClicks: number;
+  totalLandingPageViews: number;
+  totalSpend: number;
+  totalConversions: number;
+  totalMessagingConversations: number;
+  totalMessagingFirstReply: number;
+  avgCtr: number;
+  avgCpc: number;
+  avgCpm: number;
+  avgFrequency: number;
+  cpl: number;
+  status?: string | null;
+  effectiveStatus?: string | null;
+  configuredStatus?: string | null;
+  dailyBudget?: number | null;
+  lifetimeBudget?: number | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface AdMetric {
@@ -308,61 +314,87 @@ export class AnalyticsService {
         };
     }
 
-    async getAdSetMetrics(
-        campaignId: string,
-        start: string,
-        end: string
-    ): Promise<{ campaignId: string; total: number; adsets: AdSetMetric[] }> {
-        const result = await this.prisma.$queryRaw<any[]>`
-        SELECT
-          adset_id,
-          adset_name,
-          SUM(impressions) as total_impressions,
-          SUM(reach) as total_reach,
-          SUM(clicks) as total_clicks,
-          SUM(link_clicks) as total_link_clicks,
-          SUM(landing_page_views) as total_landing_page_views,
-          SUM(spend) as total_spend,
-          SUM(conversions) as total_conversions,
-          SUM(messaging_conversations) as total_messaging_conversations,
-          SUM(messaging_first_reply) as total_messaging_first_reply,
-          AVG(ctr) as avg_ctr,
-          AVG(cpc) as avg_cpc,
-          AVG(cpm) as avg_cpm,
-          AVG(frequency) as avg_frequency
-        FROM adset_metrics
-        WHERE campaign_id = ${campaignId} AND date >= ${new Date(start)} AND date <= ${new Date(end)}
-        GROUP BY adset_id, adset_name
-        ORDER BY total_spend DESC
-    `;
+      async getAdSetMetrics(
+          campaignId: string,
+          start: string,
+          end: string
+      ): Promise<{ campaignId: string; total: number; adsets: AdSetMetric[] }> {
+          const result = await this.prisma.$queryRaw<any[]>`
+          SELECT
+            adset_id,
+            adset_name,
+            SUM(impressions) as total_impressions,
+            SUM(reach) as total_reach,
+            SUM(clicks) as total_clicks,
+            SUM(link_clicks) as total_link_clicks,
+            SUM(landing_page_views) as total_landing_page_views,
+            SUM(spend) as total_spend,
+            SUM(conversions) as total_conversions,
+            SUM(messaging_conversations) as total_messaging_conversations,
+            SUM(messaging_first_reply) as total_messaging_first_reply,
+            AVG(ctr) as avg_ctr,
+            AVG(cpc) as avg_cpc,
+            AVG(cpm) as avg_cpm,
+            AVG(frequency) as avg_frequency
+          FROM adset_metrics
+          WHERE campaign_id = ${campaignId} AND date >= ${start}::date AND date <= ${end}::date
+          GROUP BY adset_id, adset_name
+          ORDER BY total_spend DESC
+      `;
 
-        const adsets = result.map((row: any) => {
-            const spend = parseFloat(row.total_spend) || 0;
-            const conversations = parseInt(row.total_messaging_conversations) || 0;
-            const cpl = conversations > 0 ? spend / conversations : 0;
+          const configRows = await this.prisma.$queryRaw<any[]>`
+            SELECT
+              adset_id,
+              adset_name,
+              status,
+              effective_status,
+              daily_budget,
+              lifetime_budget,
+              metadata
+            FROM adsets
+            WHERE campaign_id = ${campaignId}
+          `;
 
-            return {
-                adsetId: row.adset_id,
-                adsetName: row.adset_name,
-                totalImpressions: parseInt(row.total_impressions) || 0,
-                totalReach: parseInt(row.total_reach) || 0,
-                totalClicks: parseInt(row.total_clicks) || 0,
-                totalLinkClicks: parseInt(row.total_link_clicks) || 0,
-                totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
-                totalSpend: spend,
-                totalConversions: parseInt(row.total_conversions) || 0,
-                totalMessagingConversations: conversations,
-                totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
-                avgCtr: parseFloat(row.avg_ctr) || 0,
-                avgCpc: parseFloat(row.avg_cpc) || 0,
-                avgCpm: parseFloat(row.avg_cpm) || 0,
-                avgFrequency: parseFloat(row.avg_frequency) || 0,
-                cpl,
-            };
-        });
-
-        return { campaignId, total: adsets.length, adsets };
-    }
+          const configByAdset = new Map<string, any>();
+          configRows.forEach((row: any) => {
+            configByAdset.set(String(row.adset_id), row);
+          });
+  
+          const adsets = result.map((row: any) => {
+              const spend = parseFloat(row.total_spend) || 0;
+              const conversations = parseInt(row.total_messaging_conversations) || 0;
+              const cpl = conversations > 0 ? spend / conversations : 0;
+              const config = configByAdset.get(String(row.adset_id));
+              const adsetName = (row.adset_name || config?.adset_name || row.adset_id) as string;
+  
+              return {
+                  adsetId: row.adset_id,
+                  adsetName,
+                  totalImpressions: parseInt(row.total_impressions) || 0,
+                  totalReach: parseInt(row.total_reach) || 0,
+                  totalClicks: parseInt(row.total_clicks) || 0,
+                  totalLinkClicks: parseInt(row.total_link_clicks) || 0,
+                  totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
+                  totalSpend: spend,
+                  totalConversions: parseInt(row.total_conversions) || 0,
+                  totalMessagingConversations: conversations,
+                  totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
+                  avgCtr: parseFloat(row.avg_ctr) || 0,
+                  avgCpc: parseFloat(row.avg_cpc) || 0,
+                  avgCpm: parseFloat(row.avg_cpm) || 0,
+                  avgFrequency: parseFloat(row.avg_frequency) || 0,
+                  cpl,
+                  status: config?.status ?? null,
+                  effectiveStatus: config?.effective_status ?? null,
+                  configuredStatus: config?.metadata?.configuredStatus ?? null,
+                  dailyBudget: config?.daily_budget != null ? Number(config.daily_budget) : null,
+                  lifetimeBudget: config?.lifetime_budget != null ? Number(config.lifetime_budget) : null,
+                  metadata: config?.metadata ?? null,
+              };
+          });
+  
+          return { campaignId, total: adsets.length, adsets };
+      }
 
     async getAdMetrics(
         campaignId: string,

@@ -933,7 +933,7 @@ export class MetaAdsService {
   }
 
   async fetchAdSets(): Promise<MetaAdSet[]> {
-    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,created_time,updated_time&limit=100`;
+    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=id,name,campaign_id,status,configured_status,effective_status,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_cap,cost_cap,destination_type,promoted_object,attribution_spec,targeting,start_time,end_time,created_time,updated_time&limit=100`;
     return this.fetchPaginatedList<MetaAdSet>(url);
   }
 

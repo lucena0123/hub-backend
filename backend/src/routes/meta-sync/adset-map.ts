@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import type { MetaAdsService } from '../../services/meta-ads-service';
+import { toJsonb } from './utils';
 
 export const ensureMetaAdSetsImported = async (params: {
   prisma: PrismaClient;
@@ -47,6 +48,21 @@ export const ensureMetaAdSetsImported = async (params: {
           : null;
         const dailyBudget = parseMetaBudget(adset.daily_budget);
         const lifetimeBudget = parseMetaBudget(adset.lifetime_budget);
+        const metadata = {
+          billingEvent: adset.billing_event ?? null,
+          optimizationGoal: adset.optimization_goal ?? null,
+          bidStrategy: adset.bid_strategy ?? null,
+          bidAmount: adset.bid_amount ?? null,
+          bidCap: adset.bid_cap ?? null,
+          costCap: adset.cost_cap ?? null,
+          destinationType: adset.destination_type ?? null,
+          promotedObject: adset.promoted_object ?? null,
+          attributionSpec: adset.attribution_spec ?? null,
+          targeting: adset.targeting ?? null,
+          startTime: adset.start_time ?? null,
+          endTime: adset.end_time ?? null,
+          configuredStatus: adset.configured_status ?? null,
+        };
 
         const platform = 'meta';
         const recordId = `${platform}:${adsetId}`;
@@ -62,6 +78,7 @@ export const ensureMetaAdSetsImported = async (params: {
             daily_budget,
             lifetime_budget,
             platform,
+            metadata,
             created_at,
             updated_at
           ) VALUES (
@@ -74,6 +91,7 @@ export const ensureMetaAdSetsImported = async (params: {
             ${dailyBudget},
             ${lifetimeBudget},
             ${platform},
+            ${toJsonb(metadata)}::jsonb,
             NOW(),
             NOW()
           )
@@ -89,6 +107,10 @@ export const ensureMetaAdSetsImported = async (params: {
             lifetime_budget = CASE
               WHEN EXCLUDED.lifetime_budget > 0 THEN EXCLUDED.lifetime_budget
               ELSE adsets.lifetime_budget
+            END,
+            metadata = CASE
+              WHEN EXCLUDED.metadata IS NOT NULL THEN EXCLUDED.metadata
+              ELSE adsets.metadata
             END,
             updated_at = NOW()
         `;

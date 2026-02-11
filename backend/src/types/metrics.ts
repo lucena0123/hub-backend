@@ -100,6 +100,14 @@ export interface PerformanceSummary {
   campaignId: string;
   campaignName: string;
   platform: string;
+  objective?: string | null;
+  objectiveMeta?: {
+    optimizationGoal?: string | null;
+    destinationType?: string | null;
+    billingEvent?: string | null;
+  } | null;
+  leadsResponded?: number;
+  avgResponseTimeHours?: number | null;
   optimizationThemeKey?: string | null;
   optimizationSubthemeKey?: string | null;
   period: {
@@ -141,6 +149,8 @@ export interface PerformanceSummary {
   budgetUsed: number;
   budgetRemaining: number;
   budgetUtilization: number; // %
+  budgetType?: 'daily' | 'lifetime' | 'adset_daily' | 'adset_lifetime' | 'unknown';
+  budgetPeriod?: number;
   budgetMode?: 'abo' | 'cbo' | 'mixed' | 'unknown';
 
   // Trends
