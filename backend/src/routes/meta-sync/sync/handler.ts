@@ -242,6 +242,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
               mappedCampaigns: 0,
               updatedMetrics: 0,
               unmappedCampaigns: [],
+              partial: false,
               durationMs: duration,
             });
           }
@@ -284,6 +285,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
               mappedCampaigns: result.mappedTotal,
               updatedMetrics: 0,
               unmappedCampaigns: result.unmapped,
+              partial: result.unmapped.length > 0,
               durationMs: duration,
             });
           }
@@ -324,12 +326,18 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           };
         }
 
+        const adCoverage = result.coverage;
+        const adCoverageHasIssues =
+          Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
+        const isPartial = result.unmapped.length > 0 || adCoverageHasIssues;
+
         if (syncId) {
           await syncHistoryService.completeSyncSuccess(syncId, {
             totalInsights: result.totalInsights,
             mappedCampaigns: result.mappedTotal,
             updatedMetrics: result.updated,
             unmappedCampaigns: result.unmapped,
+            partial: isPartial,
             durationMs: duration,
           });
         }
@@ -349,7 +357,15 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
         if (syncId && syncMetadata) {
           syncMetadata = {
             ...syncMetadata,
-            state: result.unmapped.length > 0 ? 'partial' : 'success',
+            state: isPartial ? 'partial' : 'success',
+            ...(adCoverageHasIssues
+              ? {
+                  adCoverage: {
+                    missingCampaigns: adCoverage?.missingAdCampaigns ?? [],
+                    failedChunks: adCoverage?.failedAdChunks ?? [],
+                  },
+                }
+              : {}),
           };
           await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
         }

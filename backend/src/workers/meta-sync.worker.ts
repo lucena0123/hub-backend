@@ -205,14 +205,20 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
             mappedCampaigns: 0,
             updatedMetrics: 0,
             unmappedCampaigns: [],
+            partial: false,
             durationMs: duration,
           });
         } else {
+          const adCoverage = result.coverage;
+          const adCoverageHasIssues =
+            Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
+          const isPartial = result.unmapped.length > 0 || adCoverageHasIssues;
           await syncHistoryService.completeSyncSuccess(syncId, {
             totalInsights: result.totalInsights,
             mappedCampaigns: result.mappedTotal,
             updatedMetrics: result.outcome === 'dry_run' ? 0 : result.updated,
             unmappedCampaigns: result.unmapped,
+            partial: isPartial,
             durationMs: duration,
           });
         }

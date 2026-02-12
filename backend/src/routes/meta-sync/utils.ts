@@ -194,4 +194,3 @@ export const extractCreativeSnapshot = (creative: MetaAdCreative) => {
     raw: creative as any,
   };
 };
-

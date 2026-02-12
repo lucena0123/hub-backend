@@ -92,12 +92,14 @@ export class SyncHistoryService {
       updatedMetrics: number;
       unmappedCampaigns: string[];
       durationMs: number;
+      partial?: boolean;
     }
   ): Promise<void> {
+    const isPartial = Boolean(data.partial) || data.unmappedCampaigns.length > 0;
     await this.prisma.syncHistory.update({
       where: { id: syncId },
       data: {
-        status: data.unmappedCampaigns.length > 0 ? 'partial' : 'success',
+        status: isPartial ? 'partial' : 'success',
         totalInsights: data.totalInsights,
         mappedCampaigns: data.mappedCampaigns,
         updatedMetrics: data.updatedMetrics,

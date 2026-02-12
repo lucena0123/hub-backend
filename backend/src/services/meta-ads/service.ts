@@ -1023,4 +1023,97 @@ export class MetaAdsService {
 
     return allAds;
   }
+
+  /**
+   * Fetch basic identity details (pages / instagram actors) by ID.
+   * Best-effort: returns name/username when available.
+   */
+  async fetchIdentityDetails(ids: string[]): Promise<Map<string, { name?: string; username?: string }>> {
+    const map = new Map<string, { name?: string; username?: string }>();
+    if (!ids.length) return map;
+
+    const chunkSize = 50;
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      if (offset > 0) {
+        await this.delay(this.requestDelay);
+      }
+      const batch = ids.slice(offset, offset + chunkSize);
+      const searchParams = new URLSearchParams({
+        ids: batch.join(','),
+        fields: ['id', 'name', 'username'].join(','),
+      });
+      const url = `https://graph.facebook.com/${this.apiVersion}/?${searchParams.toString()}`;
+
+      const payload = await this.retryWithBackoff(async () => {
+        const res = await this.fetchWithTimeout(url);
+        const data = (await res.json()) as any;
+
+        if (!res.ok) {
+          const errorMsg = data.error?.message || 'Meta API request failed';
+          const errorCode = data.error?.code || res.status;
+          const traceId = data.error?.fbtrace_id || 'N/A';
+          throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+        }
+
+        return data;
+      });
+
+      for (const [key, value] of Object.entries(payload)) {
+        if (!value || typeof value !== 'object') continue;
+        const maybeError = value as any;
+        if (maybeError.error) continue;
+        const id = (value as any).id;
+        if (!id) continue;
+        const name = (value as any).name;
+        const username = (value as any).username;
+        map.set(id, { name, username });
+      }
+    }
+
+    return map;
+  }
+
+  /**
+   * Fetch ad image URLs by hash (used to display the real asset instead of thumbnails).
+   */
+  async fetchAdImagesByHashes(hashes: string[]): Promise<Map<string, { url?: string }>> {
+    const map = new Map<string, { url?: string }>();
+    if (!hashes.length) return map;
+
+    const chunkSize = 50;
+    for (let offset = 0; offset < hashes.length; offset += chunkSize) {
+      if (offset > 0) {
+        await this.delay(this.requestDelay);
+      }
+      const batch = hashes.slice(offset, offset + chunkSize);
+      const searchParams = new URLSearchParams({
+        fields: ['hash', 'url'].join(','),
+        hashes: JSON.stringify(batch),
+      });
+      const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adimages?${searchParams.toString()}`;
+
+      const payload = await this.retryWithBackoff(async () => {
+        const res = await this.fetchWithTimeout(url);
+        const data = (await res.json()) as any;
+
+        if (!res.ok) {
+          const errorMsg = data.error?.message || 'Meta API request failed';
+          const errorCode = data.error?.code || res.status;
+          const traceId = data.error?.fbtrace_id || 'N/A';
+          throw new Error(`Meta API Error ${errorCode}: ${errorMsg} (trace: ${traceId})`);
+        }
+
+        return data;
+      });
+
+      const items = Array.isArray(payload?.data) ? payload.data : [];
+      for (const item of items) {
+        const hash = item?.hash;
+        if (!hash) continue;
+        map.set(hash, { url: item?.url });
+      }
+    }
+
+    return map;
+  }
 }

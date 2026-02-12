@@ -38,6 +38,8 @@ export type CampaignMetricsStageResult = {
   mappedTotal: number;
   updated: number;
   unmapped: Set<string>;
+  mappedCampaignIds: Set<string>;
+  deliveredCampaignIds: Set<string>;
 };
 
 const upsertCampaignMetrics = async (ctx: Pick<MetaSyncContext, 'prisma'>, metrics: MappedCampaignMetric[]) => {
@@ -136,6 +138,8 @@ export const syncCampaignMetricsStage = async (ctx: MetaSyncContext): Promise<Ca
   const { dateChunks, metaService, campaignMap, progress, log } = ctx;
 
   const unmapped = new Set<string>();
+  const mappedCampaignIds = new Set<string>();
+  const deliveredCampaignIds = new Set<string>();
   let totalInsights = 0;
   let mappedTotal = 0;
   let updated = 0;
@@ -177,6 +181,11 @@ export const syncCampaignMetricsStage = async (ctx: MetaSyncContext): Promise<Ca
 
         const conversions = purchases > 0 ? purchases : messagingConversations > 0 ? messagingConversations : leads;
 
+        mappedCampaignIds.add(campaignId);
+        if (impressions > 0 || clicks > 0 || spend > 0 || conversions > 0) {
+          deliveredCampaignIds.add(campaignId);
+        }
+
         mappedMetrics.push({
           campaignId,
           date: new Date(row.date_start),
@@ -209,5 +218,5 @@ export const syncCampaignMetricsStage = async (ctx: MetaSyncContext): Promise<Ca
     await progress.completeUnit(chunk.since, chunk.until);
   }
 
-  return { totalInsights, mappedTotal, updated, unmapped };
+  return { totalInsights, mappedTotal, updated, unmapped, mappedCampaignIds, deliveredCampaignIds };
 };
