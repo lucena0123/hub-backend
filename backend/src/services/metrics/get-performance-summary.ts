@@ -4,6 +4,7 @@ import type { MetricsQuery, PerformanceSummary } from '../../types/metrics';
 import { calculateCPA, calculateCPM, calculateCPC, calculateCPL, calculateCTR, calculateROAS } from './calculations';
 import { getDateRange } from './date-range';
 import { getCampaignMetrics } from './get-campaign-metrics';
+import { resolvePrimaryResult } from './primary-result';
 import { determinePerformanceStatus } from './performance-status';
 
 export const getPerformanceSummary = async (
@@ -19,6 +20,7 @@ export const getPerformanceSummary = async (
     select: {
       name: true,
       platform: true,
+      objective: true,
       budget: true,
       optimizationThemeKey: true,
       optimizationSubthemeKey: true,
@@ -76,6 +78,8 @@ export const getPerformanceSummary = async (
 
   let adsetDailyBudget = 0;
   let adsetLifetimeBudget = 0;
+  let objectiveMeta: { optimizationGoal?: string | null; destinationType?: string | null; billingEvent?: string | null } | null =
+    null;
 
   try {
     const adsetBudgetsResult = await prisma.$queryRaw<any[]>`
@@ -93,12 +97,42 @@ export const getPerformanceSummary = async (
     // Non-fatal
   }
 
+  try {
+    const adsetMetaRows = await prisma.$queryRaw<any[]>`
+      SELECT metadata
+      FROM adsets
+      WHERE campaign_id = ${campaignId} AND platform = 'meta'
+      LIMIT 1`;
+    const metadata = adsetMetaRows[0]?.metadata as Record<string, unknown> | null;
+    if (metadata && typeof metadata === 'object') {
+      objectiveMeta = {
+        optimizationGoal: typeof metadata.optimizationGoal === 'string' ? metadata.optimizationGoal : null,
+        destinationType: typeof metadata.destinationType === 'string' ? metadata.destinationType : null,
+        billingEvent: typeof metadata.billingEvent === 'string' ? metadata.billingEvent : null,
+      };
+    }
+  } catch (_error) {
+    objectiveMeta = null;
+  }
+
   const sums = metricsAgg._sum;
   const avgs = metricsAgg._avg;
 
   const totalImpressions = sums.impressions || 0;
   const totalClicks = sums.clicks || 0;
-  const totalConversions = sums.conversions || 0;
+  const primaryResult = resolvePrimaryResult({
+    objective: campaign.objective ?? null,
+    objectiveMeta,
+    metrics: {
+      messagingConversations: sums.messagingConversations || 0,
+      leads: sums.leads || 0,
+      linkClicks: sums.linkClicks || 0,
+      landingPageViews: sums.landingPageViews || 0,
+      conversions: sums.conversions || 0,
+      clicks: sums.clicks || 0,
+    },
+  });
+  const totalConversions = primaryResult.value;
   const totalSpend = Number(sums.spend ?? 0);
   const totalRevenue = Number(sums.revenue ?? 0);
   const totalLeads = sums.leads || 0;
@@ -113,10 +147,9 @@ export const getPerformanceSummary = async (
 
   const avgCtr = calculateCTR(totalClicks, totalImpressions);
   const avgCpc = calculateCPC(totalSpend, totalClicks);
-  const totalContacts =
-    totalLeads > 0 ? totalLeads : totalMessagingConversations > 0 ? totalMessagingConversations : totalConversions;
+  const totalContacts = totalConversions;
   const avgCpl = calculateCPL(totalSpend, totalContacts);
-  const avgCpa = calculateCPA(totalSpend, totalConversions);
+  const avgCpa = calculateCPA(totalSpend, totalContacts);
   const roas = calculateROAS(totalRevenue, totalSpend);
 
   const budget = Number(campaign.budget) || 0;
@@ -150,6 +183,8 @@ export const getPerformanceSummary = async (
     campaignId,
     campaignName: campaign.name,
     platform: campaign.platform,
+    objective: campaign.objective ?? null,
+    objectiveMeta,
     optimizationThemeKey: campaign.optimizationThemeKey ?? null,
     optimizationSubthemeKey: campaign.optimizationSubthemeKey ?? null,
     period: {

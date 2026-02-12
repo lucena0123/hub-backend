@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { resolvePrimaryResult } from '../metrics/primary-result';
 
 export interface BreakdownSegment {
     label: string;
@@ -321,6 +322,11 @@ export class AnalyticsService {
           start: string,
           end: string
       ): Promise<{ campaignId: string; total: number; adsets: AdSetMetric[] }> {
+          const campaign = await this.prisma.campaign.findUnique({
+            where: { id: campaignId },
+            select: { objective: true },
+          });
+
           const result = await this.prisma.$queryRaw<any[]>`
           SELECT
             adset_id,
@@ -332,6 +338,7 @@ export class AnalyticsService {
             SUM(landing_page_views) as total_landing_page_views,
             SUM(spend) as total_spend,
             SUM(conversions) as total_conversions,
+            SUM(leads) as total_leads,
             SUM(messaging_conversations) as total_messaging_conversations,
             SUM(messaging_first_reply) as total_messaging_first_reply,
             AVG(ctr) as avg_ctr,
@@ -365,9 +372,29 @@ export class AnalyticsService {
           const adsets = result.map((row: any) => {
               const spend = parseFloat(row.total_spend) || 0;
               const conversations = parseInt(row.total_messaging_conversations) || 0;
-              const cpl = conversations > 0 ? spend / conversations : 0;
               const config = configByAdset.get(String(row.adset_id));
               const adsetName = (row.adset_name || config?.adset_name || row.adset_id) as string;
+              const optimizationGoal =
+                typeof config?.metadata?.optimizationGoal === 'string' ? config.metadata.optimizationGoal : null;
+              const destinationType =
+                typeof config?.metadata?.destinationType === 'string' ? config.metadata.destinationType : null;
+              const billingEvent =
+                typeof config?.metadata?.billingEvent === 'string' ? config.metadata.billingEvent : null;
+
+              const primary = resolvePrimaryResult({
+                objective: campaign?.objective ?? null,
+                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
+                metrics: {
+                  messagingConversations: conversations,
+                  leads: parseInt(row.total_leads) || 0,
+                  linkClicks: parseInt(row.total_link_clicks) || 0,
+                  landingPageViews: parseInt(row.total_landing_page_views) || 0,
+                  conversions: parseInt(row.total_conversions) || 0,
+                  clicks: parseInt(row.total_clicks) || 0,
+                },
+              });
+              const totalConversions = primary.value;
+              const cpl = totalConversions > 0 ? spend / totalConversions : 0;
   
               return {
                   adsetId: row.adset_id,
@@ -378,7 +405,7 @@ export class AnalyticsService {
                   totalLinkClicks: parseInt(row.total_link_clicks) || 0,
                   totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
                   totalSpend: spend,
-                  totalConversions: parseInt(row.total_conversions) || 0,
+                  totalConversions,
                   totalMessagingConversations: conversations,
                   totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
                   avgCtr: parseFloat(row.avg_ctr) || 0,
@@ -403,6 +430,25 @@ export class AnalyticsService {
         start: string,
         end: string
     ): Promise<{ campaignId: string; total: number; ads: AdMetric[] }> {
+        const campaign = await this.prisma.campaign.findUnique({
+            where: { id: campaignId },
+            select: { objective: true },
+        });
+
+        const adsetMetaRows = await this.prisma.$queryRaw<any[]>`
+        SELECT adset_id, metadata
+         FROM adsets
+         WHERE campaign_id = ${campaignId}
+    `;
+
+        const adsetMetaById = new Map<string, Record<string, unknown>>();
+        adsetMetaRows.forEach((row) => {
+            if (!row?.adset_id) return;
+            if (row?.metadata && typeof row.metadata === 'object') {
+                adsetMetaById.set(String(row.adset_id), row.metadata);
+            }
+        });
+
         const result = await this.prisma.$queryRaw<any[]>`
         SELECT
           m.ad_id,
@@ -486,15 +532,36 @@ export class AnalyticsService {
             const impressions = parseInt(row.total_impressions) || 0;
             const clicks = parseInt(row.total_clicks) || 0;
             const conversations = parseInt(row.total_messaging_conversations) || 0;
-            const conversions = parseInt(row.total_conversions) || 0;
             const totalLeads = parseInt(row.total_leads) || 0;
             const totalPurchases = parseInt(row.total_purchases) || 0;
             const thruplay = parseInt(row.total_thruplay) || 0;
             const views3sec = parseInt(row.total_3sec_views) || 0;
             const hookRate = impressions > 0 ? (views3sec / impressions) * 100 : 0;
             const holdRate = views3sec > 0 ? (thruplay / views3sec) * 100 : 0;
-            const contacts = conversations > 0 ? conversations : totalLeads > 0 ? totalLeads : conversions;
-            const cpl = contacts > 0 ? spend / contacts : 0;
+            const adsetMeta = adsetMetaById.get(String(row.adset_id));
+            const optimizationGoal =
+                typeof adsetMeta?.optimizationGoal === 'string' ? adsetMeta.optimizationGoal : null;
+            const destinationType =
+                typeof adsetMeta?.destinationType === 'string' ? adsetMeta.destinationType : null;
+            const billingEvent =
+                typeof adsetMeta?.billingEvent === 'string' ? adsetMeta.billingEvent : null;
+
+            const primary = resolvePrimaryResult({
+                objective: campaign?.objective ?? null,
+                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
+                metrics: {
+                    messagingConversations: conversations,
+                    leads: totalLeads,
+                    linkClicks: parseInt(row.total_link_clicks) || 0,
+                    landingPageViews: parseInt(row.total_landing_page_views) || 0,
+                    purchases: totalPurchases,
+                    conversions: parseInt(row.total_conversions) || 0,
+                    clicks,
+                },
+            });
+
+            const conversions = primary.value;
+            const cpl = conversions > 0 ? spend / conversions : 0;
             const avgCtr = impressions > 0 ? (clicks / impressions) * 100 : 0;
             const avgCpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
 

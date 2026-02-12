@@ -3,6 +3,7 @@ import type { ClientPerformanceSummary, DailyMetric, MetricsQuery, PerformanceSu
 import { calculateCPA, calculateCPM, calculateCPC, calculateCPL, calculateCTR, calculateROAS } from './calculations';
 import { getDateRange } from './date-range';
 import { determinePerformanceStatus } from './performance-status';
+import { resolvePrimaryResult } from './primary-result';
 
 type RankingCategory =
   | 'ABOVE_AVERAGE'
@@ -122,6 +123,7 @@ export const getClientPerformanceSummary = async (
   }
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'active');
+  const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
 
   // Dynamic filters
   const conditions = [Prisma.sql`c."clientId" = ${clientId}`];
@@ -290,6 +292,7 @@ export const getClientPerformanceSummary = async (
       COALESCE(SUM(cm.impressions), 0) as "impressions",
       COALESCE(SUM(cm.clicks), 0) as "clicks",
       COALESCE(SUM(cm.conversions), 0) as "conversions",
+      COALESCE(SUM(cm.leads), 0) as "leads",
       COALESCE(SUM(cm.messaging_conversations), 0) as "messaging_conversations",
       COALESCE(SUM(cm.messaging_first_reply), 0) as "messaging_first_reply",
       COALESCE(SUM(cm.link_clicks), 0) as "link_clicks",
@@ -310,23 +313,40 @@ export const getClientPerformanceSummary = async (
 
   dailyResult.forEach((row) => {
     const campaignId = row.campaignId as string;
+    const campaign = campaignById.get(campaignId);
     // Date handling from Prisma raw queries can differ. Usually it is a Date object.
     const dateStr = row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date).split('T')[0];
+
+    const primary = resolvePrimaryResult({
+      objective: campaign?.objective ?? null,
+      objectiveMeta: adsetObjectiveByCampaign.get(campaignId) ?? null,
+      metrics: {
+        messagingConversations: Number(row.messaging_conversations),
+        leads: Number(row.leads),
+        linkClicks: Number(row.link_clicks),
+        landingPageViews: Number(row.landing_page_views),
+        conversions: Number(row.conversions),
+        clicks: Number(row.clicks),
+      },
+    });
+
+    const spend = Number(row.spend);
+    const conversions = primary.value;
 
     const metric: DailyMetric = {
       date: dateStr,
       impressions: Number(row.impressions),
       clicks: Number(row.clicks),
-      conversions: Number(row.conversions),
+      conversions,
       messagingConversations: Number(row.messaging_conversations),
       messagingFirstReply: Number(row.messaging_first_reply),
       linkClicks: Number(row.link_clicks),
       landingPageViews: Number(row.landing_page_views),
-      spend: Number(row.spend),
+      spend,
       revenue: Number(row.revenue),
       ctr: Number(row.ctr),
       cpc: Number(row.cpc),
-      cpl: Number(row.cpl),
+      cpl: conversions > 0 ? spend / conversions : 0,
       roas: Number(row.roas),
     };
 
@@ -351,12 +371,20 @@ export const getClientPerformanceSummary = async (
       avgCpm: 0,
     };
 
-    const totalContacts =
-      aggregated.totalLeads > 0
-        ? aggregated.totalLeads
-        : aggregated.totalMessagingConversations > 0
-          ? aggregated.totalMessagingConversations
-          : aggregated.totalConversions;
+    const primary = resolvePrimaryResult({
+      objective: campaign.objective ?? null,
+      objectiveMeta: adsetObjectiveByCampaign.get(campaign.id) ?? null,
+      metrics: {
+        messagingConversations: aggregated.totalMessagingConversations,
+        leads: aggregated.totalLeads,
+        linkClicks: aggregated.totalLinkClicks,
+        landingPageViews: aggregated.totalLandingPageViews,
+        conversions: aggregated.totalConversions,
+        clicks: aggregated.totalClicks,
+      },
+    });
+
+    const totalContacts = primary.value;
 
     const avgCtr = calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
     const avgCpl = calculateCPL(aggregated.totalSpend, totalContacts);
@@ -434,14 +462,21 @@ export const getClientPerformanceSummary = async (
 
     const avgCtr = calculateCTR(aggregated.totalClicks, aggregated.totalImpressions);
     const avgCpc = calculateCPC(aggregated.totalSpend, aggregated.totalClicks);
-    const totalContacts =
-      aggregated.totalLeads > 0
-        ? aggregated.totalLeads
-        : aggregated.totalMessagingConversations > 0
-          ? aggregated.totalMessagingConversations
-          : aggregated.totalConversions;
+    const primary = resolvePrimaryResult({
+      objective: campaign.objective ?? null,
+      objectiveMeta: adsetObjectiveByCampaign.get(campaign.id) ?? null,
+      metrics: {
+        messagingConversations: aggregated.totalMessagingConversations,
+        leads: aggregated.totalLeads,
+        linkClicks: aggregated.totalLinkClicks,
+        landingPageViews: aggregated.totalLandingPageViews,
+        conversions: aggregated.totalConversions,
+        clicks: aggregated.totalClicks,
+      },
+    });
+    const totalContacts = primary.value;
     const avgCpl = calculateCPL(aggregated.totalSpend, totalContacts);
-    const avgCpa = calculateCPA(aggregated.totalSpend, aggregated.totalConversions);
+    const avgCpa = calculateCPA(aggregated.totalSpend, totalContacts);
     const roas = calculateROAS(aggregated.totalRevenue, aggregated.totalSpend);
 
     // Casting budget since Prisma might return Decimal, but here we used findMany which returns mapped model type.
@@ -508,7 +543,7 @@ export const getClientPerformanceSummary = async (
       period: { start: Dates.start, end: Dates.end }, // use Dates computed above
       totalImpressions: aggregated.totalImpressions,
       totalClicks: aggregated.totalClicks,
-      totalConversions: aggregated.totalConversions,
+      totalConversions: totalContacts,
       totalSpend: aggregated.totalSpend,
       totalRevenue: aggregated.totalRevenue,
       totalLeads: aggregated.totalLeads,
@@ -584,10 +619,9 @@ export const getClientPerformanceSummary = async (
   );
 
   const avgCtr = calculateCTR(totals.clicks, totals.impressions);
-  const totalContacts =
-    totals.leads > 0 ? totals.leads : totals.messagingConversations > 0 ? totals.messagingConversations : totals.conversions;
+  const totalContacts = totals.conversions;
   const avgCpl = calculateCPL(totals.spend, totalContacts);
-  const avgCpa = calculateCPA(totals.spend, totals.conversions);
+  const avgCpa = calculateCPA(totals.spend, totalContacts);
   const avgRoas = calculateROAS(totals.revenue, totals.spend);
 
   // Consolidated Daily Metrics
