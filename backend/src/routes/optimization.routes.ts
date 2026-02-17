@@ -7,12 +7,27 @@ import Ajv from 'ajv';
 export default async function optimizationRoutes(fastify: FastifyInstance) {
     const ajv = new Ajv({ allErrors: true, strict: false });
 
+    const sendApiError = (
+        reply: { status: (statusCode: number) => { send: (payload: unknown) => unknown } },
+        statusCode: number,
+        code: string,
+        error: string,
+        details?: unknown
+    ) => {
+        return reply.status(statusCode).send({
+            success: false,
+            code,
+            error,
+            ...(details ? { details } : {}),
+        });
+    };
+
     fastify.addHook('preHandler', authenticate);
     // GET /api/optimization/tasks
     // Query params: status, clientId, processInstanceId
     fastify.get('/api/optimization/tasks', async (request) => {
         const querySchema = z.object({
-            status: z.enum(['pending', 'approved', 'rejected', 'completed', 'failed']).optional(),
+            status: z.enum(['pending', 'in_progress', 'approved', 'rejected', 'completed', 'failed']).optional(),
             clientId: z.string().optional(),
             processInstanceId: z.string().optional(),
         });
@@ -58,7 +73,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             id: z.string(),
         });
         const bodySchema = z.object({
-            status: z.enum(['pending', 'approved', 'rejected', 'completed']),
+            status: z.enum(['pending', 'in_progress', 'approved', 'rejected', 'completed', 'failed']),
             output: z.any().optional(),
         });
 
@@ -272,14 +287,14 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         const systemRules = getOptimizationCenterRuleMetas() as Array<{ id: string }>;
 
         if (systemRules.some((rule) => rule.id === payload.id)) {
-            return reply.status(409).send({ error: 'Rule ID already exists in system rules.' });
+            return sendApiError(reply, 409, 'RULE_ID_CONFLICT', 'Rule ID already exists in system rules.');
         }
 
         const existing = await fastify.prisma.optimizationPlaybookRule.findUnique({
             where: { id: payload.id },
         });
         if (existing) {
-            return reply.status(409).send({ error: 'Rule ID already exists.' });
+            return sendApiError(reply, 409, 'RULE_ID_CONFLICT', 'Rule ID already exists.');
         }
 
         if (payload.parametersSchema && payload.parametersTemplate) {
@@ -287,10 +302,10 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
                 const validate = ajv.compile(payload.parametersSchema as Record<string, unknown>);
                 const valid = validate(payload.parametersTemplate);
                 if (!valid) {
-                    return reply.status(422).send({ error: 'Invalid parametersTemplate', details: validate.errors });
+                    return sendApiError(reply, 422, 'INVALID_PARAMETERS_TEMPLATE', 'Invalid parametersTemplate', validate.errors);
                 }
             } catch (error) {
-                return reply.status(422).send({ error: 'Invalid parameters schema' });
+                return sendApiError(reply, 422, 'INVALID_PARAMETERS_SCHEMA', 'Invalid parameters schema');
             }
         }
 
@@ -345,7 +360,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             where: { id: ruleId },
         });
         if (!existing) {
-            return reply.status(404).send({ error: 'Custom rule not found.' });
+            return sendApiError(reply, 404, 'CUSTOM_RULE_NOT_FOUND', 'Custom rule not found.');
         }
 
         const nextSchema = payload.parametersSchema !== undefined ? payload.parametersSchema : existing.parametersSchema;
@@ -355,10 +370,10 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
                 const validate = ajv.compile(nextSchema as Record<string, unknown>);
                 const valid = validate(nextTemplate);
                 if (!valid) {
-                    return reply.status(422).send({ error: 'Invalid parametersTemplate', details: validate.errors });
+                    return sendApiError(reply, 422, 'INVALID_PARAMETERS_TEMPLATE', 'Invalid parametersTemplate', validate.errors);
                 }
             } catch (error) {
-                return reply.status(422).send({ error: 'Invalid parameters schema' });
+                return sendApiError(reply, 422, 'INVALID_PARAMETERS_SCHEMA', 'Invalid parameters schema');
             }
         }
 
@@ -401,7 +416,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             where: { id: ruleId },
         });
         if (!existing) {
-            return reply.status(404).send({ error: 'Custom rule not found.' });
+            return sendApiError(reply, 404, 'CUSTOM_RULE_NOT_FOUND', 'Custom rule not found.');
         }
 
         await fastify.prisma.$transaction([
@@ -417,7 +432,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         const { ruleId } = request.params as { ruleId: string };
         const { clientId, enabled } = request.body as { clientId: string, enabled: boolean };
 
-        if (!clientId) return reply.status(400).send({ error: 'clientId required' });
+        if (!clientId) return sendApiError(reply, 400, 'CLIENT_ID_REQUIRED', 'clientId required');
 
         const config = await fastify.prisma.clientRuleConfig.upsert({
             where: {
@@ -439,7 +454,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         const { ruleId } = request.params as { ruleId: string };
         const { clientId, parameters } = request.body as { clientId: string, parameters: any };
 
-        if (!clientId) return reply.status(400).send({ error: 'clientId required' });
+        if (!clientId) return sendApiError(reply, 400, 'CLIENT_ID_REQUIRED', 'clientId required');
 
         const customRule = await fastify.prisma.optimizationPlaybookRule.findUnique({
             where: { id: ruleId },
@@ -451,10 +466,10 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
                 const validate = ajv.compile(customRule.parametersSchema as Record<string, unknown>);
                 const valid = validate(parameters);
                 if (!valid) {
-                    return reply.status(422).send({ error: 'Invalid parameters', details: validate.errors });
+                    return sendApiError(reply, 422, 'INVALID_PARAMETERS', 'Invalid parameters', validate.errors);
                 }
             } catch (error) {
-                return reply.status(422).send({ error: 'Invalid parameters schema' });
+                return sendApiError(reply, 422, 'INVALID_PARAMETERS_SCHEMA', 'Invalid parameters schema');
             }
         }
 
