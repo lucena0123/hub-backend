@@ -2,6 +2,7 @@
  * Audit Trail Middleware and Helpers
  */
 
+import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'read';
@@ -9,6 +10,9 @@ export type EntityType = 'client' | 'campaign' | 'process' | 'task' | 'user';
 
 export interface AuditEvent {
   userId?: string;
+  userRole?: string;
+  clientId?: string;
+  processId?: string;
   action: AuditAction;
   entityType: EntityType;
   entityId: string;
@@ -24,17 +28,29 @@ export async function createAuditLog(
   event: AuditEvent
 ): Promise<void> {
   try {
+    const clientId =
+      event.clientId ||
+      event.metadata?.clientId ||
+      (event.entityType === 'client' ? event.entityId : 'unknown');
+
+    const processId = event.processId || event.metadata?.processId || null;
+
     await pool.query(
       `INSERT INTO audit_events
-       (user_id, action, entity_type, entity_id, changes, metadata, "createdAt")
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+       (id, "eventType", "processId", "clientId", "userId", "userRole", resource, action, changes, metadata, "complianceFlags", timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11::jsonb, NOW())`,
       [
-        event.userId || null,
+        randomUUID(),
+        `${event.entityType}.${event.action}`,
+        processId,
+        clientId,
+        event.userId || 'system',
+        event.userRole || event.metadata?.userRole || 'system',
+        JSON.stringify({ entityType: event.entityType, entityId: event.entityId }),
         event.action,
-        event.entityType,
-        event.entityId,
         event.changes ? JSON.stringify(event.changes) : null,
-        event.metadata ? JSON.stringify(event.metadata) : null,
+        event.metadata ? JSON.stringify(event.metadata) : JSON.stringify({}),
+        JSON.stringify([]),
       ]
     );
   } catch (error) {

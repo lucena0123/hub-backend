@@ -25,6 +25,9 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
     const logOptimizationAudit = async (params: {
         userId?: string;
+        userRole?: string;
+        clientId?: string;
+        processId?: string;
         action: 'create' | 'update' | 'delete' | 'read';
         entityType: 'task' | 'campaign' | 'client' | 'process' | 'user';
         entityId: string;
@@ -33,6 +36,9 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     }) => {
         await createAuditLog(fastify.pool, {
             userId: params.userId,
+            userRole: params.userRole,
+            clientId: params.clientId,
+            processId: params.processId,
             action: params.action,
             entityType: params.entityType,
             entityId: params.entityId,
@@ -188,6 +194,9 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         await logOptimizationAudit({
             userId: request.user?.id,
+            userRole: request.user?.role,
+            clientId: task.processInstance?.clientId,
+            processId: task.processInstanceId,
             action: 'update',
             entityType: 'task',
             entityId: updatedTask.id,
@@ -254,6 +263,8 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         await logOptimizationAudit({
             userId: request.user?.id,
+            userRole: request.user?.role,
+            clientId,
             action: 'update',
             entityType: 'task',
             entityId: `rule:${ruleId}`,
@@ -566,6 +577,8 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         await logOptimizationAudit({
             userId: request.user?.id,
+            userRole: request.user?.role,
+            clientId,
             action: 'update',
             entityType: 'client',
             entityId: clientId,
@@ -635,6 +648,8 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         await logOptimizationAudit({
             userId: request.user?.id,
+            userRole: request.user?.role,
+            clientId,
             action: 'update',
             entityType: 'client',
             entityId: clientId,
