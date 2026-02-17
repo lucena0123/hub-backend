@@ -72,7 +72,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         });
 
         if (!task) {
-            return reply.status(404).send({ message: 'Task not found' });
+            return reply.status(404).send({
+                success: false,
+                code: 'TASK_NOT_FOUND',
+                error: 'Task not found',
+            });
         }
 
         // Variable to hold the final status, allowing 'failed' internally even if not in Zod
@@ -119,7 +123,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             }
         });
 
-        return updatedTask;
+        return {
+            success: true,
+            code: 'TASK_UPDATED',
+            task: updatedTask,
+        };
     });
 
     // POST /api/optimization/run-rule
@@ -145,9 +153,19 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             dryRun
         });
 
+        const target = campaignId || entityId || 'unknown-target';
+
         return {
             success: true,
-            message: `Rule ${ruleId} executed on ${campaignId || entityId} (Simulation)`,
+            code: dryRun ? 'RULE_SIMULATED' : 'RULE_EXECUTED',
+            message: `Rule ${ruleId} executed on ${target} ${dryRun ? '(Simulation)' : ''}`,
+            execution: {
+                ruleId,
+                clientId,
+                target,
+                dryRun,
+                executedAt: new Date().toISOString(),
+            },
             simulatedResult: {
                 shouldTrigger: Math.random() > 0.5,
                 reason: "Simulated execution result",
