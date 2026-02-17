@@ -57,6 +57,47 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     };
 
     fastify.addHook('preHandler', authenticate);
+    // GET /api/optimization/audit
+    // Query params: clientId, limit
+    fastify.get('/api/optimization/audit', async (request, reply) => {
+        const querySchema = z.object({
+            clientId: z.string().optional(),
+            limit: z.coerce.number().int().min(1).max(200).default(50),
+        });
+
+        const queryResult = querySchema.safeParse(request.query);
+        if (!queryResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
+        }
+
+        const { clientId, limit } = queryResult.data;
+        const values: unknown[] = [];
+        const where: string[] = [];
+
+        if (clientId) {
+            values.push(clientId);
+            where.push(`"clientId" = $${values.length}`);
+        }
+
+        values.push(limit);
+        const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+        const result = await fastify.pool.query(
+            `SELECT id, action, "eventType", "clientId", "processId", "userId", "userRole", resource, changes, metadata, timestamp
+             FROM audit_events
+             ${whereClause}
+             ORDER BY timestamp DESC
+             LIMIT $${values.length}`,
+            values
+        );
+
+        return {
+            success: true,
+            total: result.rowCount,
+            events: result.rows,
+        };
+    });
+
     // GET /api/optimization/tasks
     // Query params: status, clientId, processInstanceId
     fastify.get('/api/optimization/tasks', async (request) => {
