@@ -86,7 +86,7 @@ export const ensureMetaCampaignsImported = async (params: {
             clientId,
             budget: budget > 0 ? budget : undefined, // Only update budget if > 0? Legacy code had CASE logic. 
             objective: objective ?? undefined,
-            createdTime: createdTime ?? undefined,
+            createdAt: createdTime ?? undefined,
             // CASE WHEN EXCLUDED.budget > 0 THEN EXCLUDED.budget ELSE campaigns.budget END
             // Prisma doesn't support conditional update directly in the update object easily without raw query or explicit conditional logic before.
             // But here we are iterating. We can check current value if we fetch, but efficiency is key.
@@ -127,7 +127,7 @@ export const ensureMetaCampaignsImported = async (params: {
             clientId,
             budget,
             objective,
-            createdTime,
+            createdAt: createdTime ?? undefined,
             optimizationThemeKey: inferredTheme.themeKey,
             optimizationSubthemeKey: null,
             // objective undefined in schema?
