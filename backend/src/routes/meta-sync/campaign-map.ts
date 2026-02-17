@@ -23,6 +23,12 @@ export const ensureMetaCampaignsImported = async (params: {
       return Math.round(cents) / 100;
     };
 
+    const parseMetaTimestamp = (value: unknown) => {
+      if (!value || typeof value !== 'string') return null;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
     const resolveBudget = (camp: { daily_budget?: string; lifetime_budget?: string }) =>
       parseMetaBudget(camp.daily_budget ?? camp.lifetime_budget);
 
@@ -53,6 +59,7 @@ export const ensureMetaCampaignsImported = async (params: {
         const status = normalizeStatus(camp.status);
         const budget = resolveBudget(camp);
         const objective = typeof camp.objective === 'string' && camp.objective.trim() ? camp.objective.trim() : null;
+        const createdTime = parseMetaTimestamp(camp.created_time);
         const inferredTheme = inferOptimizationTheme(name);
         const existing = existingByExternalId.get(externalId);
         if (existing && (existing.clientId !== clientId || existing.platform !== 'meta')) {
@@ -79,6 +86,7 @@ export const ensureMetaCampaignsImported = async (params: {
             clientId,
             budget: budget > 0 ? budget : undefined, // Only update budget if > 0? Legacy code had CASE logic. 
             objective: objective ?? undefined,
+            createdTime: createdTime ?? undefined,
             // CASE WHEN EXCLUDED.budget > 0 THEN EXCLUDED.budget ELSE campaigns.budget END
             // Prisma doesn't support conditional update directly in the update object easily without raw query or explicit conditional logic before.
             // But here we are iterating. We can check current value if we fetch, but efficiency is key.
@@ -119,6 +127,7 @@ export const ensureMetaCampaignsImported = async (params: {
             clientId,
             budget,
             objective,
+            createdTime,
             optimizationThemeKey: inferredTheme.themeKey,
             optimizationSubthemeKey: null,
             // objective undefined in schema?

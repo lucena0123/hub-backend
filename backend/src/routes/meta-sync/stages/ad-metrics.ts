@@ -41,6 +41,12 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext): Promise<AdMetric
     return Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1);
   };
 
+  const parseMetaTimestamp = (value: unknown) => {
+    if (!value || typeof value !== 'string') return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const fetchAdInsightsWithFallback = async (
     chunk: { since: string; until: string },
     depth: number
@@ -232,6 +238,13 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext): Promise<AdMetric
   if (syncedAdIds.size > 0) {
     try {
       const adDetails = await metaService.fetchAdsByIds(Array.from(syncedAdIds));
+
+      const adCreatedTimes = new Map<string, Date>();
+      for (const ad of adDetails as MetaAd[]) {
+        if (!ad?.id) continue;
+        const created = parseMetaTimestamp(ad.created_time);
+        if (created) adCreatedTimes.set(ad.id, created);
+      }
 
         const pageIds = new Set<string>();
         const instagramIds = new Set<string>();
@@ -524,6 +537,42 @@ export const syncAdMetricsStage = async (ctx: MetaSyncContext): Promise<AdMetric
                 ...values
               );
             }
+          }
+        }
+
+        if (adCreatedTimes.size > 0) {
+          const createdMappings = Array.from(adCreatedTimes.entries()).map(([adId, createdTime]) => ({
+            adId,
+            createdTime,
+          }));
+          const mappingBatchSize = getBatchSize(2);
+          for (let offset = 0; offset < createdMappings.length; offset += mappingBatchSize) {
+            const batch = createdMappings.slice(offset, offset + mappingBatchSize);
+            const placeholders: string[] = [];
+            const values: any[] = [];
+            let paramIndex = 1;
+
+            for (const map of batch) {
+              const rowPh: string[] = [];
+              for (let i = 0; i < 2; i++) rowPh.push(`$${paramIndex++}`);
+              placeholders.push(`(${rowPh.join(', ')})`);
+              values.push(map.adId, map.createdTime);
+            }
+
+            values.push(new Date(since), new Date(until));
+            const sinceParam = paramIndex++;
+            const untilParam = paramIndex++;
+
+            await ctx.prisma.$executeRawUnsafe(
+              `UPDATE ad_creative_metrics m
+               SET ad_created_time = v.created_time
+               FROM (VALUES ${placeholders.join(', ')}) AS v(ad_id, created_time)
+               WHERE m.ad_id = v.ad_id
+                 AND m.date >= $${sinceParam}
+                 AND m.date <= $${untilParam}
+                 AND m.platform = 'meta'`,
+              ...values
+            );
           }
         }
     } catch (creativeError) {

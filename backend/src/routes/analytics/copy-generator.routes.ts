@@ -174,7 +174,7 @@ const copyGeneratorRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       // Try OpenAI generation
-      let suggestions: CopySuggestion[];
+      let suggestions: CopySuggestion[] = (FALLBACK_SUGGESTIONS[theme.themeKey] || FALLBACK_SUGGESTIONS.geral).slice(0, suggestCount);
       let aiUsed = false;
       let aiModel: string | null = null;
       let usedCache = false;

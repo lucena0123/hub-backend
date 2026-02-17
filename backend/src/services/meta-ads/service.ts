@@ -701,6 +701,11 @@ export class MetaAdsService {
     throw new Error('Retry logic error');
   }
 
+  private isFieldSelectionError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /invalid field|unknown field|does not exist|unsupported field/i.test(message);
+  }
+
   /**
    * Generic paginated fetch for Meta Insights API.
    * All insight methods delegate to this to avoid duplicating the pagination loop.
@@ -932,9 +937,45 @@ export class MetaAdsService {
     return this.fetchPaginatedList<MetaCampaign>(url);
   }
 
-  async fetchAdSets(): Promise<MetaAdSet[]> {
-    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=id,name,campaign_id,status,configured_status,effective_status,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_cap,cost_cap,destination_type,promoted_object,attribution_spec,targeting,start_time,end_time,created_time,updated_time&limit=100`;
-    return this.fetchPaginatedList<MetaAdSet>(url);
+  async fetchAdSets(options?: { includeLearningInfo?: boolean }): Promise<MetaAdSet[]> {
+    const baseFields = [
+      'id',
+      'name',
+      'campaign_id',
+      'status',
+      'configured_status',
+      'effective_status',
+      'daily_budget',
+      'lifetime_budget',
+      'billing_event',
+      'optimization_goal',
+      'bid_strategy',
+      'bid_amount',
+      'bid_cap',
+      'cost_cap',
+      'destination_type',
+      'promoted_object',
+      'attribution_spec',
+      'targeting',
+      'start_time',
+      'end_time',
+      'created_time',
+      'updated_time',
+    ];
+    const learningFields = ['learning_stage_info', 'last_significant_edit'];
+    const fields = options?.includeLearningInfo ? [...baseFields, ...learningFields] : baseFields;
+    const url = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=${fields.join(',')}&limit=100`;
+
+    try {
+      return await this.fetchPaginatedList<MetaAdSet>(url);
+    } catch (error) {
+      if (options?.includeLearningInfo && this.isFieldSelectionError(error)) {
+        console.warn('Meta API field set unsupported, retrying adsets without learning fields.');
+        const fallbackUrl = `https://graph.facebook.com/${this.apiVersion}/act_${this.adAccountId}/adsets?fields=${baseFields.join(',')}&limit=100`;
+        return await this.fetchPaginatedList<MetaAdSet>(fallbackUrl);
+      }
+      throw error;
+    }
   }
 
   async fetchAdAccountDetails(): Promise<MetaAdAccount> {
@@ -970,6 +1011,7 @@ export class MetaAdsService {
       'campaign_id',
       'status',
       'effective_status',
+      'created_time',
       'updated_time',
       'creative{id,name,object_story_spec,asset_feed_spec,body,title,call_to_action_type,link_url,image_url,thumbnail_url,video_id,object_type}',
     ];
@@ -1058,7 +1100,7 @@ export class MetaAdsService {
         return data;
       });
 
-      for (const [key, value] of Object.entries(payload)) {
+      for (const value of Object.values(payload)) {
         if (!value || typeof value !== 'object') continue;
         const maybeError = value as any;
         if (maybeError.error) continue;

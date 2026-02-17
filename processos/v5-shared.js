@@ -389,7 +389,7 @@
                 viewer.get('eventBus').on('element.hover', function (e) {
                     const info = nodeDetails[e.element.id];
                     if (info) {
-                        tooltip.innerHTML = `<strong>${info.tag || ''}</strong><br>${info.desc}<br><small>SLA: ${info.sla || 'N/A'}</small>`;
+                        tooltip.innerHTML = `<strong>${info.tag || ''}</strong><br>${info.desc}<br><small>SLA: ${info.sla || 'N/A'}</small>${info.artefato ? '<br><span style="color:#a5f3fc;margin-top:6px;display:block;font-size:10px;border-top:1px solid rgba(255,255,255,0.15);padding-top:5px;">' + info.artefato + '</span>' : ''}`;
                         tooltip.style.display = 'block';
                     }
                 });

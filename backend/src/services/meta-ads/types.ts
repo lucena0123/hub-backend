@@ -50,6 +50,8 @@ export type MetaAdSet = {
   configured_status?: string;
   daily_budget?: string;
   lifetime_budget?: string;
+  learning_stage_info?: Record<string, unknown> | null;
+  last_significant_edit?: string;
   billing_event?: string;
   optimization_goal?: string;
   bid_strategy?: string;
@@ -138,6 +140,7 @@ export type MetaAd = {
   campaign_id?: string;
   status?: string;
   effective_status?: string;
+  created_time?: string;
   updated_time?: string;
   creative?: MetaAdCreative;
 };

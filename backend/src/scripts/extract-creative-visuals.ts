@@ -55,7 +55,7 @@ const main = async () => {
   }
 
   const browser = await puppeteer.launch({
-    headless: 'new',
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   const page = await browser.newPage();
@@ -234,7 +234,7 @@ const main = async () => {
       });
       const dataUrl = toDataUrl(Buffer.from(response.data), response.headers?.['content-type']);
       const attrs = await page.evaluate(async (imgDataUrl) => {
-        return (window as any).computeAttributes(imgDataUrl);
+        return (globalThis as any).computeAttributes(imgDataUrl);
       }, dataUrl) as {
         dominantColor: string | null;
         textDetected: boolean;

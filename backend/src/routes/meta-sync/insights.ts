@@ -7,6 +7,17 @@ export const sumActions = (rows: ActionRow[] | undefined, types: string[]) => {
   return rows.filter((row) => types.includes(row.action_type)).reduce((sum, row) => sum + parseNumber(row.value), 0);
 };
 
+export const buildActionTypeMap = (rows: ActionRow[] | undefined) => {
+  const output: Record<string, number> = {};
+  if (!rows) return output;
+  for (const row of rows) {
+    if (!row?.action_type) continue;
+    const value = parseNumber(row.value);
+    output[row.action_type] = (output[row.action_type] ?? 0) + value;
+  }
+  return output;
+};
+
 export const sumVideoActions = (actions: Array<{ action_type: string; value: string }> | undefined) => {
   if (!actions) return 0;
   return actions.reduce((sum, a) => sum + (parseFloat(a.value) || 0), 0);
@@ -33,4 +44,3 @@ export const messagingReplyTypes = ['onsite_conversion.messaging_first_reply', '
 export const linkClickTypes = ['link_click'];
 
 export const landingPageViewTypes = ['landing_page_view'];
-

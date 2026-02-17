@@ -220,7 +220,8 @@ const weeklySummaryRoutes: FastifyPluginAsync = async (fastify) => {
     // 7. Try AI summary
     let aiUsed = false;
     let aiModel: string | null = null;
-    let summaryContent: { summary: string; highlights: string[]; concerns: string[]; nextSteps: string[] };
+    let summaryContent: { summary: string; highlights: string[]; concerns: string[]; nextSteps: string[] } =
+      buildFallbackSummary(clientName, metricsSnapshot, anomalyCount, proposalsExecuted);
 
     const promptDef = getPromptDefinition('weekly-summary');
     const cacheHours = getAiOutputCacheHours();

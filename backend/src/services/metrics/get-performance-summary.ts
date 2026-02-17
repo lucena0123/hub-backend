@@ -4,6 +4,7 @@ import type { MetricsQuery, PerformanceSummary } from '../../types/metrics';
 import { calculateCPA, calculateCPM, calculateCPC, calculateCPL, calculateCTR, calculateROAS } from './calculations';
 import { getDateRange } from './date-range';
 import { getCampaignMetrics } from './get-campaign-metrics';
+import { buildLearningSummary } from './learning-summary';
 import { resolvePrimaryResult } from './primary-result';
 import { determinePerformanceStatus } from './performance-status';
 
@@ -171,6 +172,7 @@ export const getPerformanceSummary = async (
   }
 
   const dailyMetrics = await getCampaignMetrics(prisma, campaignId, query);
+  const learningSummary = await buildLearningSummary(prisma, campaignId, campaign.objective ?? null);
 
   const status = determinePerformanceStatus({
     roas,
@@ -218,6 +220,7 @@ export const getPerformanceSummary = async (
     budgetUtilization: Number(budgetUtilization.toFixed(2)),
     budgetMode,
     dailyMetrics,
+    learningSummary,
     status,
   };
 };

@@ -1,9 +1,9 @@
 const nodeDetails = {
       'Task_S_Revisa': { sla: '2h antes', tag: 'Revisão', desc: "Revisa CRM, históricos, ICP, objeções prováveis, contexto jurídico/comercial, urgência e sinais de intenção." },
-      'Task_S_Objetivo': { sla: '1h antes', tag: 'Planejamento', desc: "Define se a reunião será mais diagnóstica, demonstrativa, de alinhamento ou fechamento preliminar." },
-      'Task_S_Conduz': { sla: '30-60 min', tag: 'Reunião', desc: "Roteiro estruturado: abertura, quebra de gelo, diagnóstico, entendimento da dor, explicação do método, demonstração, proposta preliminar e próximos passos." },
+      'Task_S_Objetivo': { sla: '1h antes', tag: 'Planejamento', desc: "Define se a reunião será mais diagnóstica, demonstrativa, de alinhamento ou fechamento preliminar.", artefato: '📋 lucena_proposta_v6_final · Slide 5 — Diagnóstico (roteiro interno com 4 perguntas: Situação, Problema, Impacto e Decisão)' },
+      'Task_S_Conduz': { sla: '30-60 min', tag: 'Reunião', desc: "Roteiro estruturado: abertura, quebra de gelo, diagnóstico, entendimento da dor, explicação do método, demonstração, proposta preliminar e próximos passos.", artefato: '📊 lucena_envio_cliente · 14 slides — Slides 2-4 (abertura/dor), 5-6 (método), 7-8 (cases: 206 conversas / R$ 5,43 CPL), 9-10 (ROI + pacotes), 11-13 (próximos passos)' },
       'Task_S_Resume': { sla: '1h após', tag: 'Resumo', desc: "Valida o rascunho produzido pela IA com: dores, contexto, prazos, expectativas, objeções e próximos passos acordados." },
-      'Task_S_Proposta': { sla: '24h após', tag: 'Pós-Reunião', desc: "Usa minuta sugerida pela IA e templates padrões para gerar proposta clara, alinhada ao caso e pronta para o Subprocesso 1.3." },
+      'Task_S_Proposta': { sla: '24h após', tag: 'Pós-Reunião', desc: "Usa minuta sugerida pela IA e templates padrões para gerar proposta clara, alinhada ao caso e pronta para o Subprocesso 1.3.", artefato: '📄 lucena_envio_cliente · Slides 9-12 — Pacotes START/GROWTH/SCALE, condições de pagamento, roadmap 3 meses e garantias (base para proposta formal ao 1.3)' },
       'Task_S_NoShow': { sla: 'Imediato', tag: 'Controle', desc: "Executa protocolo de no-show (ligação, WhatsApp) e tenta reagendamento imediato ou retorno ao fluxo 1.1." },
       'Task_A_Sincro': { sla: 'Instantâneo', tag: 'Agenda', desc: "Gera ou atualiza evento de calendário, anexando link da call e dados do lead. Atualiza status da oportunidade no CRM." },
       'Task_A_Lembrete': { sla: '24h/1h antes', tag: 'Lembrete', desc: "Envio automático de lembretes para cliente e executivo (24h e 1h antes), com link e objetivo da reunião." },
@@ -18,7 +18,7 @@ const nodeDetails = {
       'Task_I_Minuta': { sla: 'Real-time', tag: 'Proposta IA', desc: "Com base no resumo, a IA sugere uma minuta de proposta com escopo, entregáveis e planos." },
       'Task_C_Participa': { sla: null, tag: 'Participação', desc: "Cliente participa da reunião, apresenta contexto, tira dúvidas e avalia se a proposta faz sentido." },
       'Task_C_Decide': { sla: null, tag: 'Decisão', desc: "Confirma se deseja receber a proposta detalhada para avançar para o fechamento." },
-      'Task_E_Feedback': { sla: '24h após', tag: 'Feedback', desc: "Registra motivo de não avançar (preço, prazo, momento) e decide se entra em follow-up ou perda." }
+      'Task_E_Feedback': { sla: '24h após', tag: 'Feedback', desc: "Registra motivo de não avançar (preço, prazo, momento) e decide se entra em follow-up ou perda.", artefato: '💬 lucena_followup_templates · Sequência 3 momentos — M1: mesmo dia (e-mail resumo + WhatsApp + PDF), M2: 48h sem resposta (abertura para dúvidas), M3: 5-7 dias (encerramento com porta aberta)' }
     };
 
 const diagramXML = `<?xml version="1.0" encoding="UTF-8"?>

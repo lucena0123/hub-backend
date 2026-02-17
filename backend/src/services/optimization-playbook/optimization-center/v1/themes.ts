@@ -19,7 +19,7 @@ export const OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES: OptimizationTheme[] = [
     key: 'passageiro_aereo',
     name: 'Direito do Passageiro Aéreo',
     description: 'Atraso/cancelamento de voo, bagagem, overbooking, reembolso.',
-    tags: ['PASSAGEIRO', 'AÉREO', 'AEREO', 'VOO'],
+    tags: ['PASSAGEIRO', 'AÉREO', 'AEREO', 'VOO', 'CONSUMIDOR'],
     keywords: ['passageiro', 'voo', 'aéreo', 'aereo', 'bagagem', 'overbooking', 'cancel', 'atras'],
     targets: {
       targetCplGoodMax: 9,
@@ -33,7 +33,7 @@ export const OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES: OptimizationTheme[] = [
     key: 'salario_maternidade',
     name: 'Salário Maternidade',
     description: 'Benefícios relacionados a maternidade e direitos de gestantes.',
-    tags: ['MATERNIDADE', 'SALARIO_MATERNIDADE'],
+    tags: ['MATERNIDADE', 'SALARIO_MATERNIDADE', 'PREVIDENCIARIO'],
     keywords: ['matern', 'salário maternidade', 'salario maternidade', 'gestante', 'gravidez'],
     targets: {
       targetCplGoodMax: 11,
@@ -51,4 +51,3 @@ export const OPTIMIZATION_CENTER_PLAYBOOK_V1_THEMES: OptimizationTheme[] = [
     keywords: [],
   },
 ];
-

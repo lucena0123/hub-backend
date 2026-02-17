@@ -4,6 +4,7 @@ import { calculateCPA, calculateCPM, calculateCPC, calculateCPL, calculateCTR, c
 import { getDateRange } from './date-range';
 import { determinePerformanceStatus } from './performance-status';
 import { resolvePrimaryResult } from './primary-result';
+import { buildLearningSummary } from './learning-summary';
 
 type RankingCategory =
   | 'ABOVE_AVERAGE'
@@ -582,8 +583,15 @@ export const getClientPerformanceSummary = async (
     };
   });
 
+  const campaignsWithLearning = await Promise.all(
+    campaignsPerformance.map(async (perf) => ({
+      ...perf,
+      learningSummary: await buildLearningSummary(prisma, perf.campaignId, perf.objective ?? null),
+    }))
+  );
+
   // Sorting
-  campaignsPerformance.sort((a, b) => {
+  campaignsWithLearning.sort((a, b) => {
     if (b.totalSpend !== a.totalSpend) return b.totalSpend - a.totalSpend;
     if (b.totalMessagingConversations !== a.totalMessagingConversations)
       return b.totalMessagingConversations - a.totalMessagingConversations;
@@ -632,7 +640,7 @@ export const getClientPerformanceSummary = async (
     ctr: 0, cpc: 0, cpl: 0, roas: 0,
   });
 
-  campaignsPerformance.forEach((camp) => {
+  campaignsWithLearning.forEach((camp) => {
     camp.dailyMetrics.forEach((day) => {
       if (!dailyMap.has(day.date)) dailyMap.set(day.date, initMetric(day.date));
       const acc = dailyMap.get(day.date)!;
@@ -677,7 +685,7 @@ export const getClientPerformanceSummary = async (
     avgCpl,
     avgCpa,
     avgRoas,
-    campaigns: campaignsPerformance,
+    campaigns: campaignsWithLearning,
     dailyMetrics: finalDailyMetrics,
   };
 };

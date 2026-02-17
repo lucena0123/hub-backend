@@ -717,7 +717,8 @@ export class AnalyticsService {
           cta_types,
           destination_urls,
           object_story_spec,
-          asset_feed_spec
+          asset_feed_spec,
+          visual_attributes
         FROM ad_creative_snapshots
         WHERE id = ${snapshotId}
         LIMIT 1
@@ -752,6 +753,7 @@ export class AnalyticsService {
             destinationUrls: row.destination_urls,
             objectStorySpec: row.object_story_spec,
             assetFeedSpec: row.asset_feed_spec,
+            visualAttributes: row.visual_attributes ?? null,
         };
     }
 
