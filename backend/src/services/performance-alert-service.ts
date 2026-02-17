@@ -24,9 +24,57 @@ export class PerformanceAlertService {
       ...(await buildSyncAlerts(this.pool)),
     ];
 
-    const priority = { critical: 0, warning: 1, info: 2 } as const;
-    alerts.sort((a, b) => priority[a.type] - priority[b.type]);
+    alerts.sort((a, b) => {
+      const scoreA = this.getAlertPriorityScore(a);
+      const scoreB = this.getAlertPriorityScore(b);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+
+      const createdAtA = new Date(a.createdAt).getTime();
+      const createdAtB = new Date(b.createdAt).getTime();
+      if (Number.isFinite(createdAtA) && Number.isFinite(createdAtB) && createdAtA !== createdAtB) {
+        return createdAtB - createdAtA;
+      }
+
+      return a.id.localeCompare(b.id);
+    });
 
     return alerts;
+  }
+
+  private getAlertPriorityScore(alert: PerformanceAlert): number {
+    const severityWeight: Record<PerformanceAlert['type'], number> = {
+      critical: 10_000,
+      warning: 5_000,
+      info: 1_000,
+    };
+
+    const categoryBoost: Record<string, number> = {
+      bpmn: 900,
+      sync: 700,
+      contacts: 600,
+      qualification: 500,
+      roas: 450,
+      budget: 350,
+      trend: 300,
+      'creative-fatigue': 250,
+      creative: 200,
+      ctr: 180,
+      'creative-video': 120,
+      'creative-winner': 10,
+    };
+
+    const threshold = Number.isFinite(alert.threshold) ? alert.threshold : 0;
+    const current = Number.isFinite(alert.currentValue) ? alert.currentValue : 0;
+
+    // Impact delta: for most alerts higher currentValue than threshold is worse.
+    // For alerts where zero/low is bad (threshold > current), this still captures severity by absolute gap.
+    const relativeGap = threshold !== 0 ? Math.abs((current - threshold) / Math.abs(threshold)) : Math.abs(current - threshold);
+    const boundedImpact = Math.min(1_500, Math.round(relativeGap * 1_000));
+
+    return (
+      severityWeight[alert.type] +
+      (categoryBoost[alert.category] ?? 100) +
+      boundedImpact
+    );
   }
 }
