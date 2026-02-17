@@ -32,7 +32,17 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             processInstanceId: z.string().optional(),
         });
 
-        const query = querySchema.parse(request.query);
+        const queryResult = querySchema.safeParse(request.query);
+        if (!queryResult.success) {
+            return {
+                success: false,
+                code: 'VALIDATION_ERROR',
+                error: 'Invalid query params',
+                details: queryResult.error.issues,
+            };
+        }
+
+        const query = queryResult.data;
         const { prisma } = fastify;
 
         // If clientId is provided, finding relevant process instances first might be needed
@@ -77,8 +87,18 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             output: z.any().optional(),
         });
 
-        const { id } = paramsSchema.parse(request.params);
-        const { status, output } = bodySchema.parse(request.body);
+        const paramsResult = paramsSchema.safeParse(request.params);
+        if (!paramsResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid route params', paramsResult.error.issues);
+        }
+
+        const bodyResult = bodySchema.safeParse(request.body);
+        if (!bodyResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', bodyResult.error.issues);
+        }
+
+        const { id } = paramsResult.data;
+        const { status, output } = bodyResult.data;
         const { prisma, services } = fastify;
 
         const task = await prisma.task.findUnique({
@@ -147,7 +167,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
     // POST /api/optimization/run-rule
     // Execute a rule manually (Simulation)
-    fastify.post('/api/optimization/run-rule', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    fastify.post('/api/optimization/run-rule', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
         const bodySchema = z.object({
             clientId: z.string(),
             ruleId: z.string(),
@@ -156,7 +176,12 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             dryRun: z.boolean().default(true),
         });
 
-        const { clientId, ruleId, entityId, campaignId, dryRun } = bodySchema.parse(request.body);
+        const bodyResult = bodySchema.safeParse(request.body);
+        if (!bodyResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', bodyResult.error.issues);
+        }
+
+        const { clientId, ruleId, entityId, campaignId, dryRun } = bodyResult.data;
 
         // Explicitly using variables to avoid unused var lint error
         request.log.info({
@@ -282,7 +307,12 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             parametersTemplate: z.any().optional().nullable(),
         });
 
-        const payload = bodySchema.parse(request.body);
+        const payloadResult = bodySchema.safeParse(request.body);
+        if (!payloadResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', payloadResult.error.issues);
+        }
+
+        const payload = payloadResult.data;
         const { getOptimizationCenterRuleMetas } = require('../services/optimization-playbook/optimization-center/engine/registry');
         const systemRules = getOptimizationCenterRuleMetas() as Array<{ id: string }>;
 
@@ -355,7 +385,12 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             parametersTemplate: z.any().optional().nullable(),
         });
 
-        const payload = bodySchema.parse(request.body);
+        const payloadResult = bodySchema.safeParse(request.body);
+        if (!payloadResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', payloadResult.error.issues);
+        }
+
+        const payload = payloadResult.data;
         const existing = await fastify.prisma.optimizationPlaybookRule.findUnique({
             where: { id: ruleId },
         });
@@ -430,9 +465,18 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     // POST /api/optimization/rules/:ruleId/toggle
     fastify.post('/api/optimization/rules/:ruleId/toggle', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
         const { ruleId } = request.params as { ruleId: string };
-        const { clientId, enabled } = request.body as { clientId: string, enabled: boolean };
 
-        if (!clientId) return sendApiError(reply, 400, 'CLIENT_ID_REQUIRED', 'clientId required');
+        const bodySchema = z.object({
+            clientId: z.string().min(1),
+            enabled: z.boolean(),
+        });
+
+        const bodyResult = bodySchema.safeParse(request.body);
+        if (!bodyResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', bodyResult.error.issues);
+        }
+
+        const { clientId, enabled } = bodyResult.data;
 
         const config = await fastify.prisma.clientRuleConfig.upsert({
             where: {
@@ -452,9 +496,18 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     // POST /api/optimization/rules/:ruleId/config
     fastify.post('/api/optimization/rules/:ruleId/config', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
         const { ruleId } = request.params as { ruleId: string };
-        const { clientId, parameters } = request.body as { clientId: string, parameters: any };
 
-        if (!clientId) return sendApiError(reply, 400, 'CLIENT_ID_REQUIRED', 'clientId required');
+        const bodySchema = z.object({
+            clientId: z.string().min(1),
+            parameters: z.record(z.any()),
+        });
+
+        const bodyResult = bodySchema.safeParse(request.body);
+        if (!bodyResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Validation failed', bodyResult.error.issues);
+        }
+
+        const { clientId, parameters } = bodyResult.data;
 
         const customRule = await fastify.prisma.optimizationPlaybookRule.findUnique({
             where: { id: ruleId },
