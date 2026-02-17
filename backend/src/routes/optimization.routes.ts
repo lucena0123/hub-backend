@@ -110,6 +110,54 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         };
     });
 
+    // GET /api/optimization/audit/summary
+    // Query params: clientId
+    fastify.get('/api/optimization/audit/summary', async (request, reply) => {
+        const querySchema = z.object({
+            clientId: z.string().optional(),
+        });
+
+        const queryResult = querySchema.safeParse(request.query);
+        if (!queryResult.success) {
+            return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
+        }
+
+        const { clientId } = queryResult.data;
+        const values: unknown[] = [];
+        const where: string[] = [];
+
+        if (clientId) {
+            values.push(clientId);
+            where.push(`"clientId" = $${values.length}`);
+        }
+
+        const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+        const actionsResult = await fastify.pool.query(
+            `SELECT action, COUNT(*)::int AS total
+             FROM audit_events
+             ${whereClause}
+             GROUP BY action`,
+            values
+        );
+
+        const eventTypesResult = await fastify.pool.query(
+            `SELECT "eventType", COUNT(*)::int AS total
+             FROM audit_events
+             ${whereClause}
+             GROUP BY "eventType"
+             ORDER BY total DESC
+             LIMIT 20`,
+            values
+        );
+
+        return {
+            success: true,
+            actions: actionsResult.rows,
+            eventTypes: eventTypesResult.rows,
+        };
+    });
+
     // GET /api/optimization/tasks
     // Query params: status, clientId, processInstanceId
     fastify.get('/api/optimization/tasks', async (request) => {
