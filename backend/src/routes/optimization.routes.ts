@@ -64,6 +64,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             clientId: z.string().optional(),
             action: z.enum(['create', 'update', 'delete', 'read']).optional(),
             eventType: z.string().min(1).optional(),
+            sinceHours: z.coerce.number().int().min(1).max(720).optional(),
             limit: z.coerce.number().int().min(1).max(200).default(50),
         });
 
@@ -72,7 +73,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
         }
 
-        const { clientId, action, eventType, limit } = queryResult.data;
+        const { clientId, action, eventType, sinceHours, limit } = queryResult.data;
         const values: unknown[] = [];
         const where: string[] = [];
 
@@ -89,6 +90,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         if (eventType) {
             values.push(eventType);
             where.push(`"eventType" = $${values.length}`);
+        }
+
+        if (sinceHours) {
+            values.push(sinceHours);
+            where.push(`timestamp >= NOW() - ($${values.length} * INTERVAL '1 hour')`);
         }
 
         values.push(limit);
@@ -115,6 +121,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     fastify.get('/api/optimization/audit/summary', async (request, reply) => {
         const querySchema = z.object({
             clientId: z.string().optional(),
+            sinceHours: z.coerce.number().int().min(1).max(720).optional(),
         });
 
         const queryResult = querySchema.safeParse(request.query);
@@ -122,13 +129,18 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
         }
 
-        const { clientId } = queryResult.data;
+        const { clientId, sinceHours } = queryResult.data;
         const values: unknown[] = [];
         const where: string[] = [];
 
         if (clientId) {
             values.push(clientId);
             where.push(`"clientId" = $${values.length}`);
+        }
+
+        if (sinceHours) {
+            values.push(sinceHours);
+            where.push(`timestamp >= NOW() - ($${values.length} * INTERVAL '1 hour')`);
         }
 
         const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
