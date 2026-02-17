@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { requireRoles } from '../middleware/rbac';
 import Ajv from 'ajv';
+import { createAuditLog } from '../middleware/audit';
 
 export default async function optimizationRoutes(fastify: FastifyInstance) {
     const ajv = new Ajv({ allErrors: true, strict: false });
@@ -20,6 +21,33 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             error,
             ...(details ? { details } : {}),
         });
+    };
+
+    const logOptimizationAudit = async (params: {
+        userId?: string;
+        action: 'create' | 'update' | 'delete' | 'read';
+        entityType: 'task' | 'campaign' | 'client' | 'process' | 'user';
+        entityId: string;
+        changes?: unknown;
+        metadata?: unknown;
+    }) => {
+        await createAuditLog(fastify.pool, {
+            userId: params.userId,
+            action: params.action,
+            entityType: params.entityType,
+            entityId: params.entityId,
+            changes: params.changes,
+            metadata: params.metadata,
+        });
+    };
+
+    const ensureClientExists = async (clientId: string) => {
+        const client = await fastify.prisma.client.findUnique({
+            where: { id: clientId },
+            select: { id: true },
+        });
+
+        return !!client;
     };
 
     fastify.addHook('preHandler', authenticate);
@@ -158,6 +186,23 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             }
         });
 
+        await logOptimizationAudit({
+            userId: request.user?.id,
+            action: 'update',
+            entityType: 'task',
+            entityId: updatedTask.id,
+            changes: {
+                before: { status: task.status, output: task.output },
+                after: { status: updatedTask.status, output: updatedTask.output },
+            },
+            metadata: {
+                route: 'PATCH /api/optimization/tasks/:id',
+                requestedStatus: status,
+                finalStatus: newStatus,
+                hasExecutionResult: !!executionResult,
+            },
+        });
+
         return {
             success: true,
             code: 'TASK_UPDATED',
@@ -183,6 +228,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         const { clientId, ruleId, entityId, campaignId, dryRun } = bodyResult.data;
 
+        const clientExists = await ensureClientExists(clientId);
+        if (!clientExists) {
+            return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
+        }
+
         // Explicitly using variables to avoid unused var lint error
         request.log.info({
             msg: 'Simulating rule execution',
@@ -194,18 +244,37 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         });
 
         const target = campaignId || entityId || 'unknown-target';
+        const execution = {
+            ruleId,
+            clientId,
+            target,
+            dryRun,
+            executedAt: new Date().toISOString(),
+        };
+
+        await logOptimizationAudit({
+            userId: request.user?.id,
+            action: 'update',
+            entityType: 'task',
+            entityId: `rule:${ruleId}`,
+            changes: {
+                after: {
+                    execution,
+                    shouldTrigger: dryRun ? undefined : true,
+                },
+            },
+            metadata: {
+                route: 'POST /api/optimization/run-rule',
+                entityId,
+                campaignId,
+            },
+        });
 
         return {
             success: true,
             code: dryRun ? 'RULE_SIMULATED' : 'RULE_EXECUTED',
             message: `Rule ${ruleId} executed on ${target} ${dryRun ? '(Simulation)' : ''}`,
-            execution: {
-                ruleId,
-                clientId,
-                target,
-                dryRun,
-                executedAt: new Date().toISOString(),
-            },
+            execution,
             simulatedResult: {
                 shouldTrigger: Math.random() > 0.5,
                 reason: "Simulated execution result",
@@ -478,6 +547,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         const { clientId, enabled } = bodyResult.data;
 
+        const clientExists = await ensureClientExists(clientId);
+        if (!clientExists) {
+            return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
+        }
+
         const config = await fastify.prisma.clientRuleConfig.upsert({
             where: {
                 clientId_ruleId: { clientId, ruleId }
@@ -488,6 +562,22 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
                 ruleId,
                 enabled
             }
+        });
+
+        await logOptimizationAudit({
+            userId: request.user?.id,
+            action: 'update',
+            entityType: 'client',
+            entityId: clientId,
+            changes: {
+                after: {
+                    ruleId,
+                    enabled,
+                },
+            },
+            metadata: {
+                route: 'POST /api/optimization/rules/:ruleId/toggle',
+            },
         });
 
         return config;
@@ -508,6 +598,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         }
 
         const { clientId, parameters } = bodyResult.data;
+
+        const clientExists = await ensureClientExists(clientId);
+        if (!clientExists) {
+            return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
+        }
 
         const customRule = await fastify.prisma.optimizationPlaybookRule.findUnique({
             where: { id: ruleId },
@@ -536,6 +631,22 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
                 ruleId,
                 parameters
             }
+        });
+
+        await logOptimizationAudit({
+            userId: request.user?.id,
+            action: 'update',
+            entityType: 'client',
+            entityId: clientId,
+            changes: {
+                after: {
+                    ruleId,
+                    parameters,
+                },
+            },
+            metadata: {
+                route: 'POST /api/optimization/rules/:ruleId/config',
+            },
         });
 
         return config;
