@@ -62,6 +62,8 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     fastify.get('/api/optimization/audit', async (request, reply) => {
         const querySchema = z.object({
             clientId: z.string().optional(),
+            action: z.enum(['create', 'update', 'delete', 'read']).optional(),
+            eventType: z.string().min(1).optional(),
             limit: z.coerce.number().int().min(1).max(200).default(50),
         });
 
@@ -70,13 +72,23 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
         }
 
-        const { clientId, limit } = queryResult.data;
+        const { clientId, action, eventType, limit } = queryResult.data;
         const values: unknown[] = [];
         const where: string[] = [];
 
         if (clientId) {
             values.push(clientId);
             where.push(`"clientId" = $${values.length}`);
+        }
+
+        if (action) {
+            values.push(action);
+            where.push(`action = $${values.length}`);
+        }
+
+        if (eventType) {
+            values.push(eventType);
+            where.push(`"eventType" = $${values.length}`);
         }
 
         values.push(limit);
