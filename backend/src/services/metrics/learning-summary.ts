@@ -139,6 +139,8 @@ export const buildLearningSummary = async (
       adset_name,
       learning_status,
       last_significant_edit,
+      created_time,
+      created_at,
       metadata,
       daily_budget,
       lifetime_budget
@@ -149,13 +151,18 @@ export const buildLearningSummary = async (
   if (!adsets || adsets.length === 0) return null;
 
   const statusCounts = { learning: 0, limited: 0, active: 0, unknown: 0 };
-  const adsetWindows = new Map<string, { start: Date; end: Date }>();
+  const adsetWindows = new Map<string, { start: Date; end: Date; anchor: 'start' | 'reset' }>();
   const adsetGroups = new Map<string, ActionGroup>();
 
   let minStart: Date | null = null;
   let maxEnd: Date | null = null;
+  let minLastEdit: Date | null = null;
+  let maxLastEdit: Date | null = null;
   let withLastEdit = 0;
+  let withStartAnchor = 0;
   let withLearningStatus = 0;
+  let adsetsUsingStartAnchor = 0;
+  let adsetsUsingResetAnchor = 0;
 
   for (const row of adsets) {
     const adsetId = String(row.adset_id);
@@ -168,11 +175,32 @@ export const buildLearningSummary = async (
     if (row.learning_status) withLearningStatus += 1;
 
     const lastEdit = row.last_significant_edit ? new Date(row.last_significant_edit) : null;
-    if (lastEdit && !Number.isNaN(lastEdit.getTime())) {
-      const start = new Date(lastEdit);
-      const end = addDays(start, LEARNING_WINDOW_DAYS - 1);
-      adsetWindows.set(adsetId, { start, end });
+    const createdTime = row.created_time ? new Date(row.created_time) : null;
+    const createdAt = row.created_at ? new Date(row.created_at) : null;
+
+    const validLastEdit = lastEdit && !Number.isNaN(lastEdit.getTime()) ? lastEdit : null;
+    const validCreatedTime = createdTime && !Number.isNaN(createdTime.getTime()) ? createdTime : null;
+    const validCreatedAt = createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null;
+
+    const startAnchor = validCreatedTime ?? validCreatedAt;
+    if (startAnchor) withStartAnchor += 1;
+    if (validLastEdit) {
       withLastEdit += 1;
+      if (!minLastEdit || validLastEdit < minLastEdit) minLastEdit = validLastEdit;
+      if (!maxLastEdit || validLastEdit > maxLastEdit) maxLastEdit = validLastEdit;
+    }
+
+    const shouldUseResetAnchor = Boolean(validLastEdit && startAnchor && validLastEdit.getTime() > startAnchor.getTime());
+    const learningAnchor = shouldUseResetAnchor ? validLastEdit : startAnchor ?? validLastEdit;
+
+    if (learningAnchor) {
+      const start = new Date(learningAnchor);
+      const end = addDays(start, LEARNING_WINDOW_DAYS - 1);
+      const anchor: 'start' | 'reset' = shouldUseResetAnchor ? 'reset' : 'start';
+      if (anchor === 'reset') adsetsUsingResetAnchor += 1;
+      else adsetsUsingStartAnchor += 1;
+
+      adsetWindows.set(adsetId, { start, end, anchor });
       if (!minStart || start < minStart) minStart = start;
       if (!maxEnd || end > maxEnd) maxEnd = end;
     }
@@ -339,10 +367,35 @@ export const buildLearningSummary = async (
     conclusion = 'passed';
   }
 
-  const lastEditRange = {
+  const anchorRange = {
     min: minStart ? minStart.toISOString() : null,
     max: maxEnd ? maxEnd.toISOString() : null,
   };
+
+  const windowBasis: LearningSummary['windowBasis'] =
+    adsetsUsingResetAnchor > 0 && adsetsUsingStartAnchor > 0
+      ? 'mixed'
+      : adsetsUsingResetAnchor > 0
+        ? 'since_reset'
+        : adsetsUsingStartAnchor > 0
+          ? 'since_start'
+          : 'unknown';
+
+  const lastEditRange = {
+    min: minLastEdit ? minLastEdit.toISOString() : null,
+    max: maxLastEdit ? maxLastEdit.toISOString() : null,
+  };
+
+  let notes: string | undefined;
+  if (adsetsWithWindows === 0) {
+    notes = 'Sem âncora de início/reset disponível para calcular a janela de aprendizado.';
+  } else if (windowBasis === 'since_start') {
+    notes = 'Janela de aprendizado calculada desde o início no Meta Ads (por ad set).';
+  } else if (windowBasis === 'since_reset') {
+    notes = 'Janela de aprendizado calculada desde a última edição significativa (reset de learning).';
+  } else if (windowBasis === 'mixed') {
+    notes = 'Janela mista: parte dos ad sets está desde o início e parte desde reset de learning.';
+  }
 
   return {
     adsetCount,
@@ -358,7 +411,12 @@ export const buildLearningSummary = async (
     budgetDailyRequired: budgetDailyRequired != null && Number.isFinite(budgetDailyRequired) ? Number(budgetDailyRequired.toFixed(2)) : null,
     budgetAdequateCount,
     budgetUnknownCount,
+    windowBasis,
+    adsetsUsingStartAnchor,
+    adsetsUsingResetAnchor,
+    anchorRange,
     dataCoverage: {
+      withStartAnchor,
       withLastEdit: withLastEdit,
       withLearningStatus: withLearningStatus,
       withEventData: adsetsWithEventData,
@@ -366,6 +424,6 @@ export const buildLearningSummary = async (
     },
     lastEditRange,
     conclusion,
-    notes: adsetsWithWindows === 0 ? 'Sem última edição significativa registrada.' : undefined,
+    notes,
   };
 };

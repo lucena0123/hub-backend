@@ -197,7 +197,15 @@ export interface LearningSummary {
   budgetDailyRequired: number | null;
   budgetAdequateCount: number;
   budgetUnknownCount: number;
+  windowBasis: 'since_start' | 'since_reset' | 'mixed' | 'unknown';
+  adsetsUsingStartAnchor: number;
+  adsetsUsingResetAnchor: number;
+  anchorRange: {
+    min?: string | null;
+    max?: string | null;
+  };
   dataCoverage: {
+    withStartAnchor: number;
     withLastEdit: number;
     withLearningStatus: number;
     withEventData: number;
