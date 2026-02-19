@@ -329,11 +329,26 @@ export const buildCreativeAlerts = async (pool: Pool): Promise<PerformanceAlert[
     });
   }
 
-  return alerts.map((alert) => ({
-    ...alert,
-    analysisWindow: alert.analysisWindow ?? 'Acumulado criativo (últimos 7 dias)',
-    learningWindow: alert.learningWindow ?? 'Aprendizado criativo (start/reset validar na tela de Performance)',
-    learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
-  }));
+  return alerts.map((alert) => {
+    const isFatigue = alert.category === 'creative-fatigue';
+    const isVideo = alert.category === 'creative-video';
+
+    return {
+      ...alert,
+      analysisWindow:
+        alert.analysisWindow ??
+        (isFatigue
+          ? 'Acumulado criativo comparativo (7d atual vs 7d anterior)'
+          : isVideo
+            ? 'Acumulado criativo de vídeo (últimos 7 dias)'
+            : 'Acumulado criativo (últimos 7 dias)'),
+      learningWindow:
+        alert.learningWindow ??
+        (isFatigue
+          ? 'Aprendizado por ciclo de fadiga (start/reset validar na tela de Performance)'
+          : 'Aprendizado criativo (start/reset validar na tela de Performance)'),
+      learningWindowBasis: alert.learningWindowBasis ?? (isFatigue ? 'mixed' : 'unknown'),
+    };
+  });
 };
 

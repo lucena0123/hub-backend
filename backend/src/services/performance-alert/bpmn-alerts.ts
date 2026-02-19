@@ -29,7 +29,7 @@ export const buildBpmnAlerts = async (pool: Pool): Promise<PerformanceAlert[]> =
 
   return alerts.map((alert) => ({
     ...alert,
-    analysisWindow: alert.analysisWindow ?? 'Operacional BPMN (estado atual do fluxo)',
+    analysisWindow: alert.analysisWindow ?? 'Operacional BPMN (estado atual do fluxo e bloqueios)',
     learningWindow: alert.learningWindow ?? 'Sem janela de aprendizado aplicável para BPMN',
     learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
   }));

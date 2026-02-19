@@ -324,11 +324,23 @@ export const buildCampaignPerformanceAlerts = async (pool: Pool): Promise<Perfor
     }
   }
 
-  return alerts.map((alert) => ({
-    ...alert,
-    analysisWindow: alert.analysisWindow ?? 'Acumulado (últimos 7 dias comparado aos 7 dias anteriores)',
-    learningWindow: alert.learningWindow ?? 'Aprendizado (start/reset validar na tela de Performance)',
-    learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
-  }));
+  return alerts.map((alert) => {
+    const isTrendLike = alert.category === 'trend' || alert.category === 'contacts' || alert.category === 'qualification';
+
+    return {
+      ...alert,
+      analysisWindow:
+        alert.analysisWindow ??
+        (isTrendLike
+          ? 'Acumulado comparativo (últimos 7 dias vs 7 dias anteriores)'
+          : 'Acumulado operacional (últimos 7 dias)'),
+      learningWindow:
+        alert.learningWindow ??
+        (isTrendLike
+          ? 'Aprendizado por ciclo de 7 dias (start/reset validar na tela de Performance)'
+          : 'Aprendizado (start/reset validar na tela de Performance)'),
+      learningWindowBasis: alert.learningWindowBasis ?? (isTrendLike ? 'mixed' : 'unknown'),
+    };
+  });
 };
 
