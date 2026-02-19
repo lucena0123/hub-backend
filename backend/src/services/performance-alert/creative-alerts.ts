@@ -329,6 +329,11 @@ export const buildCreativeAlerts = async (pool: Pool): Promise<PerformanceAlert[
     });
   }
 
-  return alerts;
+  return alerts.map((alert) => ({
+    ...alert,
+    analysisWindow: alert.analysisWindow ?? 'Acumulado criativo (últimos 7 dias)',
+    learningWindow: alert.learningWindow ?? 'Aprendizado criativo (start/reset validar na tela de Performance)',
+    learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
+  }));
 };
 

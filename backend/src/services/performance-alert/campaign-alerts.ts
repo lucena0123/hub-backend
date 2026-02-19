@@ -324,6 +324,11 @@ export const buildCampaignPerformanceAlerts = async (pool: Pool): Promise<Perfor
     }
   }
 
-  return alerts;
+  return alerts.map((alert) => ({
+    ...alert,
+    analysisWindow: alert.analysisWindow ?? 'Acumulado (últimos 7 dias comparado aos 7 dias anteriores)',
+    learningWindow: alert.learningWindow ?? 'Aprendizado (start/reset validar na tela de Performance)',
+    learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
+  }));
 };
 

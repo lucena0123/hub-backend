@@ -111,6 +111,11 @@ export const buildSyncAlerts = async (pool: Pool): Promise<PerformanceAlert[]> =
     }
   }
 
-  return alerts;
+  return alerts.map((alert) => ({
+    ...alert,
+    analysisWindow: alert.analysisWindow ?? 'Operacional de sincronização (janela recente de execução)',
+    learningWindow: alert.learningWindow ?? 'Sem janela de aprendizado aplicável para sync',
+    learningWindowBasis: alert.learningWindowBasis ?? 'unknown',
+  }));
 };
 
