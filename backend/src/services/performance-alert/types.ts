@@ -11,5 +11,8 @@ export interface PerformanceAlert {
   currentValue: number;
   threshold: number;
   createdAt: string;
+  analysisWindow?: string;
+  learningWindow?: string;
+  learningWindowBasis?: 'since_start' | 'since_reset' | 'mixed' | 'unknown';
 }
 
