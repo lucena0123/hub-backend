@@ -7,8 +7,11 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
   const { commercialLeads } = fastify.services;
 
-  fastify.get('/api/comercial/dashboard', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async () => {
-    return commercialLeads.getDashboard();
+  fastify.get<{
+    Querystring: { rangeDays?: string };
+  }>('/api/comercial/dashboard', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const parsedRange = request.query.rangeDays ? Number.parseInt(request.query.rangeDays, 10) : undefined;
+    return commercialLeads.getDashboard(parsedRange);
   });
 
   fastify.post<{

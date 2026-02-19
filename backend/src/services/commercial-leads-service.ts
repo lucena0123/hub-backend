@@ -42,6 +42,7 @@ export interface CommercialDashboard {
   diagnosticos: number;
   propostas: number;
   fechados: number;
+  rangeDays?: number;
 }
 
 export interface CommercialLeadRecord {
@@ -217,16 +218,27 @@ export class CommercialLeadsService {
     return result.rows.map((row) => this.mapRow(row));
   }
 
-  async getDashboard(): Promise<CommercialDashboard> {
-    const result = await this.pool.query(`
-      SELECT
+  async getDashboard(rangeDays?: number): Promise<CommercialDashboard> {
+    const useRange = typeof rangeDays === 'number' && Number.isFinite(rangeDays) && rangeDays > 0;
+
+    const params: unknown[] = [];
+    const whereSql = useRange
+      ? `WHERE data_entrada >= NOW() - ($1::text || ' days')::interval`
+      : '';
+
+    if (useRange) params.push(Math.floor(rangeDays as number));
+
+    const result = await this.pool.query(
+      `SELECT
         COUNT(*)::int as total,
         COUNT(*) FILTER (WHERE status_atual = 'novo_lead')::int as novos,
         COUNT(*) FILTER (WHERE status_atual IN ('diagnostico_agendado', 'diagnostico_concluido'))::int as diagnosticos,
         COUNT(*) FILTER (WHERE status_atual IN ('proposta_enviada', 'negociacao'))::int as propostas,
         COUNT(*) FILTER (WHERE status_atual = 'fechado')::int as fechados
       FROM commercial_leads
-    `);
+      ${whereSql}`,
+      params,
+    );
 
     const row = result.rows[0] || {};
     return {
@@ -235,6 +247,7 @@ export class CommercialLeadsService {
       diagnosticos: Number(row.diagnosticos || 0),
       propostas: Number(row.propostas || 0),
       fechados: Number(row.fechados || 0),
+      rangeDays: useRange ? Math.floor(rangeDays as number) : undefined,
     };
   }
 
