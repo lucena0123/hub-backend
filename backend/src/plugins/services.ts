@@ -23,6 +23,7 @@ import { CampaignService } from '../services/campaign.service';
 import { AnomalyDetectionService } from '../services/anomaly-detection-service';
 import { OptimizationActionService } from '../services/optimization-playbook/optimization-action-service';
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
+import { CommercialLeadsService } from '../services/commercial-leads-service';
 import type { AppServices } from '../types/fastify';
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -79,6 +80,8 @@ export default fp(async (fastify: FastifyInstance) => {
   const processService = new ProcessService(prisma);
   const optimizationActionService = new OptimizationActionService(prisma);
   const optimizationTaskGenerator = new OptimizationTaskGenerator(prisma);
+  const commercialLeadsService = new CommercialLeadsService(pool);
+  await commercialLeadsService.initialize();
 
   const services: AppServices = {
     metrics: metricsService,
@@ -101,6 +104,7 @@ export default fp(async (fastify: FastifyInstance) => {
     anomaly: anomalyService,
     optimizationAction: optimizationActionService,
     optimizationTaskGenerator: optimizationTaskGenerator,
+    commercialLeads: commercialLeadsService,
     metaAds: undefined as any, // MetaAdsService is now instantiated dynamically per request
   };
 

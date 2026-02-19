@@ -22,6 +22,7 @@ import { AnomalyDetectionService } from '../services/anomaly-detection-service';
 import { OptimizationActionService } from '../services/optimization-playbook/optimization-action-service';
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import { MetaAdsService } from '../services/meta-ads/service';
+import { CommercialLeadsService } from '../services/commercial-leads-service';
 
 export interface AppServices {
   clients: ClientService;
@@ -45,6 +46,7 @@ export interface AppServices {
   metaAds: MetaAdsService;
   optimizationAction: OptimizationActionService;
   optimizationTaskGenerator: OptimizationTaskGenerator;
+  commercialLeads: CommercialLeadsService;
 }
 
 declare module 'fastify' {
