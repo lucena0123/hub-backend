@@ -188,7 +188,7 @@ export class CommercialLeadsService {
     return this.mapRow(result.rows[0]);
   }
 
-  async listLeads(filters?: { status?: CommercialLeadStatus; responsavel?: string }): Promise<CommercialLeadRecord[]> {
+  async listLeads(filters?: { status?: CommercialLeadStatus; responsavel?: string; limit?: number; offset?: number }): Promise<CommercialLeadRecord[]> {
     const where: string[] = [];
     const params: unknown[] = [];
 
@@ -203,9 +203,14 @@ export class CommercialLeadsService {
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 200);
+    const offset = Math.max(filters?.offset ?? 0, 0);
+
+    params.push(limit);
+    params.push(offset);
 
     const result = await this.pool.query(
-      `SELECT * FROM commercial_leads ${whereSql} ORDER BY updated_at DESC`,
+      `SELECT * FROM commercial_leads ${whereSql} ORDER BY updated_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
 

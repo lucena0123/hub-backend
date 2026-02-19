@@ -33,9 +33,17 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: {
       status?: CommercialLeadStatus;
       responsavel?: string;
+      limit?: string;
+      offset?: string;
     };
   }>('/api/comercial/leads', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
-    return commercialLeads.listLeads(request.query);
+    const { status, responsavel, limit, offset } = request.query;
+    return commercialLeads.listLeads({
+      status,
+      responsavel,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+      offset: offset ? Number.parseInt(offset, 10) : undefined,
+    });
   });
 
   fastify.post<{
