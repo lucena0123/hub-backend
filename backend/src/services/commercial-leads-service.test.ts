@@ -38,6 +38,21 @@ describe('validateLeadTransition', () => {
     }
   });
 
+  it('should require evidence to conclude diagnostic', () => {
+    expect(() =>
+      validateLeadTransition('diagnostico_agendado', {
+        to: 'diagnostico_concluido',
+      }),
+    ).toThrowError(CommercialFlowError);
+
+    expect(() =>
+      validateLeadTransition('diagnostico_agendado', {
+        to: 'diagnostico_concluido',
+        observacao: 'Resumo da call com contexto e próximos passos',
+      }),
+    ).not.toThrow();
+  });
+
   it('should allow valid gated transitions', () => {
     expect(() =>
       validateLeadTransition('primeiro_contato', {

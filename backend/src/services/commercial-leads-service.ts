@@ -102,6 +102,13 @@ export function validateLeadTransition(from: CommercialLeadStatus, input: MoveLe
     throw new CommercialFlowError('DOR_BLOCKED', 'DoR01 não foi cumprido.');
   }
 
+  if (to === 'diagnostico_concluido' && (!input.observacao || input.observacao.trim().length < 10)) {
+    throw new CommercialFlowError(
+      'VALIDATION_ERROR',
+      'Conclusão do diagnóstico exige evidência (resumo com no mínimo 10 caracteres).',
+    );
+  }
+
   if (to === 'proposta_enviada' && !input.dor02Ok) {
     throw new CommercialFlowError('DOR_BLOCKED', 'DoR02 não foi cumprido.');
   }
