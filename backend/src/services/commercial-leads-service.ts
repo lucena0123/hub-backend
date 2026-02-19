@@ -36,6 +36,14 @@ export interface MoveLeadStatusInput {
   dataProximaAcao?: string;
 }
 
+export interface CommercialDashboard {
+  total: number;
+  novos: number;
+  diagnosticos: number;
+  propostas: number;
+  fechados: number;
+}
+
 export interface CommercialLeadRecord {
   leadId: string;
   dataEntrada: string;
@@ -202,6 +210,27 @@ export class CommercialLeadsService {
     );
 
     return result.rows.map((row) => this.mapRow(row));
+  }
+
+  async getDashboard(): Promise<CommercialDashboard> {
+    const result = await this.pool.query(`
+      SELECT
+        COUNT(*)::int as total,
+        COUNT(*) FILTER (WHERE status_atual = 'novo_lead')::int as novos,
+        COUNT(*) FILTER (WHERE status_atual IN ('diagnostico_agendado', 'diagnostico_concluido'))::int as diagnosticos,
+        COUNT(*) FILTER (WHERE status_atual IN ('proposta_enviada', 'negociacao'))::int as propostas,
+        COUNT(*) FILTER (WHERE status_atual = 'fechado')::int as fechados
+      FROM commercial_leads
+    `);
+
+    const row = result.rows[0] || {};
+    return {
+      total: Number(row.total || 0),
+      novos: Number(row.novos || 0),
+      diagnosticos: Number(row.diagnosticos || 0),
+      propostas: Number(row.propostas || 0),
+      fechados: Number(row.fechados || 0),
+    };
   }
 
   async moveLeadStatus(leadId: string, input: MoveLeadStatusInput): Promise<CommercialLeadRecord> {

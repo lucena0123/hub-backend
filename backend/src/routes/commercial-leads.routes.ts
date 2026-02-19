@@ -7,6 +7,10 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
   const { commercialLeads } = fastify.services;
 
+  fastify.get('/api/comercial/dashboard', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async () => {
+    return commercialLeads.getDashboard();
+  });
+
   fastify.post<{
     Body: {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';
