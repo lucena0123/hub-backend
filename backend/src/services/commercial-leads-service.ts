@@ -761,6 +761,7 @@ export class CommercialLeadsService {
     }
 
     const signingSecret = process.env.COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET;
+    const sharedToken = process.env.COMMERCIAL_DISPATCH_SHARED_TOKEN;
     const timeoutMs = Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_TIMEOUT_MS || '8000', 10);
     const maxRetries = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_MAX_RETRIES || '2', 10), 0), 5);
     const retryBaseMs = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_RETRY_BASE_MS || '500', 10), 100), 5000);
@@ -794,6 +795,7 @@ export class CommercialLeadsService {
             'content-type': 'application/json',
             ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
             ...(signature ? { 'x-dispatch-signature': signature, 'x-dispatch-timestamp': sentAt } : {}),
+            ...(sharedToken ? { 'x-dispatch-shared-token': sharedToken } : {}),
           },
           body: rawPayload,
           signal: controller.signal,

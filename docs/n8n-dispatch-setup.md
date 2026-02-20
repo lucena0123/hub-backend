@@ -39,12 +39,17 @@ Os templates de workflow validam:
 
 Falhas retornam `401` com:
 - `MISSING_SIGNATURE_HEADERS`
+- `INVALID_SHARED_TOKEN`
 - `INVALID_SIGNATURE_FORMAT`
 - `INVALID_TIMESTAMP`
 - `STALE_TIMESTAMP`
 
 No Hub backend, configure:
 - `COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET`
+- `COMMERCIAL_DISPATCH_SHARED_TOKEN`
+
+No n8n, configure o mesmo token:
+- `DISPATCH_SHARED_TOKEN` (ou `COMMERCIAL_DISPATCH_SHARED_TOKEN`)
 
 > Nota: validação criptográfica HMAC completa depende das permissões/recursos da instância n8n (Code sandbox).
 ## Evolução (recomendada)
