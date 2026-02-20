@@ -26,6 +26,13 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.getDailySummary();
   });
 
+  fastify.get<{
+    Querystring: { limit?: string };
+  }>('/api/comercial/followups/due', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 20;
+    return commercialLeads.listFollowupsDue(limit);
+  });
+
   fastify.post<{
     Body: {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';

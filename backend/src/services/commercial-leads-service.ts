@@ -103,6 +103,15 @@ export interface CommercialLeadTimelineEvent {
   createdAt: string;
 }
 
+export interface CommercialFollowupDue {
+  leadId: string;
+  nomeEscritorio: string;
+  responsavel: string;
+  statusAtual: CommercialLeadStatus;
+  followupType: 'D+2' | 'D+5';
+  dueAt: string;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -601,6 +610,39 @@ export class CommercialLeadsService {
       actor: row.actor || undefined,
       observacao: row.observacao || undefined,
       createdAt: row.created_at,
+    }));
+  }
+
+  async listFollowupsDue(limit = 50): Promise<CommercialFollowupDue[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const result = await this.pool.query(
+      `(
+        SELECT lead_id, nome_escritorio, responsavel, status_atual, 'D+2'::text AS followup_type, followup_d2_at AS due_at
+        FROM commercial_leads
+        WHERE status_atual IN ('proposta_enviada', 'negociacao')
+          AND followup_d2_at IS NOT NULL
+          AND followup_d2_at <= NOW()
+      )
+      UNION ALL
+      (
+        SELECT lead_id, nome_escritorio, responsavel, status_atual, 'D+5'::text AS followup_type, followup_d5_at AS due_at
+        FROM commercial_leads
+        WHERE status_atual IN ('proposta_enviada', 'negociacao')
+          AND followup_d5_at IS NOT NULL
+          AND followup_d5_at <= NOW()
+      )
+      ORDER BY due_at ASC
+      LIMIT $1`,
+      [safeLimit],
+    );
+
+    return result.rows.map((row) => ({
+      leadId: row.lead_id,
+      nomeEscritorio: row.nome_escritorio,
+      responsavel: row.responsavel,
+      statusAtual: row.status_atual as CommercialLeadStatus,
+      followupType: row.followup_type as 'D+2' | 'D+5',
+      dueAt: row.due_at,
     }));
   }
 
