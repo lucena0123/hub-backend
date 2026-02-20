@@ -31,9 +31,20 @@ Resposta esperada no backend:
 - `provider`: `n8n-whatsapp` ou `n8n-gmail`
 - `externalEventId` preenchido
 
+## Segurança (assinatura)
+Os templates de workflow incluem validação de headers:
+- `x-dispatch-signature`
+- `x-dispatch-timestamp`
+
+Se ausentes, o fluxo retorna `401` com `MISSING_SIGNATURE_HEADERS`.
+
+No Hub backend, configure:
+- `COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET`
+
 ## Evolução (recomendada)
 Depois de validar:
 - Inserir nós reais de envio (WhatsApp Cloud API / Gmail node)
+- Validar assinatura HMAC completa no n8n (não só presença de header)
 - Adicionar retry + dead-letter
 - Adicionar notificação de falha (Slack/Telegram)
 - Armazenar payload/sucesso/erro em banco observabilidade

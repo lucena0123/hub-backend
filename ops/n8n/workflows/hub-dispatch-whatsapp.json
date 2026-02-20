@@ -11,7 +11,28 @@
       "name": "Webhook WhatsApp",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 280]
+      "position": [220, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers?.['x-dispatch-signature'] || ''}}",
+              "operation": "notEmpty"
+            },
+            {
+              "value1": "={{$json.headers?.['x-dispatch-timestamp'] || ''}}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "id": "IF_Signature",
+      "name": "Has Signature Headers",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 280]
     },
     {
       "parameters": {
@@ -27,7 +48,7 @@
       "name": "Build Ack",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [520, 280]
+      "position": [700, 220]
     },
     {
       "parameters": {
@@ -39,12 +60,30 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [780, 280]
+      "position": [940, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":false,\"error\":\"MISSING_SIGNATURE_HEADERS\"}",
+        "options": { "responseCode": 401 }
+      },
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [940, 360]
     }
   ],
   "connections": {
     "Webhook WhatsApp": {
-      "main": [[{ "node": "Build Ack", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Has Signature Headers", "type": "main", "index": 0 }]]
+    },
+    "Has Signature Headers": {
+      "main": [
+        [{ "node": "Build Ack", "type": "main", "index": 0 }],
+        [{ "node": "Respond Unauthorized", "type": "main", "index": 0 }]
+      ]
     },
     "Build Ack": {
       "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
