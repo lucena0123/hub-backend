@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -759,48 +760,86 @@ export class CommercialLeadsService {
       );
     }
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
-      },
-      body: JSON.stringify({
-        leadId: input.leadId,
-        channel: input.channel,
-        stage: input.stage,
-        templateKey: input.templateKey,
-        recipient: input.recipient,
-        variables: input.variables,
-        sentAt: new Date().toISOString(),
-      }),
-    });
+    const signingSecret = process.env.COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET;
+    const timeoutMs = Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_TIMEOUT_MS || '8000', 10);
+    const maxRetries = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_MAX_RETRIES || '2', 10), 0), 5);
+    const retryBaseMs = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_RETRY_BASE_MS || '500', 10), 100), 5000);
 
-    const rawBody = await response.text();
-    let parsedBody: Record<string, unknown> = {};
-    if (rawBody) {
+    const sentAt = new Date().toISOString();
+    const body = {
+      leadId: input.leadId,
+      channel: input.channel,
+      stage: input.stage,
+      templateKey: input.templateKey,
+      recipient: input.recipient,
+      variables: input.variables,
+      sentAt,
+    };
+
+    const rawPayload = JSON.stringify(body);
+    const signature = signingSecret
+      ? createHmac('sha256', signingSecret).update(`${sentAt}.${rawPayload}`).digest('hex')
+      : undefined;
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
-        parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
-      } catch {
-        parsedBody = { raw: rawBody };
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
+            ...(signature ? { 'x-dispatch-signature': signature, 'x-dispatch-timestamp': sentAt } : {}),
+          },
+          body: rawPayload,
+          signal: controller.signal,
+        });
+
+        const rawBody = await response.text();
+        let parsedBody: Record<string, unknown> = {};
+        if (rawBody) {
+          try {
+            parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
+          } catch {
+            parsedBody = { raw: rawBody };
+          }
+        }
+
+        if (!response.ok) {
+          throw new Error(`Falha no dispatch para ${input.channel}: HTTP ${response.status}`);
+        }
+
+        const externalEventId =
+          (typeof parsedBody.externalEventId === 'string' && parsedBody.externalEventId) ||
+          (typeof parsedBody.messageId === 'string' && parsedBody.messageId) ||
+          (typeof parsedBody.id === 'string' && parsedBody.id) ||
+          undefined;
+
+        return {
+          provider: webhookUrl.includes('/api/comercial/relay/') ? 'temp-relay' : 'webhook',
+          externalEventId,
+          ack: {
+            ...parsedBody,
+            retryAttempt: attempt,
+            retriesConfigured: maxRetries,
+          },
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Falha desconhecida no dispatch');
+        if (attempt === maxRetries) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryBaseMs * (attempt + 1)));
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
-    if (!response.ok) {
-      throw new Error(`Falha no dispatch para ${input.channel}: HTTP ${response.status}`);
-    }
-
-    const externalEventId =
-      (typeof parsedBody.externalEventId === 'string' && parsedBody.externalEventId) ||
-      (typeof parsedBody.messageId === 'string' && parsedBody.messageId) ||
-      (typeof parsedBody.id === 'string' && parsedBody.id) ||
-      undefined;
-
-    return {
-      provider: webhookUrl.includes('/api/comercial/relay/') ? 'temp-relay' : 'webhook',
-      externalEventId,
-      ack: parsedBody,
-    };
+    throw lastError || new Error(`Falha no dispatch para ${input.channel}`);
   }
 
   async getLeadFormLink(leadId: string, formType: CommercialFormType): Promise<CommercialFormLink> {
