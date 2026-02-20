@@ -133,6 +133,22 @@ export class CommercialFlowError extends Error {
   }
 }
 
+const NURTURE_REASONS = [
+  'Sem urgência no momento',
+  'Aguardando decisão interna',
+  'Aguardando retorno do sócio',
+  'Momento financeiro inadequado',
+  'Contato sem resposta temporária',
+] as const;
+
+const LOSS_REASONS = [
+  'Sem orçamento',
+  'Fechou com concorrente',
+  'Sem fit de perfil',
+  'Sem retorno após follow-up',
+  'Projeto adiado/cancelado',
+] as const;
+
 const allowedTransitions: Record<CommercialLeadStatus, CommercialLeadStatus[]> = {
   novo_lead: ['primeiro_contato'],
   primeiro_contato: ['diagnostico_agendado', 'nutricao', 'perdido'],
@@ -178,8 +194,22 @@ export function validateLeadTransition(from: CommercialLeadStatus, input: MoveLe
     throw new CommercialFlowError('VALIDATION_ERROR', 'Nutrição exige motivo e data da próxima ação.');
   }
 
+  if (to === 'nutricao' && input.motivoNutricao && !NURTURE_REASONS.includes(input.motivoNutricao as (typeof NURTURE_REASONS)[number])) {
+    throw new CommercialFlowError(
+      'VALIDATION_ERROR',
+      `Motivo de nutrição inválido. Use um destes: ${NURTURE_REASONS.join(' | ')}`,
+    );
+  }
+
   if (to === 'perdido' && !input.motivoPerda) {
     throw new CommercialFlowError('VALIDATION_ERROR', 'Perdido exige motivo da perda.');
+  }
+
+  if (to === 'perdido' && input.motivoPerda && !LOSS_REASONS.includes(input.motivoPerda as (typeof LOSS_REASONS)[number])) {
+    throw new CommercialFlowError(
+      'VALIDATION_ERROR',
+      `Motivo de perda inválido. Use um destes: ${LOSS_REASONS.join(' | ')}`,
+    );
   }
 }
 
@@ -244,6 +274,25 @@ export class CommercialLeadsService {
   async createLead(input: CreateCommercialLeadInput): Promise<CommercialLeadRecord> {
     const leadId = uuidv4();
     const formToken = uuidv4();
+
+    if (input.whatsapp) {
+      const dedupe = await this.pool.query(
+        `SELECT lead_id
+         FROM commercial_leads
+         WHERE status_atual NOT IN ('fechado', 'perdido')
+           AND whatsapp = $1
+           AND LOWER(nome_escritorio) = LOWER($2)
+         LIMIT 1`,
+        [input.whatsapp, input.nomeEscritorio],
+      );
+
+      if (dedupe.rowCount && dedupe.rowCount > 0) {
+        throw new CommercialFlowError(
+          'VALIDATION_ERROR',
+          'Lead duplicado detectado (mesmo WhatsApp e escritório em aberto).',
+        );
+      }
+    }
 
     const result = await this.pool.query(
       `INSERT INTO commercial_leads (

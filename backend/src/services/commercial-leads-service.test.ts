@@ -53,6 +53,22 @@ describe('validateLeadTransition', () => {
     ).not.toThrow();
   });
 
+  it('should enforce standardized loss/nurture reasons', () => {
+    expect(() =>
+      validateLeadTransition('proposta_enviada', {
+        to: 'perdido',
+        motivoPerda: 'Motivo aleatório',
+      }),
+    ).toThrowError(CommercialFlowError);
+
+    expect(() =>
+      validateLeadTransition('proposta_enviada', {
+        to: 'perdido',
+        motivoPerda: 'Sem orçamento',
+      }),
+    ).not.toThrow();
+  });
+
   it('should allow valid gated transitions', () => {
     expect(() =>
       validateLeadTransition('primeiro_contato', {
