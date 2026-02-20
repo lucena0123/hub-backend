@@ -29,6 +29,39 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Body: {
       leadId: string;
+      channel: 'whatsapp' | 'gmail';
+      stage: 'primeiro_contato' | 'diagnostico_agendado' | 'proposta_enviada' | 'negociacao' | 'fechado';
+      templateKey: string;
+      recipient?: string;
+      variables?: Record<string, unknown>;
+    };
+  }>('/api/comercial/dispatch', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.dispatchStageCommunication(request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  fastify.post<{
+    Body: {
+      leadId: string;
       channel: 'whatsapp' | 'gmail' | 'calendar' | 'zapsign' | 'custom';
       eventType: string;
       payload?: Record<string, unknown>;

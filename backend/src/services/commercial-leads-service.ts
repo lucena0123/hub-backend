@@ -75,6 +75,15 @@ export interface IngestCommercialIntegrationEventInput {
   occurredAt?: string;
 }
 
+export interface DispatchCommercialCommunicationInput {
+  leadId: string;
+  channel: 'whatsapp' | 'gmail';
+  stage: 'primeiro_contato' | 'diagnostico_agendado' | 'proposta_enviada' | 'negociacao' | 'fechado';
+  templateKey: string;
+  recipient?: string;
+  variables?: Record<string, unknown>;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -660,6 +669,31 @@ export class CommercialLeadsService {
     );
 
     return { ok: true, eventId, leadId: input.leadId };
+  }
+
+  async dispatchStageCommunication(input: DispatchCommercialCommunicationInput): Promise<{ ok: true; leadId: string; channel: string; stage: string; eventId: string }> {
+    if (!input.templateKey?.trim()) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'templateKey é obrigatório para disparo de comunicação.');
+    }
+
+    const event = await this.ingestIntegrationEvent({
+      leadId: input.leadId,
+      channel: input.channel,
+      eventType: `dispatch:${input.stage}:${input.templateKey}`,
+      payload: {
+        recipient: input.recipient || null,
+        variables: input.variables || {},
+      },
+      occurredAt: new Date().toISOString(),
+    });
+
+    return {
+      ok: true,
+      leadId: input.leadId,
+      channel: input.channel,
+      stage: input.stage,
+      eventId: event.eventId,
+    };
   }
 
   async getLeadFormLink(leadId: string, formType: CommercialFormType): Promise<CommercialFormLink> {
