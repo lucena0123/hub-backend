@@ -32,11 +32,16 @@ Resposta esperada no backend:
 - `externalEventId` preenchido
 
 ## Segurança (assinatura)
-Os templates de workflow validam presença dos headers:
-- `x-dispatch-signature`
-- `x-dispatch-timestamp`
+Os templates de workflow validam:
+- presença de `x-dispatch-signature` e `x-dispatch-timestamp`
+- formato hexadecimal de assinatura (64 chars)
+- timestamp com janela máxima de 5 minutos
 
-Se ausentes, retornam `401` com `MISSING_SIGNATURE_HEADERS`.
+Falhas retornam `401` com:
+- `MISSING_SIGNATURE_HEADERS`
+- `INVALID_SIGNATURE_FORMAT`
+- `INVALID_TIMESTAMP`
+- `STALE_TIMESTAMP`
 
 No Hub backend, configure:
 - `COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET`

@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = items[0].json || {}; const h = j.headers || {}; const has = !!h['x-dispatch-signature'] && !!h['x-dispatch-timestamp']; if (!has) { return [{ json: { ok: false, error: 'MISSING_SIGNATURE_HEADERS', statusCode: 401 } }]; } return [{ json: { ok: true, provider: 'n8n-whatsapp', externalEventId: `wa_${Date.now()}`, receivedAt: new Date().toISOString(), statusCode: 200 } }];"
+        "jsCode": "const j = items[0].json || {}; const h = j.headers || {}; const signature = h['x-dispatch-signature'] || ''; const timestamp = h['x-dispatch-timestamp'] || ''; if (!signature || !timestamp) { return [{ json: { ok: false, error: 'MISSING_SIGNATURE_HEADERS', statusCode: 401 } }]; } if (!/^[a-f0-9]{64}$/i.test(signature)) { return [{ json: { ok: false, error: 'INVALID_SIGNATURE_FORMAT', statusCode: 401 } }]; } const tsMs = Date.parse(timestamp); if (Number.isNaN(tsMs)) { return [{ json: { ok: false, error: 'INVALID_TIMESTAMP', statusCode: 401 } }]; } const maxSkewMs = 5 * 60 * 1000; if (Math.abs(Date.now() - tsMs) > maxSkewMs) { return [{ json: { ok: false, error: 'STALE_TIMESTAMP', statusCode: 401 } }]; } return [{ json: { ok: true, provider: 'n8n-whatsapp', externalEventId: `wa_${Date.now()}`, receivedAt: new Date().toISOString(), statusCode: 200 } }];"
       },
       "id": "Code_Guard",
       "name": "Build Response",
