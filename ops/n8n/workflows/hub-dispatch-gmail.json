@@ -1,0 +1,56 @@
+{
+  "name": "Hub Dispatch Gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "hub/dispatch/gmail",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      },
+      "id": "Webhook_Gmail",
+      "name": "Webhook Gmail",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            { "name": "externalEventId", "value": "={{'gm_' + $now.toMillis()}}" },
+            { "name": "provider", "value": "n8n-gmail" }
+          ]
+        }
+      },
+      "id": "Build_Ack",
+      "name": "Build Ack",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [520, 280]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"provider\":\"n8n-gmail\",\"externalEventId\":\"{{$json.externalEventId}}\",\"receivedAt\":\"{{$now}}\"}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "Respond_OK",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 280]
+    }
+  ],
+  "connections": {
+    "Webhook Gmail": {
+      "main": [[{ "node": "Build Ack", "type": "main", "index": 0 }]]
+    },
+    "Build Ack": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "active": false
+}
