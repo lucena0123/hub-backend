@@ -34,6 +34,7 @@ nul
 
 # Logs
 logs/
+.ops-logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

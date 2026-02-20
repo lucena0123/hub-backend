@@ -36,3 +36,7 @@ export const pool = connectionString
       password: process.env.PGPASSWORD || 'dev123',
       ...poolConfig,
     });
+
+pool.on('error', (err) => {
+  console.error('[pg-pool] idle client error:', err.message);
+});
