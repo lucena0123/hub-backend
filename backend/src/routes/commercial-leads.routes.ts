@@ -83,6 +83,34 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.listLeadTimeline(request.params.leadId, limit);
   });
 
+  fastify.get<{
+    Params: { leadId: string };
+    Querystring: { formType?: 'briefing' | 'onboarding' | 'custom' };
+  }>('/api/comercial/leads/:leadId/forms/link', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      const formType = request.query.formType || 'briefing';
+      return await commercialLeads.getLeadFormLink(request.params.leadId, formType);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   fastify.post<{
     Params: { leadId: string };
     Body: {

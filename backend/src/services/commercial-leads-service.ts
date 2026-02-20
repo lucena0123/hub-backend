@@ -103,6 +103,13 @@ export interface CommercialLeadTimelineEvent {
   createdAt: string;
 }
 
+export interface CommercialFormLink {
+  leadId: string;
+  formType: CommercialFormType;
+  formToken: string;
+  url: string;
+}
+
 export interface CommercialFollowupDue {
   leadId: string;
   nomeEscritorio: string;
@@ -251,6 +258,18 @@ export function validateLeadTransition(from: CommercialLeadStatus, input: MoveLe
 
 export class CommercialLeadsService {
   constructor(private pool: Pool) {}
+
+  getFormLink(leadId: string, formType: CommercialFormType, formToken?: string): CommercialFormLink {
+    const token = formToken || uuidv4();
+    const baseUrl = process.env.HUB_FORMS_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:3000';
+    const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    return {
+      leadId,
+      formType,
+      formToken: token,
+      url: `${normalized}/forms/${formType}?token=${token}&leadId=${leadId}`,
+    };
+  }
 
   async initialize(): Promise<void> {
     await this.pool.query(`
@@ -563,6 +582,26 @@ export class CommercialLeadsService {
     );
 
     return this.mapRow(updated.rows[0]);
+  }
+
+  async getLeadFormLink(leadId: string, formType: CommercialFormType): Promise<CommercialFormLink> {
+    const existing = await this.pool.query('SELECT lead_id, form_token FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    let token = current.form_token as string | null;
+    if (!token) {
+      token = uuidv4();
+      await this.pool.query(
+        `UPDATE commercial_leads SET form_token = $2, updated_at = NOW() WHERE lead_id = $1`,
+        [leadId, token],
+      );
+    }
+
+    return this.getFormLink(leadId, formType, token);
   }
 
   async getDailySummary(): Promise<CommercialDailySummary> {
