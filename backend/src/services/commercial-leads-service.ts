@@ -80,10 +80,18 @@ export interface DispatchCommercialCommunicationInput {
   leadId: string;
   channel: 'whatsapp' | 'gmail';
   stage: 'primeiro_contato' | 'diagnostico_agendado' | 'proposta_enviada' | 'negociacao' | 'fechado';
-  templateKey: string;
+  templateKey?: string;
   recipient?: string;
   variables?: Record<string, unknown>;
 }
+
+const DEFAULT_DISPATCH_TEMPLATE_BY_STAGE: Record<DispatchCommercialCommunicationInput['stage'], string> = {
+  primeiro_contato: 'primeiro_contato_padrao',
+  diagnostico_agendado: 'diagnostico_agendado_padrao',
+  proposta_enviada: 'proposta_enviada_padrao',
+  negociacao: 'negociacao_padrao',
+  fechado: 'fechado_boas_vindas_padrao',
+};
 
 export interface CommercialDashboard {
   total: number;
@@ -673,8 +681,9 @@ export class CommercialLeadsService {
   }
 
   async dispatchStageCommunication(input: DispatchCommercialCommunicationInput): Promise<{ ok: true; leadId: string; channel: string; stage: string; eventId: string }> {
-    if (!input.templateKey?.trim()) {
-      throw new CommercialFlowError('VALIDATION_ERROR', 'templateKey é obrigatório para disparo de comunicação.');
+    const templateKey = input.templateKey?.trim() || DEFAULT_DISPATCH_TEMPLATE_BY_STAGE[input.stage];
+    if (!templateKey) {
+      throw new CommercialFlowError('VALIDATION_ERROR', `templateKey não definido para a etapa ${input.stage}.`);
     }
 
     const recipient = await this.resolveDispatchRecipient(input.leadId, input.channel, input.recipient);
@@ -682,7 +691,7 @@ export class CommercialLeadsService {
       leadId: input.leadId,
       channel: input.channel,
       stage: input.stage,
-      templateKey: input.templateKey,
+      templateKey,
       recipient,
       variables: input.variables || {},
     });
@@ -690,10 +699,11 @@ export class CommercialLeadsService {
     const event = await this.ingestIntegrationEvent({
       leadId: input.leadId,
       channel: input.channel,
-      eventType: `dispatch:${input.stage}:${input.templateKey}`,
+      eventType: `dispatch:${input.stage}:${templateKey}`,
       externalEventId: providerResult.externalEventId,
       payload: {
         recipient,
+        templateKey,
         variables: input.variables || {},
         provider: providerResult.provider,
         providerAck: providerResult.ack,

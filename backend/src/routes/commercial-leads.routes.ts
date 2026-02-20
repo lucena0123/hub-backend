@@ -31,7 +31,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       leadId: string;
       channel: 'whatsapp' | 'gmail';
       stage: 'primeiro_contato' | 'diagnostico_agendado' | 'proposta_enviada' | 'negociacao' | 'fechado';
-      templateKey: string;
+      templateKey?: string;
       recipient?: string;
       variables?: Record<string, unknown>;
     };
