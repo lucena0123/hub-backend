@@ -15,59 +15,33 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "string": [
-            {
-              "value1": "={{$json.headers['x-dispatch-signature'] || ''}}",
-              "operation": "notEmpty"
-            },
-            {
-              "value1": "={{$json.headers['x-dispatch-timestamp'] || ''}}",
-              "operation": "notEmpty"
-            }
-          ]
-        }
+        "jsCode": "const j = items[0].json || {}; const h = j.headers || {}; const has = !!h['x-dispatch-signature'] && !!h['x-dispatch-timestamp']; if (!has) { return [{ json: { ok: false, error: 'MISSING_SIGNATURE_HEADERS', statusCode: 401 } }]; } return [{ json: { ok: true, provider: 'n8n-whatsapp', externalEventId: `wa_${Date.now()}`, receivedAt: new Date().toISOString(), statusCode: 200 } }];"
       },
-      "id": "IF_Signature",
-      "name": "Has Signature Headers",
-      "type": "n8n-nodes-base.if",
+      "id": "Code_Guard",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [500, 280]
+      "position": [520, 280]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ {\"ok\": true, \"provider\": \"n8n-whatsapp\", \"externalEventId\": \"wa_\" + $now.toMillis(), \"receivedAt\": $now } }}",
-        "options": { "responseCode": 200 }
+        "responseBody": "={{$json}}",
+        "options": { "responseCode": "={{$json.statusCode || 200}}" }
       },
-      "id": "Respond_OK",
-      "name": "Respond OK",
+      "id": "Respond_Final",
+      "name": "Respond Final",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [820, 220]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ {\"ok\": false, \"error\": \"MISSING_SIGNATURE_HEADERS\" } }}",
-        "options": { "responseCode": 401 }
-      },
-      "id": "Respond_Unauthorized",
-      "name": "Respond Unauthorized",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [820, 360]
+      "position": [860, 280]
     }
   ],
   "connections": {
     "Webhook WhatsApp": {
-      "main": [[{ "node": "Has Signature Headers", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
     },
-    "Has Signature Headers": {
-      "main": [
-        [{ "node": "Respond OK", "type": "main", "index": 0 }],
-        [{ "node": "Respond Unauthorized", "type": "main", "index": 0 }]
-      ]
+    "Build Response": {
+      "main": [[{ "node": "Respond Final", "type": "main", "index": 0 }]]
     }
   },
   "settings": { "executionOrder": "v1" },
