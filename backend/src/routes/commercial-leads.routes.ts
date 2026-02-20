@@ -159,7 +159,8 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { limit?: string };
   }>('/api/comercial/leads/:leadId/integrations/events', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
     const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 25;
-    return commercialLeads.listIntegrationEvents(request.params.leadId, limit);
+    const events = await commercialLeads.listIntegrationEvents(request.params.leadId, limit);
+    return { events };
   });
 
   fastify.get<{
