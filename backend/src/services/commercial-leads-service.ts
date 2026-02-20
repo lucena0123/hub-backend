@@ -87,6 +87,16 @@ export interface CommercialDailySummary {
   fechadosHoje: number;
 }
 
+export interface CommercialLeadTimelineEvent {
+  id: string;
+  leadId: string;
+  statusOrigem: string;
+  statusDestino: string;
+  actor?: string;
+  observacao?: string;
+  createdAt: string;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -521,6 +531,28 @@ export class CommercialLeadsService {
       negociacoesAbertas: Number(row.negociacoes_abertas || 0),
       fechadosHoje: Number(row.fechados_hoje || 0),
     };
+  }
+
+  async listLeadTimeline(leadId: string, limit = 50): Promise<CommercialLeadTimelineEvent[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const result = await this.pool.query(
+      `SELECT id, lead_id, status_origem, status_destino, actor, observacao, created_at
+       FROM commercial_lead_transitions
+       WHERE lead_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [leadId, safeLimit],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      leadId: row.lead_id,
+      statusOrigem: row.status_origem,
+      statusDestino: row.status_destino,
+      actor: row.actor || undefined,
+      observacao: row.observacao || undefined,
+      createdAt: row.created_at,
+    }));
   }
 
   async listSlaAlerts(maxAgeHours = 24, limit = 50): Promise<CommercialSlaAlert[]> {

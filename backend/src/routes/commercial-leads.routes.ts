@@ -61,6 +61,14 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     });
   });
 
+  fastify.get<{
+    Params: { leadId: string };
+    Querystring: { limit?: string };
+  }>('/api/comercial/leads/:leadId/timeline', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 25;
+    return commercialLeads.listLeadTimeline(request.params.leadId, limit);
+  });
+
   fastify.post<{
     Params: { leadId: string };
     Body: {
