@@ -60,6 +60,12 @@ export interface UpdateCommercialLeadOnboardingInput {
   observacao?: string;
 }
 
+export interface UpdateCommercialLeadPrivacyInput {
+  consentGiven?: boolean;
+  retentionUntil?: string;
+  observacao?: string;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -130,6 +136,9 @@ export interface CommercialLeadRecord {
   onboardingD2Ok: boolean;
   onboardingD3D4Ok: boolean;
   onboardingD5D7Ok: boolean;
+  consentGiven: boolean;
+  consentGivenAt?: string;
+  retentionUntil?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -273,6 +282,9 @@ export class CommercialLeadsService {
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d2_ok BOOLEAN NOT NULL DEFAULT FALSE;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d3_d4_ok BOOLEAN NOT NULL DEFAULT FALSE;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d5_d7_ok BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS consent_given BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS consent_given_at TIMESTAMPTZ;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS retention_until TIMESTAMPTZ;
 
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_status ON commercial_leads(status_atual);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
@@ -419,6 +431,43 @@ export class CommercialLeadsService {
         current.status_atual,
         'proofs-update',
         input.observacao || `proofs_update:${input.contractStatus || '-'}:${input.paymentStatus || '-'}`,
+      ],
+    );
+
+    return this.mapRow(updated.rows[0]);
+  }
+
+  async updateLeadPrivacy(leadId: string, input: UpdateCommercialLeadPrivacyInput): Promise<CommercialLeadRecord> {
+    const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    const consentGivenAt = input.consentGiven === true ? new Date().toISOString() : current.consent_given_at;
+
+    const updated = await this.pool.query(
+      `UPDATE commercial_leads
+       SET consent_given = COALESCE($2, consent_given),
+           consent_given_at = $3,
+           retention_until = COALESCE($4, retention_until),
+           updated_at = NOW()
+       WHERE lead_id = $1
+       RETURNING *`,
+      [leadId, input.consentGiven ?? null, consentGivenAt, input.retentionUntil ?? null],
+    );
+
+    await this.pool.query(
+      `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        uuidv4(),
+        leadId,
+        current.status_atual,
+        current.status_atual,
+        'privacy-update',
+        input.observacao || 'privacy_update',
       ],
     );
 
@@ -603,6 +652,13 @@ export class CommercialLeadsService {
       );
     }
 
+    if (input.to === 'proposta_enviada' && current.consent_given !== true) {
+      throw new CommercialFlowError(
+        'VALIDATION_ERROR',
+        'Para enviar proposta, o consentimento LGPD deve estar confirmado.',
+      );
+    }
+
     if (input.to === 'fechado' && (current.contract_status !== 'assinado' || current.payment_status !== 'pago')) {
       throw new CommercialFlowError(
         'VALIDATION_ERROR',
@@ -693,6 +749,9 @@ export class CommercialLeadsService {
       onboardingD2Ok: Boolean(row.onboarding_d2_ok),
       onboardingD3D4Ok: Boolean(row.onboarding_d3_d4_ok),
       onboardingD5D7Ok: Boolean(row.onboarding_d5_d7_ok),
+      consentGiven: Boolean(row.consent_given),
+      consentGivenAt: row.consent_given_at || undefined,
+      retentionUntil: row.retention_until || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
