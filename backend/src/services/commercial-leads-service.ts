@@ -60,6 +60,15 @@ export interface CommercialDashboard {
   rangeDays?: number;
 }
 
+export interface CommercialSlaAlert {
+  leadId: string;
+  nomeEscritorio: string;
+  statusAtual: CommercialLeadStatus;
+  responsavel: string;
+  updatedAt: string;
+  hoursInStatus: number;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -364,6 +373,36 @@ export class CommercialLeadsService {
     );
 
     return this.mapRow(updated.rows[0]);
+  }
+
+  async listSlaAlerts(maxAgeHours = 24, limit = 50): Promise<CommercialSlaAlert[]> {
+    const safeMaxAge = Math.min(Math.max(maxAgeHours, 1), 168);
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+
+    const result = await this.pool.query(
+      `SELECT
+         lead_id,
+         nome_escritorio,
+         status_atual,
+         responsavel,
+         updated_at,
+         ROUND(EXTRACT(EPOCH FROM (NOW() - updated_at)) / 3600.0, 1) AS hours_in_status
+       FROM commercial_leads
+       WHERE status_atual NOT IN ('fechado', 'perdido')
+         AND updated_at <= NOW() - ($1::text || ' hours')::interval
+       ORDER BY updated_at ASC
+       LIMIT $2`,
+      [safeMaxAge, safeLimit],
+    );
+
+    return result.rows.map((row) => ({
+      leadId: row.lead_id,
+      nomeEscritorio: row.nome_escritorio,
+      statusAtual: row.status_atual as CommercialLeadStatus,
+      responsavel: row.responsavel,
+      updatedAt: row.updated_at,
+      hoursInStatus: Number(row.hours_in_status || 0),
+    }));
   }
 
   async moveLeadStatus(leadId: string, input: MoveLeadStatusInput): Promise<CommercialLeadRecord> {

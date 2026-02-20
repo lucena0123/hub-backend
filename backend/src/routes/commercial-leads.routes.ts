@@ -14,6 +14,14 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.getDashboard(parsedRange);
   });
 
+  fastify.get<{
+    Querystring: { maxAgeHours?: string; limit?: string };
+  }>('/api/comercial/alerts', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const maxAgeHours = request.query.maxAgeHours ? Number.parseInt(request.query.maxAgeHours, 10) : 24;
+    const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 50;
+    return commercialLeads.listSlaAlerts(maxAgeHours, limit);
+  });
+
   fastify.post<{
     Body: {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';
