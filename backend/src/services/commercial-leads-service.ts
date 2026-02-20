@@ -86,12 +86,27 @@ export interface DispatchCommercialCommunicationInput {
 }
 
 const DEFAULT_DISPATCH_TEMPLATE_BY_STAGE: Record<DispatchCommercialCommunicationInput['stage'], string> = {
-  primeiro_contato: 'primeiro_contato_padrao',
-  diagnostico_agendado: 'diagnostico_agendado_padrao',
-  proposta_enviada: 'proposta_enviada_padrao',
-  negociacao: 'negociacao_padrao',
-  fechado: 'fechado_boas_vindas_padrao',
+  primeiro_contato: 'primeiro_contato',
+  diagnostico_agendado: 'diagnostico_agendado',
+  proposta_enviada: 'proposta_enviada',
+  negociacao: 'negociacao',
+  fechado: 'fechado',
 };
+
+function resolveTemplateByStage(stage: DispatchCommercialCommunicationInput['stage']): string {
+  const raw = process.env.COMMERCIAL_DISPATCH_TEMPLATE_MAP_JSON;
+  if (!raw) return DEFAULT_DISPATCH_TEMPLATE_BY_STAGE[stage];
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<DispatchCommercialCommunicationInput['stage'], string>>;
+    const fromEnv = parsed?.[stage]?.trim();
+    if (fromEnv) return fromEnv;
+  } catch {
+    // fallback silencioso para default
+  }
+
+  return DEFAULT_DISPATCH_TEMPLATE_BY_STAGE[stage];
+}
 
 export interface CommercialDashboard {
   total: number;
@@ -681,7 +696,7 @@ export class CommercialLeadsService {
   }
 
   async dispatchStageCommunication(input: DispatchCommercialCommunicationInput): Promise<{ ok: true; leadId: string; channel: string; stage: string; eventId: string }> {
-    const templateKey = input.templateKey?.trim() || DEFAULT_DISPATCH_TEMPLATE_BY_STAGE[input.stage];
+    const templateKey = input.templateKey?.trim() || resolveTemplateByStage(input.stage);
     if (!templateKey) {
       throw new CommercialFlowError('VALIDATION_ERROR', `templateKey não definido para a etapa ${input.stage}.`);
     }
