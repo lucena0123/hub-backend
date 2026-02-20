@@ -5,18 +5,108 @@
 
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { seedMockCreativeLibraryData } from './mock-creatives';
 
 export async function seedMockCampaignsAndMetrics(pool: Pool) {
-  // Get existing clients
-  const clientsResult = await pool.query('SELECT id, name FROM clients LIMIT 2');
-  const clients = clientsResult.rows;
+  const resolveTargetClients = async () => {
+    const raw = process.env.MOCK_SEED_CLIENT_IDS;
+    if (raw) {
+      const ids = raw
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
 
-  if (clients.length < 2) {
-    console.warn('Need at least 2 clients in database to seed mock data');
-    return;
-  }
+      if (ids.length < 2) {
+        throw new Error('MOCK_SEED_CLIENT_IDS must contain at least 2 client IDs (comma-separated).');
+      }
+
+      const result = await pool.query('SELECT id, name FROM clients WHERE id = ANY($1::text[])', [ids]);
+      if (result.rows.length < 2) {
+        throw new Error('MOCK_SEED_CLIENT_IDS did not match at least 2 existing clients.');
+      }
+
+      const byId = new Map<string, { id: string; name: string }>(
+        result.rows.map((row) => [String(row.id), { id: String(row.id), name: String(row.name) }])
+      );
+
+      return [byId.get(ids[0]) ?? result.rows[0], byId.get(ids[1]) ?? result.rows[1]];
+    }
+
+    // Default behavior: seed dedicated demo clients, so we don't pollute real customers.
+    const demoA = {
+      id: uuidv4(),
+      name: 'Cliente Demo A (Mock Data)',
+      email: 'demo.a@local.test',
+      tier: 'premium',
+      status: 'inactive',
+      contractStart: new Date('2026-01-01'),
+      budget: 10000,
+    };
+    const demoB = {
+      id: uuidv4(),
+      name: 'Cliente Demo B (Mock Data)',
+      email: 'demo.b@local.test',
+      tier: 'standard',
+      status: 'inactive',
+      contractStart: new Date('2026-01-01'),
+      budget: 6000,
+    };
+
+    await pool.query(
+      `INSERT INTO clients (id, name, email, tier, status, "contractStart", budget, "createdAt", "updatedAt")
+       VALUES
+         ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()),
+         ($8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+       ON CONFLICT (email) DO NOTHING`,
+      [
+        demoA.id,
+        demoA.name,
+        demoA.email,
+        demoA.tier,
+        demoA.status,
+        demoA.contractStart,
+        demoA.budget,
+        demoB.id,
+        demoB.name,
+        demoB.email,
+        demoB.tier,
+        demoB.status,
+        demoB.contractStart,
+        demoB.budget,
+      ]
+    );
+
+    const demoResult = await pool.query(
+      'SELECT id, name, email FROM clients WHERE email IN ($1, $2)',
+      [demoA.email, demoB.email]
+    );
+
+    const byEmail = new Map<string, { id: string; name: string }>(
+      demoResult.rows.map((row) => [String(row.email), { id: String(row.id), name: String(row.name) }])
+    );
+    const clientA = byEmail.get(demoA.email);
+    const clientB = byEmail.get(demoB.email);
+
+    if (!clientA || !clientB) {
+      console.warn('Failed to create demo clients. Aborting seed.');
+      return null;
+    }
+
+    return [clientA, clientB];
+  };
+
+  const clients = await resolveTargetClients();
+  if (!clients) return;
 
   const [client1, client2] = clients;
+
+  // Keep seed idempotent: remove previous mock campaigns for these clients.
+  await pool.query(
+    `DELETE FROM campaigns
+     WHERE "clientId" = ANY($1::text[])
+       AND ("externalId" LIKE 'meta-%' OR "externalId" LIKE 'google-%')`,
+    [[client1.id, client2.id]]
+  );
 
   // Create campaigns for client 1
   const camp1Id = uuidv4();
@@ -32,7 +122,7 @@ export async function seedMockCampaignsAndMetrics(pool: Pool) {
       camp1Id,
       `meta-${camp1Id}`,
       client1.id,
-      'Meta Ads - Leads Q1 2026',
+      '[TRABALHISTA] Rescisão indireta - WhatsApp',
       'meta',
       5000,
       'active',
@@ -55,7 +145,7 @@ export async function seedMockCampaignsAndMetrics(pool: Pool) {
     `INSERT INTO campaigns (id, "externalId", "clientId", name, platform, budget, status, spent, "createdAt", "updatedAt")
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
      ON CONFLICT ("externalId") DO NOTHING`,
-    [camp3Id, `meta-${camp3Id}`, client2.id, 'Meta Ads - Brand Awareness', 'meta', 7000, 'active', 0]
+    [camp3Id, `meta-${camp3Id}`, client2.id, '[MATERNIDADE] Salário maternidade - WhatsApp', 'meta', 7000, 'active', 0]
   );
 
   // Generate daily metrics for last 30 days
@@ -185,6 +275,16 @@ export async function seedMockCampaignsAndMetrics(pool: Pool) {
         metric.platform,
       ]
     );
+  }
+
+  // Seed mock creatives/adsets (non-fatal when tables are missing)
+  try {
+    await seedMockCreativeLibraryData(pool, [
+      { campaignId: camp1Id, label: '[TRABALHISTA] Rescisão indireta - WhatsApp' },
+      { campaignId: camp3Id, label: '[MATERNIDADE] Salário maternidade - WhatsApp' },
+    ]);
+  } catch (error) {
+    console.warn('⚠️  Failed to seed mock creative library data:', error instanceof Error ? error.message : error);
   }
 
   // Initialize BPMN progress for both clients

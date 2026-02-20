@@ -1,0 +1,14 @@
+export { default as healthRoutes } from './health.routes';
+export { default as authRoutes } from './auth.routes';
+export { default as clientRoutes } from './client.routes';
+export { default as campaignRoutes } from './campaign.routes';
+export { default as metricsRoutes } from './metrics.routes';
+export { default as metaSyncRoutes } from './meta-sync.routes';
+export { default as metaDiscoveryRoutes } from './meta-discovery.routes';
+export { default as bpmnRoutes } from './bpmn.routes';
+export { default as dashboardRoutes } from './dashboard.routes';
+export { default as reportRoutes } from './report.routes';
+export { default as processRoutes } from './process.routes';
+export { default as leadTrackingRoutes } from './lead-tracking.routes';
+export { default as analyticsRoutes } from './analytics.routes';
+export { default as commercialLeadsRoutes } from './commercial-leads.routes';

@@ -53,10 +53,16 @@ export interface DailyMetric {
   clicks: number;
   conversions: number;
   spend: number;
+  revenue: number;
   ctr: number;
   cpc: number;
   cpl: number;
   roas: number;
+  // Lead Generation fields (optional for backward compatibility)
+  messagingConversations?: number;
+  messagingFirstReply?: number;
+  linkClicks?: number;
+  landingPageViews?: number;
 }
 
 export interface CampaignAd {
@@ -94,6 +100,16 @@ export interface PerformanceSummary {
   campaignId: string;
   campaignName: string;
   platform: string;
+  objective?: string | null;
+  objectiveMeta?: {
+    optimizationGoal?: string | null;
+    destinationType?: string | null;
+    billingEvent?: string | null;
+  } | null;
+  leadsResponded?: number;
+  avgResponseTimeHours?: number | null;
+  optimizationThemeKey?: string | null;
+  optimizationSubthemeKey?: string | null;
   period: {
     start: string;
     end: string;
@@ -105,6 +121,21 @@ export interface PerformanceSummary {
   totalConversions: number;
   totalSpend: number;
   totalRevenue: number;
+  totalLeads: number;
+
+  // Lead Generation Metrics (for service businesses)
+  totalMessagingConversations: number;
+  totalMessagingFirstReply: number;
+  totalLinkClicks: number;
+  totalLandingPageViews: number;
+
+  // Campaign Health Metrics
+  totalReach: number;
+  avgFrequency: number;
+  avgCpm: number;
+  qualityRanking?: string | null;
+  engagementRateRanking?: string | null;
+  conversionRateRanking?: string | null;
 
   // Averages
   avgCtr: number;
@@ -118,6 +149,9 @@ export interface PerformanceSummary {
   budgetUsed: number;
   budgetRemaining: number;
   budgetUtilization: number; // %
+  budgetType?: 'daily' | 'lifetime' | 'adset_daily' | 'adset_lifetime' | 'unknown';
+  budgetPeriod?: number;
+  budgetMode?: 'abo' | 'cbo' | 'mixed' | 'unknown';
 
   // Trends
   dailyMetrics: DailyMetric[];
@@ -138,8 +172,57 @@ export interface PerformanceSummary {
     targetConversions?: number;
   };
 
+  learningSummary?: LearningSummary | null;
+
   // Performance Status
   status: 'excellent' | 'good' | 'fair' | 'poor';
+}
+
+export interface LearningSummary {
+  adsetCount: number;
+  statusCounts: {
+    learning: number;
+    limited: number;
+    active: number;
+    unknown: number;
+  };
+  eventTarget: number;
+  eventLabel: string;
+  adsetsMeetingTarget: number;
+  adsetsBelowTarget: number;
+  totalEventsInWindow: number;
+  avgEventsPerAdset: number;
+  avgCostPerEvent: number | null;
+  budgetDailyAverage: number | null;
+  budgetDailyRequired: number | null;
+  budgetAdequateCount: number;
+  budgetUnknownCount: number;
+  windowBasis: 'since_start' | 'since_reset' | 'mixed' | 'unknown';
+  adsetsUsingStartAnchor: number;
+  adsetsUsingResetAnchor: number;
+  anchorRange: {
+    min?: string | null;
+    max?: string | null;
+  };
+  dataCoverage: {
+    withStartAnchor: number;
+    withLastEdit: number;
+    withLearningStatus: number;
+    withEventData: number;
+    withBudgetData: number;
+  };
+  lastEditRange: {
+    min?: string | null;
+    max?: string | null;
+  };
+  conclusion:
+    | 'passed'
+    | 'learning'
+    | 'learning_limited'
+    | 'events_low'
+    | 'budget_low'
+    | 'insufficient_data';
+  notes?: string;
 }
 
 export interface ClientPerformanceSummary {
@@ -160,18 +243,36 @@ export interface ClientPerformanceSummary {
   totalConversions: number;
   totalSpend: number;
   totalRevenue: number;
+  totalLeads: number; // Added explicitly
+
+  // Lead Generation Metrics (aggregated)
+  totalMessagingConversations: number;
+  totalMessagingFirstReply: number;
+  totalLinkClicks: number;
+  totalLandingPageViews: number;
+
+  // Campaign Health Metrics (aggregated)
+  totalReach: number;
+  avgFrequency: number;
+  avgCpm: number;
+
 
   // Overall performance
   avgCtr: number;
   avgCpl: number;
+  avgCpa: number;
   avgRoas: number;
 
   // Per campaign breakdown
   campaigns: PerformanceSummary[];
 
+  // Daily Aggregated Metrics (for charts)
+  dailyMetrics: DailyMetric[];
+
   // BPMN Progress
   bpmnProgress?: BPMNProgress;
 }
+
 
 export interface BPMNProgress {
   id: string;
@@ -215,7 +316,7 @@ export interface BPMNProgress {
 export interface MonthlyReport {
   id: string;
   clientId: string;
-  reportType: 'monthly' | 'quarterly' | 'custom';
+  reportType: 'monthly' | 'weekly' | 'quarterly' | 'custom';
   periodStart: string;
   periodEnd: string;
   title: string;
@@ -223,9 +324,16 @@ export interface MonthlyReport {
   // Data snapshot
   summaryData: {
     performance: ClientPerformanceSummary;
-    insights: string[];
-    recommendations: string[];
-    highlights: string[];
+    aiContent?: AIReportContent;
+    leadFunnel?: ClientLeadFunnelSummary | null;
+    aiMeta?: {
+      promptId?: string | null;
+      promptVersion?: string | null;
+      model?: string | null;
+    };
+    insights?: string[];
+    recommendations?: string[];
+    highlights?: string[];
   };
 
   // File info
@@ -242,6 +350,24 @@ export interface MonthlyReport {
   metadata?: any;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AIReportContent {
+  executiveSummary: string;
+  interpretation: string;
+  positives: string[];
+  improvements: string[];
+  recommendations: string[];
+}
+
+export interface ClientLeadFunnelSummary {
+  recordsCount: number;
+  totalQualifiedLeads: number;
+  totalContractsClosed: number;
+  totalRevenueGenerated: number;
+  qualificationRate: number | null; // % of qualified over total contacts (conversations)
+  costPerQualifiedLead: number | null; // Spend / totalQualifiedLeads
+  disqualificationReasons: Record<string, number>;
 }
 
 // Utility Types

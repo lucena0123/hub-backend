@@ -19,6 +19,8 @@ export const campaignCreateSchema = z.object({
   }),
   budget: z.number().positive('Budget must be positive').max(10_000_000, 'Budget exceeds maximum'),
   externalId: z.string().max(100).optional(),
+  optimizationThemeKey: z.string().max(100).optional(),
+  optimizationSubthemeKey: z.string().max(100).optional(),
   status: z.enum(campaignStatuses).optional().default('active'),
 });
 
@@ -33,6 +35,8 @@ export const campaignUpdateSchema = z.object({
   budget: z.number().positive('Budget must be positive').max(10_000_000).optional(),
   status: z.enum(campaignStatuses).optional(),
   spent: z.number().min(0, 'Spent cannot be negative').optional(),
+  optimizationThemeKey: z.string().max(100).nullable().optional(),
+  optimizationSubthemeKey: z.string().max(100).nullable().optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided for update',
 });

@@ -1,5 +1,6 @@
 # IDE / Editor
 .claude/
+.agent/
 .vscode/
 .idea/
 *.swp
@@ -12,11 +13,13 @@ backend/node_modules/
 
 # Generated files
 backend/reports/
+backend/coverage/
 dist/
 build/
 .next/
 out/
 *.js.map
+*.bak
 
 # Environment
 .env
@@ -27,6 +30,7 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
+nul
 
 # Logs
 logs/

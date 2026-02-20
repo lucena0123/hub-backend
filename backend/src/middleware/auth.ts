@@ -21,7 +21,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   try {
     await request.jwtVerify();
   } catch (err) {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: 'Unauthorized',
       message: 'Invalid or expired token',
     });
@@ -31,7 +31,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 /**
  * Optional auth - sets user if token present, but doesn't block
  */
-export async function optionalAuth(request: FastifyRequest, reply: FastifyReply) {
+export async function optionalAuth(request: FastifyRequest, _reply: FastifyReply) {
   try {
     await request.jwtVerify();
   } catch {

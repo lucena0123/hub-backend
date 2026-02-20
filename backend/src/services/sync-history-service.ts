@@ -1,33 +1,29 @@
-/**
- * Sync History Service
- * Tracks external platform sync operations
- */
-
-import { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface SyncHistoryRecord {
   id: string;
   platform: string;
   accountId?: string;
-  dateRangeStart: string;
-  dateRangeEnd: string;
+  dateRangeStart: string | Date;
+  dateRangeEnd: string | Date;
   status: 'success' | 'failed' | 'partial';
   totalInsights: number;
   mappedCampaigns: number;
   updatedMetrics: number;
   unmappedCampaigns: string[];
-  durationMs: number;
+  durationMs: number | null;
   startedAt: Date;
-  completedAt: Date;
+  completedAt: Date | null;
   errorMessage?: string;
   errorStack?: string;
   dryRun: boolean;
   triggeredBy?: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export class SyncHistoryService {
-  constructor(private pool: Pool) {}
+  constructor(private prisma: PrismaClient) { }
 
   /**
    * Create a new sync history record
@@ -39,25 +35,50 @@ export class SyncHistoryService {
     dateRangeEnd: string;
     dryRun: boolean;
     triggeredBy?: string;
+    metadata?: Record<string, unknown> | null;
   }): Promise<string> {
     const id = uuidv4();
-    await this.pool.query(
-      `INSERT INTO sync_history
-       (id, platform, account_id, date_range_start, date_range_end,
-        status, started_at, dry_run, triggered_by)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
-      [
+
+    // Convert metadata to Prisma-compatible JSON
+    const metadataJson = data.metadata ? JSON.parse(JSON.stringify(data.metadata)) : null;
+
+    await this.prisma.syncHistory.create({
+      data: {
         id,
-        data.platform,
-        data.accountId,
-        data.dateRangeStart,
-        data.dateRangeEnd,
-        'success', // Will be updated later
-        data.dryRun,
-        data.triggeredBy || 'manual',
-      ]
-    );
+        platform: data.platform,
+        accountId: data.accountId,
+        dateRangeStart: new Date(data.dateRangeStart),
+        dateRangeEnd: new Date(data.dateRangeEnd),
+        status: 'success', // Initial status, will be updated later? typically 'running'
+        // The original code set it to 'success' initially, which is odd. 
+        // Logic might be: create record -> do work -> update record.
+        // But original code has status 'success' in insert. 
+        // Let's stick to original behavior or better yet 'running'? 
+        // Original: status: 'success' in INSERT.
+        // Let's keep it 'success' for compatibility with existing logic which might rely on it, 
+        // though 'running' makes more sense.
+        // Wait, looking at original code:
+        // status, values: 'success'.
+        // then updateSyncSuccess sets it to 'success' or 'partial'.
+        // updateSyncFailure sets to 'failed'.
+        // So it starts as success? That's weird but I'll replicate.
+        startedAt: new Date(),
+        dryRun: data.dryRun,
+        triggeredBy: data.triggeredBy || 'manual',
+        metadata: metadataJson,
+      }
+    });
+
     return id;
+  }
+
+  async updateSyncMetadata(syncId: string, metadata: Record<string, unknown> | null): Promise<void> {
+    const metadataJson = metadata ? JSON.parse(JSON.stringify(metadata)) : null;
+
+    await this.prisma.syncHistory.update({
+      where: { id: syncId },
+      data: { metadata: metadataJson }
+    });
   }
 
   /**
@@ -71,28 +92,22 @@ export class SyncHistoryService {
       updatedMetrics: number;
       unmappedCampaigns: string[];
       durationMs: number;
+      partial?: boolean;
     }
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE sync_history
-       SET status = $1,
-           total_insights = $2,
-           mapped_campaigns = $3,
-           updated_metrics = $4,
-           unmapped_campaigns = $5,
-           duration_ms = $6,
-           completed_at = NOW()
-       WHERE id = $7`,
-      [
-        data.unmappedCampaigns.length > 0 ? 'partial' : 'success',
-        data.totalInsights,
-        data.mappedCampaigns,
-        data.updatedMetrics,
-        data.unmappedCampaigns,
-        data.durationMs,
-        syncId,
-      ]
-    );
+    const isPartial = Boolean(data.partial) || data.unmappedCampaigns.length > 0;
+    await this.prisma.syncHistory.update({
+      where: { id: syncId },
+      data: {
+        status: isPartial ? 'partial' : 'success',
+        totalInsights: data.totalInsights,
+        mappedCampaigns: data.mappedCampaigns,
+        updatedMetrics: data.updatedMetrics,
+        unmappedCampaigns: data.unmappedCampaigns,
+        durationMs: data.durationMs,
+        completedAt: new Date()
+      }
+    });
   }
 
   /**
@@ -103,16 +118,16 @@ export class SyncHistoryService {
     error: Error,
     durationMs: number
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE sync_history
-       SET status = $1,
-           error_message = $2,
-           error_stack = $3,
-           duration_ms = $4,
-           completed_at = NOW()
-       WHERE id = $5`,
-      ['failed', error.message, error.stack, durationMs, syncId]
-    );
+    await this.prisma.syncHistory.update({
+      where: { id: syncId },
+      data: {
+        status: 'failed',
+        errorMessage: error.message,
+        errorStack: error.stack,
+        durationMs: durationMs,
+        completedAt: new Date()
+      }
+    });
   }
 
   /**
@@ -126,60 +141,54 @@ export class SyncHistoryService {
   }): Promise<SyncHistoryRecord[]> {
     const { platform = 'meta', accountId, limit = 20, offset = 0 } = options;
 
-    const conditions = ['platform = $1'];
-    const params: any[] = [platform];
+    const where: any = { platform };
+    if (accountId) where.accountId = accountId;
 
-    if (accountId) {
-      params.push(accountId);
-      conditions.push(`account_id = $${params.length}`);
-    }
+    const rows = await this.prisma.syncHistory.findMany({
+      where,
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+      skip: offset
+    });
 
-    const result = await this.pool.query(
-      `SELECT
-         id, platform, account_id as "accountId",
-         date_range_start as "dateRangeStart",
-         date_range_end as "dateRangeEnd",
-         status, total_insights as "totalInsights",
-         mapped_campaigns as "mappedCampaigns",
-         updated_metrics as "updatedMetrics",
-         unmapped_campaigns as "unmappedCampaigns",
-         duration_ms as "durationMs",
-         started_at as "startedAt",
-         completed_at as "completedAt",
-         error_message as "errorMessage",
-         dry_run as "dryRun",
-         triggered_by as "triggeredBy"
-       FROM sync_history
-       WHERE ${conditions.join(' AND ')}
-       ORDER BY started_at DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-
-    return result.rows;
+    return rows.map((row: any) => ({
+      id: row.id,
+      platform: row.platform,
+      accountId: row.accountId || undefined,
+      dateRangeStart: row.dateRangeStart,
+      dateRangeEnd: row.dateRangeEnd,
+      status: row.status as any,
+      totalInsights: row.totalInsights,
+      mappedCampaigns: row.mappedCampaigns,
+      updatedMetrics: row.updatedMetrics,
+      unmappedCampaigns: row.unmappedCampaigns,
+      durationMs: row.durationMs,
+      startedAt: row.startedAt,
+      completedAt: row.completedAt,
+      errorMessage: row.errorMessage || undefined,
+      errorStack: row.errorStack || undefined,
+      dryRun: row.dryRun,
+      triggeredBy: row.triggeredBy || undefined,
+      metadata: row.metadata as any
+    }));
   }
 
   /**
    * Get last successful sync timestamp
    */
   async getLastSuccessfulSync(platform: string, accountId?: string): Promise<Date | null> {
-    const conditions = ['platform = $1', "status = 'success'"];
-    const params: any[] = [platform];
+    const where: any = {
+      platform,
+      status: 'success'
+    };
+    if (accountId) where.accountId = accountId;
 
-    if (accountId) {
-      params.push(accountId);
-      conditions.push(`account_id = $${params.length}`);
-    }
+    const last = await this.prisma.syncHistory.findFirst({
+      where,
+      orderBy: { completedAt: 'desc' },
+      select: { completedAt: true }
+    });
 
-    const result = await this.pool.query(
-      `SELECT completed_at
-       FROM sync_history
-       WHERE ${conditions.join(' AND ')}
-       ORDER BY completed_at DESC
-       LIMIT 1`,
-      params
-    );
-
-    return result.rows[0]?.completed_at || null;
+    return last?.completedAt || null;
   }
 }

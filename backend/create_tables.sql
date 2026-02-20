@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "clients" (
   "id" TEXT PRIMARY KEY,
   "name" TEXT NOT NULL,
   "email" TEXT UNIQUE NOT NULL,
+  "metaAdAccountId" TEXT,
   "tier" TEXT NOT NULL,
   "status" TEXT NOT NULL,
   "contractStart" TIMESTAMP NOT NULL,

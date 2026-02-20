@@ -8,22 +8,24 @@ export interface ClientCreateData {
   name: string;
   email: string;
   cpfCnpj?: string;
-  tier?: 'basic' | 'premium' | 'enterprise';
+  metaAdAccountId?: string;
+  tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget: number;
   contractStart: string;
-  contractEnd: string;
+  contractEnd?: string | null;
 }
 
 export interface ClientUpdateData {
   name?: string;
   email?: string;
   cpfCnpj?: string;
-  tier?: 'basic' | 'premium' | 'enterprise';
+  metaAdAccountId?: string | null;
+  tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget?: number;
   contractStart?: string;
-  contractEnd?: string;
+  contractEnd?: string | null;
 }
 
 export interface ValidationError {
@@ -63,9 +65,7 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
     }
   }
 
-  if (!data.contractEnd) {
-    errors.push({ field: 'contractEnd', message: 'Contract end date is required' });
-  } else {
+  if (data.contractEnd !== undefined && data.contractEnd !== null && data.contractEnd !== '') {
     const endDate = new Date(data.contractEnd);
     if (isNaN(endDate.getTime())) {
       errors.push({ field: 'contractEnd', message: 'Invalid contract end date format' });
@@ -93,9 +93,21 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
     }
   }
 
+  // Optional Meta Ad Account ID validation
+  if (data.metaAdAccountId !== undefined && data.metaAdAccountId !== null) {
+    if (typeof data.metaAdAccountId !== 'string') {
+      errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must be a string' });
+    } else {
+      const normalized = data.metaAdAccountId.trim().replace(/^act_/i, '');
+      if (normalized.length > 0 && !/^\d+$/.test(normalized)) {
+        errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must contain only digits' });
+      }
+    }
+  }
+
   // Validate tier if provided
-  if (data.tier && !['basic', 'premium', 'enterprise'].includes(data.tier)) {
-    errors.push({ field: 'tier', message: 'Tier must be basic, premium, or enterprise' });
+  if (data.tier && !['basic', 'standard', 'premium', 'enterprise'].includes(data.tier)) {
+    errors.push({ field: 'tier', message: 'Tier must be basic, standard, premium, or enterprise' });
   }
 
   // Validate status if provided
@@ -146,7 +158,7 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
     }
   }
 
-  if (data.contractEnd !== undefined) {
+  if (data.contractEnd !== undefined && data.contractEnd !== null && data.contractEnd !== '') {
     const endDate = new Date(data.contractEnd);
     if (isNaN(endDate.getTime())) {
       errors.push({ field: 'contractEnd', message: 'Invalid contract end date format' });
@@ -169,9 +181,21 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
     }
   }
 
+  // Meta Ad Account ID validation (if provided)
+  if (data.metaAdAccountId !== undefined && data.metaAdAccountId !== null) {
+    if (typeof data.metaAdAccountId !== 'string') {
+      errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must be a string' });
+    } else {
+      const normalized = data.metaAdAccountId.trim().replace(/^act_/i, '');
+      if (normalized.length > 0 && !/^\d+$/.test(normalized)) {
+        errors.push({ field: 'metaAdAccountId', message: 'Meta Ad Account ID must contain only digits' });
+      }
+    }
+  }
+
   // Tier validation (if provided)
-  if (data.tier !== undefined && !['basic', 'premium', 'enterprise'].includes(data.tier)) {
-    errors.push({ field: 'tier', message: 'Tier must be basic, premium, or enterprise' });
+  if (data.tier !== undefined && !['basic', 'standard', 'premium', 'enterprise'].includes(data.tier)) {
+    errors.push({ field: 'tier', message: 'Tier must be basic, standard, premium, or enterprise' });
   }
 
   // Status validation (if provided)
@@ -189,14 +213,16 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
  * Prepares client data for database insertion
  */
 export function prepareClientData(data: ClientCreateData): any {
+  const normalizedMetaAdAccountId = data.metaAdAccountId?.trim().replace(/^act_/i, '') || null;
   return {
     name: data.name.trim(),
     email: data.email.toLowerCase().trim(),
     cpfCnpj: data.cpfCnpj?.replace(/\D/g, '') || null,
+    metaAdAccountId: normalizedMetaAdAccountId,
     tier: data.tier || calculateTier(data.budget),
     status: data.status || 'active',
     budget: data.budget,
     contractStart: data.contractStart,
-    contractEnd: data.contractEnd,
+    contractEnd: data.contractEnd ?? null,
   };
 }

@@ -1,360 +1,139 @@
-/**
- * Metrics Service
- * Handles all campaign performance calculations and aggregations
- */
-
-import { Pool } from 'pg';
-import type {
-  CampaignMetrics,
-  DailyMetric,
-  PerformanceSummary,
-  ClientPerformanceSummary,
-  MetricsQuery,
-} from '../types/metrics';
+import { PrismaClient } from '@prisma/client';
+import type { DailyMetric, MetricsQuery, PerformanceSummary } from '../types/metrics';
+import { calculateCPL } from './metrics/calculations';
+import { getClientPerformanceSummary } from './metrics/get-client-performance-summary';
+import { getPerformanceSummary } from './metrics/get-performance-summary';
+import { getCampaignMetrics as fetchCampaignMetrics } from './metrics/get-campaign-metrics';
+// We will need to update getClientPerformanceSummary to accept PrismaClient or refactor it completely.
+// For now, let's keep the signature compatible or update usage.
 
 export class MetricsService {
-  constructor(private pool: Pool) {}
+  constructor(private prisma: PrismaClient) { }
 
   /**
-   * Calculate CPL (Cost Per Lead)
+   * Get metrics for a specific campaign
    */
-  calculateCPL(spend: number, leads: number): number {
-    if (leads === 0) return 0;
-    return Number((spend / leads).toFixed(2));
+  async getCampaignMetrics(campaignId: string, query: MetricsQuery = {}): Promise<DailyMetric[]> {
+    return fetchCampaignMetrics(this.prisma, campaignId, query);
   }
 
   /**
-   * Calculate CPA (Cost Per Acquisition/Conversion)
+   * Import or update metrics
    */
-  calculateCPA(spend: number, conversions: number): number {
-    if (conversions === 0) return 0;
-    return Number((spend / conversions).toFixed(2));
-  }
+  async importMetrics(metrics: any[], overwrite = false) {
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
 
-  /**
-   * Calculate CPC (Cost Per Click)
-   */
-  calculateCPC(spend: number, clicks: number): number {
-    if (clicks === 0) return 0;
-    return Number((spend / clicks).toFixed(2));
-  }
+    for (const entry of metrics) {
+      // Basic upsert logic. 
+      // Optimized batching could be done with createMany but conflicting on (campaignId, date, platform)
+      // Prisma createMany doesn't support ON CONFLICT update in all databases easily via API yet (skipDuplicates exists).
+      // For overwrite=true, we want update. For overwrite=false, we want skip.
 
-  /**
-   * Calculate CTR (Click-Through Rate) in percentage
-   */
-  calculateCTR(clicks: number, impressions: number): number {
-    if (impressions === 0) return 0;
-    return Number(((clicks / impressions) * 100).toFixed(2));
-  }
+      const data = {
+        campaignId: entry.campaignId,
+        date: new Date(entry.date),
+        platform: entry.platform || 'other', // We might need to fetch platform if not provided
+        impressions: entry.impressions,
+        clicks: entry.clicks,
+        spend: entry.spend,
+        conversions: entry.conversions,
+        revenue: entry.revenue,
+        leads: entry.leads,
+        // Calculated fields - simplistic version, simpler to calculate in DB or App?
+        // Let's calculate them here
+        ctr: entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0,
+        cpc: entry.clicks > 0 ? entry.spend / entry.clicks : 0,
+        cpl: entry.leads > 0 ? entry.spend / entry.leads : 0,
+        cpa: entry.conversions > 0 ? entry.spend / entry.conversions : 0,
+        roas: entry.spend > 0 ? entry.revenue / entry.spend : 0,
+      };
 
-  /**
-   * Calculate ROAS (Return on Ad Spend)
-   */
-  calculateROAS(revenue: number, spend: number): number {
-    if (spend === 0) return 0;
-    return Number((revenue / spend).toFixed(2));
-  }
-
-  /**
-   * Get campaign metrics for a specific period
-   */
-  async getCampaignMetrics(
-    campaignId: string,
-    query: MetricsQuery = {}
-  ): Promise<DailyMetric[]> {
-    const { period = '30d', startDate, endDate, platform } = query;
-
-    // Calculate date range
-    const dates = this.getDateRange(period, startDate, endDate);
-
-    const queryParams: any[] = [campaignId, dates.start, dates.end];
-    let platformFilter = '';
-
-    if (platform) {
-      queryParams.push(platform);
-      platformFilter = 'AND platform = $4';
-    }
-
-    const result = await this.pool.query(
-      `SELECT
-        date,
-        SUM(impressions) as impressions,
-        SUM(clicks) as clicks,
-        SUM(conversions) as conversions,
-        SUM(spend) as spend,
-        AVG(ctr) as ctr,
-        AVG(cpc) as cpc,
-        AVG(cpl) as cpl,
-        AVG(roas) as roas
-      FROM campaign_metrics
-      WHERE campaign_id = $1
-        AND date >= $2
-        AND date <= $3
-        ${platformFilter}
-      GROUP BY date
-      ORDER BY date ASC`,
-      queryParams
-    );
-
-    return result.rows.map((row) => ({
-      date: row.date.toISOString().split('T')[0],
-      impressions: parseInt(row.impressions) || 0,
-      clicks: parseInt(row.clicks) || 0,
-      conversions: parseInt(row.conversions) || 0,
-      spend: parseFloat(row.spend) || 0,
-      ctr: parseFloat(row.ctr) || 0,
-      cpc: parseFloat(row.cpc) || 0,
-      cpl: parseFloat(row.cpl) || 0,
-      roas: parseFloat(row.roas) || 0,
-    }));
-  }
-
-  /**
-   * Get performance summary for a campaign
-   */
-  async getPerformanceSummary(
-    campaignId: string,
-    query: MetricsQuery = {}
-  ): Promise<PerformanceSummary> {
-    const { period = '30d', startDate, endDate } = query;
-    const dates = this.getDateRange(period, startDate, endDate);
-
-    // Get campaign info
-    const campaignResult = await this.pool.query(
-      'SELECT name, platform, budget FROM campaigns WHERE id = $1',
-      [campaignId]
-    );
-
-    if (campaignResult.rows.length === 0) {
-      throw new Error('Campaign not found');
-    }
-
-    const campaign = campaignResult.rows[0];
-
-    // Get aggregated metrics
-    const metricsResult = await this.pool.query(
-      `SELECT
-        SUM(impressions) as total_impressions,
-        SUM(clicks) as total_clicks,
-        SUM(conversions) as total_conversions,
-        SUM(spend) as total_spend,
-        SUM(revenue) as total_revenue,
-        SUM(leads) as total_leads
-      FROM campaign_metrics
-      WHERE campaign_id = $1
-        AND date >= $2
-        AND date <= $3`,
-      [campaignId, dates.start, dates.end]
-    );
-
-    const metrics = metricsResult.rows[0];
-    const totalImpressions = parseInt(metrics.total_impressions) || 0;
-    const totalClicks = parseInt(metrics.total_clicks) || 0;
-    const totalConversions = parseInt(metrics.total_conversions) || 0;
-    const totalSpend = parseFloat(metrics.total_spend) || 0;
-    const totalRevenue = parseFloat(metrics.total_revenue) || 0;
-    const totalLeads = parseInt(metrics.total_leads) || 0;
-
-    // Calculate averages
-    const avgCtr = this.calculateCTR(totalClicks, totalImpressions);
-    const avgCpc = this.calculateCPC(totalSpend, totalClicks);
-    const avgCpl = this.calculateCPL(totalSpend, totalLeads);
-    const avgCpa = this.calculateCPA(totalSpend, totalConversions);
-    const roas = this.calculateROAS(totalRevenue, totalSpend);
-
-    // Budget calculations
-    const budget = parseFloat(campaign.budget) || 0;
-    const budgetUsed = totalSpend;
-    const budgetRemaining = budget - budgetUsed;
-    const budgetUtilization = budget > 0 ? (budgetUsed / budget) * 100 : 0;
-
-    // Get daily metrics for trends
-    const dailyMetrics = await this.getCampaignMetrics(campaignId, query);
-
-    // Determine performance status
-    const status = this.determinePerformanceStatus({
-      roas,
-      cpl: avgCpl,
-      ctr: avgCtr,
-      budgetUtilization,
-    });
-
-    return {
-      campaignId,
-      campaignName: campaign.name,
-      platform: campaign.platform,
-      period: {
-        start: dates.start,
-        end: dates.end,
-      },
-      totalImpressions,
-      totalClicks,
-      totalConversions,
-      totalSpend,
-      totalRevenue,
-      avgCtr,
-      avgCpc,
-      avgCpl,
-      avgCpa,
-      roas,
-      budget,
-      budgetUsed,
-      budgetRemaining,
-      budgetUtilization: Number(budgetUtilization.toFixed(2)),
-      dailyMetrics,
-      status,
-    };
-  }
-
-  /**
-   * Get client performance summary (all campaigns)
-   */
-  async getClientPerformanceSummary(
-    clientId: string,
-    query: MetricsQuery = {}
-  ): Promise<ClientPerformanceSummary> {
-    // Get client info
-    const clientResult = await this.pool.query(
-      'SELECT name FROM clients WHERE id = $1',
-      [clientId]
-    );
-
-    if (clientResult.rows.length === 0) {
-      throw new Error('Client not found');
-    }
-
-    const client = clientResult.rows[0];
-    const dates = this.getDateRange(query.period || '30d', query.startDate, query.endDate);
-
-    // Get all campaigns for this client
-    const campaignsResult = await this.pool.query(
-      'SELECT id, status FROM campaigns WHERE "clientId" = $1',
-      [clientId]
-    );
-
-    const allCampaigns = campaignsResult.rows;
-    const activeCampaigns = allCampaigns.filter((c) => c.status === 'active');
-
-    // Get performance for each campaign
-    const campaignsPerformance: PerformanceSummary[] = [];
-    for (const campaign of allCampaigns) {
       try {
-        const performance = await this.getPerformanceSummary(campaign.id, query);
-        campaignsPerformance.push(performance);
+        if (overwrite) {
+          await this.prisma.campaignMetric.upsert({
+            where: {
+              campaignId_date_platform: {
+                campaignId: data.campaignId,
+                date: data.date,
+                platform: data.platform,
+              },
+            },
+            update: data,
+            create: data,
+          });
+          updated++;
+        } else {
+          // Try create, ignore if fails (or use findUnique first)
+          // createMany with skipDuplicates is better for bulk but loop is fine for now
+          try {
+            await this.prisma.campaignMetric.create({ data });
+            imported++;
+          } catch (e: any) {
+            if (e.code === 'P2002') {
+              skipped++;
+            } else {
+              throw e;
+            }
+          }
+        }
       } catch (error) {
-        console.error(`Error getting performance for campaign ${campaign.id}:`, error);
+        console.error('Error importing metric', error);
       }
     }
 
-    // Aggregate totals
-    const totals = campaignsPerformance.reduce(
-      (acc, perf) => ({
-        impressions: acc.impressions + perf.totalImpressions,
-        clicks: acc.clicks + perf.totalClicks,
-        conversions: acc.conversions + perf.totalConversions,
-        spend: acc.spend + perf.totalSpend,
-        revenue: acc.revenue + perf.totalRevenue,
-      }),
-      { impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0 }
-    );
+    return { imported, updated, skipped };
+  }
 
-    // Calculate overall averages
-    const avgCtr = this.calculateCTR(totals.clicks, totals.impressions);
-    const avgCpl = this.calculateCPL(totals.spend, totals.conversions); // Assuming conversions = leads
-    const avgRoas = this.calculateROAS(totals.revenue, totals.spend);
+  async upsertMetric(entry: any) {
+    const data = {
+      campaignId: entry.campaignId,
+      date: new Date(entry.date),
+      platform: entry.platform || 'other',
+      impressions: entry.impressions,
+      clicks: entry.clicks,
+      spend: entry.spend,
+      conversions: entry.conversions,
+      revenue: entry.revenue,
+      leads: entry.leads,
+      ctr: entry.impressions > 0 ? (entry.clicks / entry.impressions) * 100 : 0,
+      cpc: entry.clicks > 0 ? entry.spend / entry.clicks : 0,
+      cpl: entry.leads > 0 ? entry.spend / entry.leads : 0,
+      cpa: entry.conversions > 0 ? entry.spend / entry.conversions : 0,
+      roas: entry.spend > 0 ? entry.revenue / entry.spend : 0,
+    };
 
-    return {
-      clientId,
-      clientName: client.name,
-      period: {
-        start: dates.start,
-        end: dates.end,
+    return this.prisma.campaignMetric.upsert({
+      where: {
+        campaignId_date_platform: {
+          campaignId: data.campaignId,
+          date: data.date,
+          platform: data.platform,
+        },
       },
-      totalCampaigns: allCampaigns.length,
-      activeCampaigns: activeCampaigns.length,
-      totalImpressions: totals.impressions,
-      totalClicks: totals.clicks,
-      totalConversions: totals.conversions,
-      totalSpend: totals.spend,
-      totalRevenue: totals.revenue,
-      avgCtr,
-      avgCpl,
-      avgRoas,
-      campaigns: campaignsPerformance,
-    };
+      update: data,
+      create: data,
+    });
   }
 
-  /**
-   * Helper: Get date range based on period
-   */
-  private getDateRange(
-    period: string,
-    startDate?: string,
-    endDate?: string
-  ): { start: string; end: string } {
-    if (startDate && endDate) {
-      return { start: startDate, end: endDate };
-    }
-
-    const end = new Date();
-    const start = new Date();
-
-    switch (period) {
-      case '7d':
-        start.setDate(end.getDate() - 7);
-        break;
-      case '14d':
-        start.setDate(end.getDate() - 14);
-        break;
-      case '30d':
-        start.setDate(end.getDate() - 30);
-        break;
-      case '60d':
-        start.setDate(end.getDate() - 60);
-        break;
-      case '90d':
-        start.setDate(end.getDate() - 90);
-        break;
-      default:
-        start.setDate(end.getDate() - 30);
-    }
-
-    return {
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0],
-    };
+  calculateCPL(spend: number, leads: number): number {
+    return calculateCPL(spend, leads);
   }
 
-  /**
-   * Helper: Determine performance status
-   */
-  private determinePerformanceStatus(metrics: {
-    roas: number;
-    cpl: number;
-    ctr: number;
-    budgetUtilization: number;
-  }): 'excellent' | 'good' | 'fair' | 'poor' {
-    // Simple scoring system (can be improved with industry benchmarks)
-    let score = 0;
+  // Proxy methods for now, need to be updated to use Prisma if they query DB
+  // getClientPerformanceSummary will need heavy refactoring.
+  async getClientPerformanceSummary(clientId: string, query: MetricsQuery = {}) {
+    // This function is too complex to inline right now, needs its own refactor task.
+    // For now, we need to pass the raw pool or refactor it to use Prisma.$queryRaw
+    // But we removed 'pool' from the service constructor.
+    // Option: Refactor getClientPerformanceSummary to take prisma instance and use $queryRaw.
+    return getClientPerformanceSummary(this.prisma, clientId, query);
+  }
 
-    // ROAS scoring
-    if (metrics.roas >= 4) score += 3;
-    else if (metrics.roas >= 2) score += 2;
-    else if (metrics.roas >= 1) score += 1;
-
-    // CTR scoring (assuming 2%+ is good)
-    if (metrics.ctr >= 3) score += 3;
-    else if (metrics.ctr >= 2) score += 2;
-    else if (metrics.ctr >= 1) score += 1;
-
-    // Budget utilization (not overspending)
-    if (metrics.budgetUtilization <= 100 && metrics.budgetUtilization >= 80) score += 2;
-    else if (metrics.budgetUtilization > 100) score -= 2;
-
-    // Map score to status
-    if (score >= 7) return 'excellent';
-    if (score >= 5) return 'good';
-    if (score >= 3) return 'fair';
-    return 'poor';
+  async getPerformanceSummary(campaignId: string, query: MetricsQuery = {}): Promise<PerformanceSummary> {
+    // This one also needs refactoring
+    // return getPerformanceSummary(this.prisma, campaignId, query);
+    return getPerformanceSummary(this.prisma, campaignId, query);
   }
 }
