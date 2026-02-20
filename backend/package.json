@@ -15,7 +15,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
-    "smoke:relay": "powershell -ExecutionPolicy Bypass -File ./scripts/smoke-commercial-relay.ps1"
+    "smoke:relay": "powershell -ExecutionPolicy Bypass -File ./scripts/smoke-commercial-relay.ps1",
+    "env:dispatch:n8n": "powershell -ExecutionPolicy Bypass -File ./scripts/generate-dispatch-env-from-1password.ps1"
   },
   "keywords": [
     "bpmn",
