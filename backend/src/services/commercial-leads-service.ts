@@ -676,13 +676,26 @@ export class CommercialLeadsService {
       throw new CommercialFlowError('VALIDATION_ERROR', 'templateKey é obrigatório para disparo de comunicação.');
     }
 
+    const recipient = await this.resolveDispatchRecipient(input.leadId, input.channel, input.recipient);
+    const providerResult = await this.sendDispatchToProvider({
+      leadId: input.leadId,
+      channel: input.channel,
+      stage: input.stage,
+      templateKey: input.templateKey,
+      recipient,
+      variables: input.variables || {},
+    });
+
     const event = await this.ingestIntegrationEvent({
       leadId: input.leadId,
       channel: input.channel,
       eventType: `dispatch:${input.stage}:${input.templateKey}`,
+      externalEventId: providerResult.externalEventId,
       payload: {
-        recipient: input.recipient || null,
+        recipient,
         variables: input.variables || {},
+        provider: providerResult.provider,
+        providerAck: providerResult.ack,
       },
       occurredAt: new Date().toISOString(),
     });
@@ -693,6 +706,91 @@ export class CommercialLeadsService {
       channel: input.channel,
       stage: input.stage,
       eventId: event.eventId,
+    };
+  }
+
+  private async resolveDispatchRecipient(leadId: string, channel: 'whatsapp' | 'gmail', explicitRecipient?: string): Promise<string> {
+    if (explicitRecipient?.trim()) return explicitRecipient.trim();
+
+    const lead = await this.pool.query(
+      'SELECT lead_id, whatsapp FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      [leadId],
+    );
+
+    const current = lead.rows[0];
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado para dispatch.');
+    }
+
+    if (channel === 'whatsapp' && current.whatsapp) {
+      return String(current.whatsapp);
+    }
+
+    throw new CommercialFlowError(
+      'VALIDATION_ERROR',
+      `Recipient é obrigatório para dispatch via ${channel}.`,
+    );
+  }
+
+  private async sendDispatchToProvider(input: {
+    leadId: string;
+    channel: 'whatsapp' | 'gmail';
+    stage: string;
+    templateKey: string;
+    recipient: string;
+    variables: Record<string, unknown>;
+  }): Promise<{ provider: string; externalEventId?: string; ack: Record<string, unknown> }> {
+    const webhookEnvByChannel: Record<'whatsapp' | 'gmail', string | undefined> = {
+      whatsapp: process.env.COMMERCIAL_DISPATCH_WHATSAPP_WEBHOOK_URL,
+      gmail: process.env.COMMERCIAL_DISPATCH_GMAIL_WEBHOOK_URL,
+    };
+
+    const webhookUrl = webhookEnvByChannel[input.channel];
+    if (!webhookUrl) {
+      throw new CommercialFlowError(
+        'VALIDATION_ERROR',
+        `Webhook de dispatch não configurado para canal ${input.channel}.`,
+      );
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        leadId: input.leadId,
+        channel: input.channel,
+        stage: input.stage,
+        templateKey: input.templateKey,
+        recipient: input.recipient,
+        variables: input.variables,
+        sentAt: new Date().toISOString(),
+      }),
+    });
+
+    const rawBody = await response.text();
+    let parsedBody: Record<string, unknown> = {};
+    if (rawBody) {
+      try {
+        parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
+      } catch {
+        parsedBody = { raw: rawBody };
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`Falha no dispatch para ${input.channel}: HTTP ${response.status}`);
+    }
+
+    const externalEventId =
+      (typeof parsedBody.externalEventId === 'string' && parsedBody.externalEventId) ||
+      (typeof parsedBody.messageId === 'string' && parsedBody.messageId) ||
+      (typeof parsedBody.id === 'string' && parsedBody.id) ||
+      undefined;
+
+    return {
+      provider: 'webhook',
+      externalEventId,
+      ack: parsedBody,
     };
   }
 
