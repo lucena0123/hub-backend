@@ -112,6 +112,14 @@ export interface CommercialFollowupDue {
   dueAt: string;
 }
 
+export interface CommercialRetentionAlert {
+  leadId: string;
+  nomeEscritorio: string;
+  responsavel: string;
+  retentionUntil: string;
+  daysOverdue: number;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -610,6 +618,33 @@ export class CommercialLeadsService {
       actor: row.actor || undefined,
       observacao: row.observacao || undefined,
       createdAt: row.created_at,
+    }));
+  }
+
+  async listRetentionDue(limit = 50): Promise<CommercialRetentionAlert[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const result = await this.pool.query(
+      `SELECT
+         lead_id,
+         nome_escritorio,
+         responsavel,
+         retention_until,
+         ROUND(EXTRACT(EPOCH FROM (NOW() - retention_until)) / 86400.0, 1) AS days_overdue
+       FROM commercial_leads
+       WHERE retention_until IS NOT NULL
+         AND retention_until <= NOW()
+         AND status_atual NOT IN ('perdido')
+       ORDER BY retention_until ASC
+       LIMIT $1`,
+      [safeLimit],
+    );
+
+    return result.rows.map((row) => ({
+      leadId: row.lead_id,
+      nomeEscritorio: row.nome_escritorio,
+      responsavel: row.responsavel,
+      retentionUntil: row.retention_until,
+      daysOverdue: Number(row.days_overdue || 0),
     }));
   }
 

@@ -33,6 +33,13 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.listFollowupsDue(limit);
   });
 
+  fastify.get<{
+    Querystring: { limit?: string };
+  }>('/api/comercial/privacy/retention-due', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request) => {
+    const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 20;
+    return commercialLeads.listRetentionDue(limit);
+  });
+
   fastify.post<{
     Body: {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';
