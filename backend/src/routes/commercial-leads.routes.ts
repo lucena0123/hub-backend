@@ -83,6 +83,37 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { leadId: string };
     Body: {
+      contractStatus?: 'pendente' | 'assinado';
+      paymentStatus?: 'pendente' | 'pago';
+      observacao?: string;
+    };
+  }>('/api/comercial/leads/:leadId/proofs', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.updateLeadProofs(request.params.leadId, request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  fastify.post<{
+    Params: { leadId: string };
+    Body: {
       to: CommercialLeadStatus;
       observacao?: string;
       actor?: string;

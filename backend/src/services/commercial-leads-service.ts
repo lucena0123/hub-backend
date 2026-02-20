@@ -42,6 +42,15 @@ export interface SubmitCommercialFormInput {
   submittedAt?: string;
 }
 
+export type ContractStatus = 'pendente' | 'assinado';
+export type PaymentStatus = 'pendente' | 'pago';
+
+export interface UpdateCommercialLeadProofsInput {
+  contractStatus?: ContractStatus;
+  paymentStatus?: PaymentStatus;
+  observacao?: string;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -75,6 +84,8 @@ export interface CommercialLeadRecord {
   formType?: CommercialFormType;
   formSubmittedAt?: string;
   formPayloadJson?: Record<string, unknown>;
+  contractStatus: ContractStatus;
+  paymentStatus: PaymentStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +190,8 @@ export class CommercialLeadsService {
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_type TEXT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_submitted_at TIMESTAMPTZ;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_payload_json JSONB;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS contract_status TEXT NOT NULL DEFAULT 'pendente';
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'pendente';
 
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_status ON commercial_leads(status_atual);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
@@ -278,6 +291,40 @@ export class CommercialLeadsService {
     };
   }
 
+  async updateLeadProofs(leadId: string, input: UpdateCommercialLeadProofsInput): Promise<CommercialLeadRecord> {
+    const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    const updated = await this.pool.query(
+      `UPDATE commercial_leads
+       SET contract_status = COALESCE($2, contract_status),
+           payment_status = COALESCE($3, payment_status),
+           updated_at = NOW()
+       WHERE lead_id = $1
+       RETURNING *`,
+      [leadId, input.contractStatus ?? null, input.paymentStatus ?? null],
+    );
+
+    await this.pool.query(
+      `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        uuidv4(),
+        leadId,
+        current.status_atual,
+        current.status_atual,
+        'proofs-update',
+        input.observacao || `proofs_update:${input.contractStatus || '-'}:${input.paymentStatus || '-'}`,
+      ],
+    );
+
+    return this.mapRow(updated.rows[0]);
+  }
+
   async submitLeadForm(leadId: string, input: SubmitCommercialFormInput): Promise<CommercialLeadRecord> {
     const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
     const current = existing.rows[0];
@@ -330,6 +377,13 @@ export class CommercialLeadsService {
       throw new CommercialFlowError(
         'VALIDATION_ERROR',
         'Para enviar proposta, o briefing do lead precisa estar submetido.',
+      );
+    }
+
+    if (input.to === 'fechado' && (current.contract_status !== 'assinado' || current.payment_status !== 'pago')) {
+      throw new CommercialFlowError(
+        'VALIDATION_ERROR',
+        'Para fechar o lead, assinatura e pagamento inicial devem estar confirmados.',
       );
     }
 
@@ -393,6 +447,8 @@ export class CommercialLeadsService {
       formType: row.form_type || undefined,
       formSubmittedAt: row.form_submitted_at || undefined,
       formPayloadJson: row.form_payload_json || undefined,
+      contractStatus: (row.contract_status || 'pendente') as ContractStatus,
+      paymentStatus: (row.payment_status || 'pendente') as PaymentStatus,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
