@@ -11,28 +11,34 @@
       "name": "Webhook Gmail",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [220, 280]
+      "position": [200, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('node:crypto');\n\nconst item = items[0] || { json: {} };\nconst json = item.json || {};\nconst headers = json.headers || {};\nconst signature = headers['x-dispatch-signature'] || headers['X-Dispatch-Signature'] || '';\nconst timestamp = headers['x-dispatch-timestamp'] || headers['X-Dispatch-Timestamp'] || '';\nconst secret = process.env.COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET || process.env.DISPATCH_SIGNING_SECRET || '';\n\nif (!signature || !timestamp) {\n  return [{ json: { ...json, authorized: false, error: 'MISSING_SIGNATURE_HEADERS' } }];\n}\n\nif (!secret) {\n  return [{ json: { ...json, authorized: false, error: 'MISSING_SIGNING_SECRET' } }];\n}\n\nconst body = json.body || json;\nconst payload = JSON.stringify(body);\nconst expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex');\n\nconst valid = signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));\n\nif (!valid) {\n  return [{ json: { ...json, authorized: false, error: 'INVALID_SIGNATURE' } }];\n}\n\nreturn [{ json: { ...json, authorized: true } }];"
+      },
+      "id": "Code_VerifySignature",
+      "name": "Verify HMAC Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 280]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "boolean": [
             {
-              "value1": "={{$json.headers?.['x-dispatch-signature'] || ''}}",
-              "operation": "notEmpty"
-            },
-            {
-              "value1": "={{$json.headers?.['x-dispatch-timestamp'] || ''}}",
-              "operation": "notEmpty"
+              "value1": "={{$json.authorized}}",
+              "value2": true
             }
           ]
         }
       },
-      "id": "IF_Signature",
-      "name": "Has Signature Headers",
+      "id": "IF_Authorized",
+      "name": "Authorized?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [460, 280]
+      "position": [680, 280]
     },
     {
       "parameters": {
@@ -48,7 +54,7 @@
       "name": "Build Ack",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [700, 220]
+      "position": [900, 220]
     },
     {
       "parameters": {
@@ -60,26 +66,29 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [940, 220]
+      "position": [1120, 220]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\"ok\":false,\"error\":\"MISSING_SIGNATURE_HEADERS\"}",
+        "responseBody": "={\"ok\":false,\"error\":\"{{$json.error || 'UNAUTHORIZED'}}\"}",
         "options": { "responseCode": 401 }
       },
       "id": "Respond_Unauthorized",
       "name": "Respond Unauthorized",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [940, 360]
+      "position": [1120, 360]
     }
   ],
   "connections": {
     "Webhook Gmail": {
-      "main": [[{ "node": "Has Signature Headers", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Verify HMAC Signature", "type": "main", "index": 0 }]]
     },
-    "Has Signature Headers": {
+    "Verify HMAC Signature": {
+      "main": [[{ "node": "Authorized?", "type": "main", "index": 0 }]]
+    },
+    "Authorized?": {
       "main": [
         [{ "node": "Build Ack", "type": "main", "index": 0 }],
         [{ "node": "Respond Unauthorized", "type": "main", "index": 0 }]
