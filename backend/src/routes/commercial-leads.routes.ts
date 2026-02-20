@@ -22,6 +22,10 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.listSlaAlerts(maxAgeHours, limit);
   });
 
+  fastify.get('/api/comercial/daily-summary', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async () => {
+    return commercialLeads.getDailySummary();
+  });
+
   fastify.post<{
     Body: {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';

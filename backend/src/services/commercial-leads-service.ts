@@ -69,6 +69,15 @@ export interface CommercialSlaAlert {
   hoursInStatus: number;
 }
 
+export interface CommercialDailySummary {
+  date: string;
+  novosLeads: number;
+  leadsAtrasadosSla24h: number;
+  propostasSemFollowup: number;
+  negociacoesAbertas: number;
+  fechadosHoje: number;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -373,6 +382,40 @@ export class CommercialLeadsService {
     );
 
     return this.mapRow(updated.rows[0]);
+  }
+
+  async getDailySummary(): Promise<CommercialDailySummary> {
+    const result = await this.pool.query(`
+      WITH today AS (
+        SELECT DATE_TRUNC('day', NOW()) AS start_day,
+               DATE_TRUNC('day', NOW()) + INTERVAL '1 day' AS end_day
+      )
+      SELECT
+        TO_CHAR(NOW(), 'YYYY-MM-DD') AS date,
+        (SELECT COUNT(*)::int FROM commercial_leads c, today t
+          WHERE c.data_entrada >= t.start_day AND c.data_entrada < t.end_day) AS novos_leads,
+        (SELECT COUNT(*)::int FROM commercial_leads
+          WHERE status_atual NOT IN ('fechado','perdido')
+            AND updated_at <= NOW() - INTERVAL '24 hours') AS leads_atrasados_sla_24h,
+        (SELECT COUNT(*)::int FROM commercial_leads
+          WHERE status_atual = 'proposta_enviada'
+            AND (followup_d2_at IS NULL OR followup_d5_at IS NULL)) AS propostas_sem_followup,
+        (SELECT COUNT(*)::int FROM commercial_leads
+          WHERE status_atual = 'negociacao') AS negociacoes_abertas,
+        (SELECT COUNT(*)::int FROM commercial_leads c, today t
+          WHERE c.status_atual = 'fechado'
+            AND c.updated_at >= t.start_day AND c.updated_at < t.end_day) AS fechados_hoje
+    `);
+
+    const row = result.rows[0] || {};
+    return {
+      date: row.date || new Date().toISOString().slice(0, 10),
+      novosLeads: Number(row.novos_leads || 0),
+      leadsAtrasadosSla24h: Number(row.leads_atrasados_sla_24h || 0),
+      propostasSemFollowup: Number(row.propostas_sem_followup || 0),
+      negociacoesAbertas: Number(row.negociacoes_abertas || 0),
+      fechadosHoje: Number(row.fechados_hoje || 0),
+    };
   }
 
   async listSlaAlerts(maxAgeHours = 24, limit = 50): Promise<CommercialSlaAlert[]> {
