@@ -26,6 +26,44 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.getDailySummary();
   });
 
+  fastify.post<{
+    Body: {
+      leadId: string;
+      channel: 'whatsapp' | 'gmail' | 'calendar' | 'zapsign' | 'custom';
+      eventType: string;
+      payload?: Record<string, unknown>;
+      externalEventId?: string;
+      occurredAt?: string;
+    };
+  }>('/api/comercial/integrations/events', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      if (!request.body.eventType?.trim()) {
+        reply.status(400);
+        return { error: 'VALIDATION_ERROR', message: 'eventType é obrigatório.' };
+      }
+
+      return await commercialLeads.ingestIntegrationEvent(request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   fastify.get<{
     Querystring: { limit?: string };
   }>('/api/comercial/followups/due', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {

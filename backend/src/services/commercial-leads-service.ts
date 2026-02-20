@@ -66,6 +66,15 @@ export interface UpdateCommercialLeadPrivacyInput {
   observacao?: string;
 }
 
+export interface IngestCommercialIntegrationEventInput {
+  leadId: string;
+  channel: 'whatsapp' | 'gmail' | 'calendar' | 'zapsign' | 'custom';
+  eventType: string;
+  payload?: Record<string, unknown>;
+  externalEventId?: string;
+  occurredAt?: string;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -305,6 +314,17 @@ export class CommercialLeadsService {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS commercial_integration_events (
+        id UUID PRIMARY KEY,
+        lead_id UUID NOT NULL,
+        channel TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        external_event_id TEXT,
+        payload_json JSONB,
+        occurred_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_token TEXT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_type TEXT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_submitted_at TIMESTAMPTZ;
@@ -326,6 +346,8 @@ export class CommercialLeadsService {
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_form_type ON commercial_leads(form_type);
       CREATE INDEX IF NOT EXISTS idx_commercial_transitions_lead ON commercial_lead_transitions(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_commercial_integration_events_lead ON commercial_integration_events(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_commercial_integration_events_channel ON commercial_integration_events(channel);
     `);
   }
 
@@ -582,6 +604,51 @@ export class CommercialLeadsService {
     );
 
     return this.mapRow(updated.rows[0]);
+  }
+
+  async ingestIntegrationEvent(input: IngestCommercialIntegrationEventInput): Promise<{ ok: true; eventId: string; leadId: string }> {
+    const lead = await this.pool.query(
+      'SELECT lead_id, status_atual FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      [input.leadId],
+    );
+
+    const current = lead.rows[0];
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado para o evento de integração.');
+    }
+
+    const eventId = uuidv4();
+    const occurredAt = input.occurredAt || new Date().toISOString();
+
+    await this.pool.query(
+      `INSERT INTO commercial_integration_events (
+         id, lead_id, channel, event_type, external_event_id, payload_json, occurred_at
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)`,
+      [
+        eventId,
+        input.leadId,
+        input.channel,
+        input.eventType,
+        input.externalEventId || null,
+        JSON.stringify(input.payload || {}),
+        occurredAt,
+      ],
+    );
+
+    await this.pool.query(
+      `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        uuidv4(),
+        input.leadId,
+        current.status_atual,
+        current.status_atual,
+        `integration:${input.channel}`,
+        `event:${input.eventType}`,
+      ],
+    );
+
+    return { ok: true, eventId, leadId: input.leadId };
   }
 
   async getLeadFormLink(leadId: string, formType: CommercialFormType): Promise<CommercialFormLink> {
