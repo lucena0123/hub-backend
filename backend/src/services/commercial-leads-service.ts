@@ -86,6 +86,8 @@ export interface CommercialLeadRecord {
   formPayloadJson?: Record<string, unknown>;
   contractStatus: ContractStatus;
   paymentStatus: PaymentStatus;
+  followupD2At?: string;
+  followupD5At?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -192,6 +194,8 @@ export class CommercialLeadsService {
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_payload_json JSONB;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS contract_status TEXT NOT NULL DEFAULT 'pendente';
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'pendente';
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS followup_d2_at TIMESTAMPTZ;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS followup_d5_at TIMESTAMPTZ;
 
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_status ON commercial_leads(status_atual);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
@@ -391,6 +395,16 @@ export class CommercialLeadsService {
     const nextDor02 = input.to === 'proposta_enviada' ? Boolean(input.dor02Ok) : current.dor02_ok;
     const nextDor03 = input.to === 'fechado' ? Boolean(input.dor03Ok) : current.dor03_ok;
 
+    const followupD2At =
+      input.to === 'proposta_enviada'
+        ? new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+        : current.followup_d2_at;
+
+    const followupD5At =
+      input.to === 'proposta_enviada'
+        ? new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString()
+        : current.followup_d5_at;
+
     const updated = await this.pool.query(
       `UPDATE commercial_leads
        SET status_atual = $2,
@@ -400,6 +414,8 @@ export class CommercialLeadsService {
            motivo_nutricao = $6,
            motivo_perda = $7,
            data_proxima_acao = $8,
+           followup_d2_at = $9,
+           followup_d5_at = $10,
            updated_at = NOW()
        WHERE lead_id = $1
        RETURNING *`,
@@ -412,6 +428,8 @@ export class CommercialLeadsService {
         input.to === 'nutricao' ? input.motivoNutricao || null : current.motivo_nutricao,
         input.to === 'perdido' ? input.motivoPerda || null : current.motivo_perda,
         input.to === 'nutricao' ? input.dataProximaAcao || null : current.data_proxima_acao,
+        followupD2At,
+        followupD5At,
       ],
     );
 
@@ -449,6 +467,8 @@ export class CommercialLeadsService {
       formPayloadJson: row.form_payload_json || undefined,
       contractStatus: (row.contract_status || 'pendente') as ContractStatus,
       paymentStatus: (row.payment_status || 'pendente') as PaymentStatus,
+      followupD2At: row.followup_d2_at || undefined,
+      followupD5At: row.followup_d5_at || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
