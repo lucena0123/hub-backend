@@ -107,7 +107,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       paymentStatus?: 'pendente' | 'pago';
       observacao?: string;
     };
-  }>('/api/comercial/leads/:leadId/proofs', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+  }>('/api/comercial/leads/:leadId/proofs', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       return await commercialLeads.updateLeadProofs(request.params.leadId, request.body);
     } catch (error) {
@@ -141,7 +141,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       d5D7Ok?: boolean;
       observacao?: string;
     };
-  }>('/api/comercial/leads/:leadId/onboarding', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+  }>('/api/comercial/leads/:leadId/onboarding', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       return await commercialLeads.updateLeadOnboarding(request.params.leadId, request.body);
     } catch (error) {
@@ -172,7 +172,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       retentionUntil?: string;
       observacao?: string;
     };
-  }>('/api/comercial/leads/:leadId/privacy', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+  }>('/api/comercial/leads/:leadId/privacy', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
     try {
       return await commercialLeads.updateLeadPrivacy(request.params.leadId, request.body);
     } catch (error) {
@@ -285,6 +285,12 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>('/api/comercial/leads/:leadId/move', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {
+      const role = request.user?.role;
+      if (request.body.to === 'fechado' && role !== 'admin' && role !== 'manager') {
+        reply.status(403);
+        return { error: 'Forbidden', message: 'Apenas admin/manager podem fechar leads.' };
+      }
+
       return await commercialLeads.moveLeadStatus(request.params.leadId, request.body);
     } catch (error) {
       if (error instanceof CommercialFlowError) {
