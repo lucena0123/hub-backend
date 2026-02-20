@@ -109,6 +109,17 @@ $logsWin = Join-Path $repoWin ".ops-logs"
 $backendWin = Join-Path $repoWin $BackendDir
 $frontendWin = Join-Path $repoWin $FrontendDir
 
+if (-not (Test-Path $frontendWin)) {
+    $fallbackFrontend = Join-Path $repoWin "frontend"
+    if (Test-Path $fallbackFrontend) {
+        Write-Host "FrontendDir '$FrontendDir' não encontrado. Usando fallback local 'frontend'." -ForegroundColor Yellow
+        $frontendWin = $fallbackFrontend
+    }
+    else {
+        throw "FrontendDir inválido: '$FrontendDir'. Informe um caminho existente relativo ao repo Hub."
+    }
+}
+
 New-Item -ItemType Directory -Path $logsWin -Force | Out-Null
 
 if (-not $SkipDocker) {
