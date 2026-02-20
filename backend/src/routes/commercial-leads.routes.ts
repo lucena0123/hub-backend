@@ -123,6 +123,14 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{
     Params: { leadId: string };
+    Querystring: { limit?: string };
+  }>('/api/comercial/leads/:leadId/integrations/events', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const limit = request.query.limit ? Number.parseInt(request.query.limit, 10) : 25;
+    return commercialLeads.listIntegrationEvents(request.params.leadId, limit);
+  });
+
+  fastify.get<{
+    Params: { leadId: string };
     Querystring: { formType?: 'briefing' | 'onboarding' | 'custom' };
   }>('/api/comercial/leads/:leadId/forms/link', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
     try {

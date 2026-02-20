@@ -136,6 +136,17 @@ export interface CommercialRetentionAlert {
   daysOverdue: number;
 }
 
+export interface CommercialIntegrationEvent {
+  id: string;
+  leadId: string;
+  channel: string;
+  eventType: string;
+  externalEventId?: string;
+  payload?: Record<string, unknown>;
+  occurredAt: string;
+  createdAt: string;
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -703,6 +714,29 @@ export class CommercialLeadsService {
       negociacoesAbertas: Number(row.negociacoes_abertas || 0),
       fechadosHoje: Number(row.fechados_hoje || 0),
     };
+  }
+
+  async listIntegrationEvents(leadId: string, limit = 50): Promise<CommercialIntegrationEvent[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const result = await this.pool.query(
+      `SELECT id, lead_id, channel, event_type, external_event_id, payload_json, occurred_at, created_at
+       FROM commercial_integration_events
+       WHERE lead_id = $1
+       ORDER BY occurred_at DESC
+       LIMIT $2`,
+      [leadId, safeLimit],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      leadId: row.lead_id,
+      channel: row.channel,
+      eventType: row.event_type,
+      externalEventId: row.external_event_id || undefined,
+      payload: row.payload_json || undefined,
+      occurredAt: row.occurred_at,
+      createdAt: row.created_at,
+    }));
   }
 
   async listLeadTimeline(leadId: string, limit = 50): Promise<CommercialLeadTimelineEvent[]> {
