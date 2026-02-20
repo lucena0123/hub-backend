@@ -126,6 +126,77 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { leadId: string };
     Body: {
+      d0Ok?: boolean;
+      d1Ok?: boolean;
+      d2Ok?: boolean;
+      d3D4Ok?: boolean;
+      d5D7Ok?: boolean;
+      observacao?: string;
+    };
+  }>('/api/comercial/leads/:leadId/onboarding', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.updateLeadOnboarding(request.params.leadId, request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  fastify.post<{
+    Params: { leadId: string };
+    Body: {
+      to: CommercialLeadStatus;
+      observacao?: string;
+      actor?: string;
+      dor01Ok?: boolean;
+      dor02Ok?: boolean;
+      dor03Ok?: boolean;
+      motivoNutricao?: string;
+      motivoPerda?: string;
+      dataProximaAcao?: string;
+    };
+  }>('/api/comercial/leads/:leadId/move', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.updateLeadProofs(request.params.leadId, request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  fastify.post<{
+    Params: { leadId: string };
+    Body: {
       to: CommercialLeadStatus;
       observacao?: string;
       actor?: string;

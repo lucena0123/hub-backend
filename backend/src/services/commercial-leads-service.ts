@@ -51,6 +51,15 @@ export interface UpdateCommercialLeadProofsInput {
   observacao?: string;
 }
 
+export interface UpdateCommercialLeadOnboardingInput {
+  d0Ok?: boolean;
+  d1Ok?: boolean;
+  d2Ok?: boolean;
+  d3D4Ok?: boolean;
+  d5D7Ok?: boolean;
+  observacao?: string;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -106,6 +115,11 @@ export interface CommercialLeadRecord {
   paymentStatus: PaymentStatus;
   followupD2At?: string;
   followupD5At?: string;
+  onboardingD0Ok: boolean;
+  onboardingD1Ok: boolean;
+  onboardingD2Ok: boolean;
+  onboardingD3D4Ok: boolean;
+  onboardingD5D7Ok: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +228,11 @@ export class CommercialLeadsService {
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'pendente';
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS followup_d2_at TIMESTAMPTZ;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS followup_d5_at TIMESTAMPTZ;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d0_ok BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d1_ok BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d2_ok BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d3_d4_ok BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS onboarding_d5_d7_ok BOOLEAN NOT NULL DEFAULT FALSE;
 
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_status ON commercial_leads(status_atual);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
@@ -341,6 +360,43 @@ export class CommercialLeadsService {
         current.status_atual,
         'proofs-update',
         input.observacao || `proofs_update:${input.contractStatus || '-'}:${input.paymentStatus || '-'}`,
+      ],
+    );
+
+    return this.mapRow(updated.rows[0]);
+  }
+
+  async updateLeadOnboarding(leadId: string, input: UpdateCommercialLeadOnboardingInput): Promise<CommercialLeadRecord> {
+    const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    const updated = await this.pool.query(
+      `UPDATE commercial_leads
+       SET onboarding_d0_ok = COALESCE($2, onboarding_d0_ok),
+           onboarding_d1_ok = COALESCE($3, onboarding_d1_ok),
+           onboarding_d2_ok = COALESCE($4, onboarding_d2_ok),
+           onboarding_d3_d4_ok = COALESCE($5, onboarding_d3_d4_ok),
+           onboarding_d5_d7_ok = COALESCE($6, onboarding_d5_d7_ok),
+           updated_at = NOW()
+       WHERE lead_id = $1
+       RETURNING *`,
+      [leadId, input.d0Ok ?? null, input.d1Ok ?? null, input.d2Ok ?? null, input.d3D4Ok ?? null, input.d5D7Ok ?? null],
+    );
+
+    await this.pool.query(
+      `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        uuidv4(),
+        leadId,
+        current.status_atual,
+        current.status_atual,
+        'onboarding-update',
+        input.observacao || 'onboarding_update',
       ],
     );
 
@@ -551,6 +607,11 @@ export class CommercialLeadsService {
       paymentStatus: (row.payment_status || 'pendente') as PaymentStatus,
       followupD2At: row.followup_d2_at || undefined,
       followupD5At: row.followup_d5_at || undefined,
+      onboardingD0Ok: Boolean(row.onboarding_d0_ok),
+      onboardingD1Ok: Boolean(row.onboarding_d1_ok),
+      onboardingD2Ok: Boolean(row.onboarding_d2_ok),
+      onboardingD3D4Ok: Boolean(row.onboarding_d3_d4_ok),
+      onboardingD5D7Ok: Boolean(row.onboarding_d5_d7_ok),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
