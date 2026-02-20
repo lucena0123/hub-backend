@@ -93,14 +93,24 @@ const DEFAULT_DISPATCH_TEMPLATE_BY_STAGE: Record<DispatchCommercialCommunication
   fechado: 'fechado',
 };
 
-function resolveTemplateByStage(stage: DispatchCommercialCommunicationInput['stage']): string {
+function resolveTemplateByStage(
+  channel: DispatchCommercialCommunicationInput['channel'],
+  stage: DispatchCommercialCommunicationInput['stage'],
+): string {
   const raw = process.env.COMMERCIAL_DISPATCH_TEMPLATE_MAP_JSON;
   if (!raw) return DEFAULT_DISPATCH_TEMPLATE_BY_STAGE[stage];
 
   try {
-    const parsed = JSON.parse(raw) as Partial<Record<DispatchCommercialCommunicationInput['stage'], string>>;
-    const fromEnv = parsed?.[stage]?.trim();
-    if (fromEnv) return fromEnv;
+    const parsed = JSON.parse(raw) as (
+      Partial<Record<DispatchCommercialCommunicationInput['stage'], string>>
+      & Partial<Record<DispatchCommercialCommunicationInput['channel'], Partial<Record<DispatchCommercialCommunicationInput['stage'], string>>>>
+    );
+
+    const byChannel = parsed?.[channel]?.[stage]?.trim();
+    if (byChannel) return byChannel;
+
+    const flat = parsed?.[stage]?.trim();
+    if (flat) return flat;
   } catch {
     // fallback silencioso para default
   }
@@ -696,7 +706,7 @@ export class CommercialLeadsService {
   }
 
   async dispatchStageCommunication(input: DispatchCommercialCommunicationInput): Promise<{ ok: true; leadId: string; channel: string; stage: string; eventId: string }> {
-    const templateKey = input.templateKey?.trim() || resolveTemplateByStage(input.stage);
+    const templateKey = input.templateKey?.trim() || resolveTemplateByStage(input.channel, input.stage);
     if (!templateKey) {
       throw new CommercialFlowError('VALIDATION_ERROR', `templateKey não definido para a etapa ${input.stage}.`);
     }
