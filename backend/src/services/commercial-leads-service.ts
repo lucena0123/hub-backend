@@ -745,7 +745,13 @@ export class CommercialLeadsService {
       gmail: process.env.COMMERCIAL_DISPATCH_GMAIL_WEBHOOK_URL,
     };
 
-    const webhookUrl = webhookEnvByChannel[input.channel];
+    const relayEnabled = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_ENABLED === 'true';
+    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
+    const relaySecret = process.env.COMMERCIAL_DISPATCH_RELAY_SECRET;
+
+    const webhookUrl = webhookEnvByChannel[input.channel]
+      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/${input.channel}` : undefined);
+
     if (!webhookUrl) {
       throw new CommercialFlowError(
         'VALIDATION_ERROR',
@@ -755,7 +761,10 @@ export class CommercialLeadsService {
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
+      },
       body: JSON.stringify({
         leadId: input.leadId,
         channel: input.channel,
@@ -788,7 +797,7 @@ export class CommercialLeadsService {
       undefined;
 
     return {
-      provider: 'webhook',
+      provider: webhookUrl.includes('/api/comercial/relay/') ? 'temp-relay' : 'webhook',
       externalEventId,
       ack: parsedBody,
     };

@@ -25,6 +25,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import notificationRoutes from './routes/notification.routes';
 import optimizationRoutes from './routes/optimization.routes';
 import automationRoutes from './routes/automation.routes';
+import commercialDispatchRelayRoutes from './routes/commercial-dispatch-relay.routes';
 import commercialLeadsRoutes from './routes/commercial-leads.routes';
 
 import { FastifyPluginAsync } from 'fastify';
@@ -82,6 +83,7 @@ export function buildApp(servicesPluginOverride?: FastifyPluginAsync) {
     fastify.register(notificationRoutes);
     fastify.register(optimizationRoutes);
     fastify.register(automationRoutes);
+    fastify.register(commercialDispatchRelayRoutes);
     fastify.register(commercialLeadsRoutes);
 
     // Error handler
