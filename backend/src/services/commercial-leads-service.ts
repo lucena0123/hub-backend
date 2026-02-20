@@ -36,6 +36,12 @@ export interface MoveLeadStatusInput {
   dataProximaAcao?: string;
 }
 
+export interface SubmitCommercialFormInput {
+  formType: CommercialFormType;
+  payload: Record<string, unknown>;
+  submittedAt?: string;
+}
+
 export interface CommercialDashboard {
   total: number;
   novos: number;
@@ -44,6 +50,8 @@ export interface CommercialDashboard {
   fechados: number;
   rangeDays?: number;
 }
+
+export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
   leadId: string;
@@ -63,6 +71,10 @@ export interface CommercialLeadRecord {
   dor01Ok: boolean;
   dor02Ok: boolean;
   dor03Ok: boolean;
+  formToken?: string;
+  formType?: CommercialFormType;
+  formSubmittedAt?: string;
+  formPayloadJson?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,20 +175,27 @@ export class CommercialLeadsService {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_token TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_type TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_submitted_at TIMESTAMPTZ;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_payload_json JSONB;
+
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_status ON commercial_leads(status_atual);
       CREATE INDEX IF NOT EXISTS idx_commercial_leads_responsavel ON commercial_leads(responsavel);
+      CREATE INDEX IF NOT EXISTS idx_commercial_leads_form_type ON commercial_leads(form_type);
       CREATE INDEX IF NOT EXISTS idx_commercial_transitions_lead ON commercial_lead_transitions(lead_id);
     `);
   }
 
   async createLead(input: CreateCommercialLeadInput): Promise<CommercialLeadRecord> {
     const leadId = uuidv4();
+    const formToken = uuidv4();
 
     const result = await this.pool.query(
       `INSERT INTO commercial_leads (
         lead_id, origem, nome_escritorio, instagram, whatsapp, cidade, area_principal,
-        status_atual, responsavel, proxima_acao, data_proxima_acao
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        status_atual, responsavel, proxima_acao, data_proxima_acao, form_token
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       RETURNING *`,
       [
         leadId,
@@ -190,6 +209,7 @@ export class CommercialLeadsService {
         input.responsavel,
         input.proximaAcao || null,
         input.dataProximaAcao || null,
+        formToken,
       ],
     );
 
@@ -258,6 +278,43 @@ export class CommercialLeadsService {
     };
   }
 
+  async submitLeadForm(leadId: string, input: SubmitCommercialFormInput): Promise<CommercialLeadRecord> {
+    const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    const submittedAt = input.submittedAt || new Date().toISOString();
+
+    const updated = await this.pool.query(
+      `UPDATE commercial_leads
+       SET form_type = $2,
+           form_submitted_at = $3,
+           form_payload_json = $4::jsonb,
+           updated_at = NOW()
+       WHERE lead_id = $1
+       RETURNING *`,
+      [leadId, input.formType, submittedAt, JSON.stringify(input.payload || {})],
+    );
+
+    await this.pool.query(
+      `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        uuidv4(),
+        leadId,
+        current.status_atual,
+        current.status_atual,
+        'forms-webhook',
+        `form_submit:${input.formType}`,
+      ],
+    );
+
+    return this.mapRow(updated.rows[0]);
+  }
+
   async moveLeadStatus(leadId: string, input: MoveLeadStatusInput): Promise<CommercialLeadRecord> {
     const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
     const current = existing.rows[0];
@@ -268,6 +325,13 @@ export class CommercialLeadsService {
 
     const from = current.status_atual as CommercialLeadStatus;
     validateLeadTransition(from, input);
+
+    if (input.to === 'proposta_enviada' && current.form_type !== 'briefing') {
+      throw new CommercialFlowError(
+        'VALIDATION_ERROR',
+        'Para enviar proposta, o briefing do lead precisa estar submetido.',
+      );
+    }
 
     const nextDor01 = input.to === 'diagnostico_agendado' ? Boolean(input.dor01Ok) : current.dor01_ok;
     const nextDor02 = input.to === 'proposta_enviada' ? Boolean(input.dor02Ok) : current.dor02_ok;
@@ -325,6 +389,10 @@ export class CommercialLeadsService {
       dor01Ok: row.dor01_ok,
       dor02Ok: row.dor02_ok,
       dor03Ok: row.dor03_ok,
+      formToken: row.form_token || undefined,
+      formType: row.form_type || undefined,
+      formSubmittedAt: row.form_submitted_at || undefined,
+      formPayloadJson: row.form_payload_json || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
