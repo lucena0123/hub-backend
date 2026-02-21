@@ -1,0 +1,16 @@
+{
+  "whatsapp": {
+    "primeiro_contato": "wa_lead_qualificado_v1",
+    "diagnostico_agendado": "wa_reuniao_agendada_lembrete_v1",
+    "proposta_enviada": "wa_proposta_enviada_followup_v1",
+    "negociacao": "wa_negociacao_alinhamento_v1",
+    "fechado": "wa_fechado_boas_vindas_v1"
+  },
+  "gmail": {
+    "primeiro_contato": "gm_boas_vindas_comercial_v1",
+    "diagnostico_agendado": "gm_convite_reuniao_v1",
+    "proposta_enviada": "gm_envio_proposta_v1",
+    "negociacao": "gm_contraproposta_v1",
+    "fechado": "gm_confirmacao_fechamento_v1"
+  }
+}
