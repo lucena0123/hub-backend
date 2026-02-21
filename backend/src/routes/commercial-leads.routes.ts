@@ -356,6 +356,39 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { leadId: string };
     Body: {
+      confirmText: string;
+      reason?: string;
+      actor?: string;
+    };
+  }>('/api/comercial/leads/:leadId/delete', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.deleteLeadPermanently(request.params.leadId, request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DELETE_GUARD: 400,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  fastify.post<{
+    Params: { leadId: string };
+    Body: {
       to: CommercialLeadStatus;
       observacao?: string;
       actor?: string;

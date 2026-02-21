@@ -249,7 +249,7 @@ export interface CommercialLeadRecord {
 
 export class CommercialFlowError extends Error {
   constructor(
-    public code: 'INVALID_TRANSITION' | 'DOR_BLOCKED' | 'VALIDATION_ERROR' | 'NOT_FOUND' | 'DUPLICATE_LEAD',
+    public code: 'INVALID_TRANSITION' | 'DOR_BLOCKED' | 'VALIDATION_ERROR' | 'NOT_FOUND' | 'DUPLICATE_LEAD' | 'DELETE_GUARD',
     message: string,
   ) {
     super(message);
@@ -1145,6 +1145,49 @@ export class CommercialLeadsService {
       updatedAt: row.updated_at,
       hoursInStatus: Number(row.hours_in_status || 0),
     }));
+  }
+
+  async deleteLeadPermanently(leadId: string, input: { confirmText: string; reason?: string; actor?: string }): Promise<{ ok: true; leadId: string }> {
+    if (input.confirmText !== 'EXCLUIR') {
+      throw new CommercialFlowError('DELETE_GUARD', 'Confirmação inválida. Digite EXCLUIR para confirmar.');
+    }
+
+    const existing = await this.pool.query('SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    const current = existing.rows[0];
+
+    if (!current) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `INSERT INTO commercial_lead_transitions (id, lead_id, status_origem, status_destino, actor, observacao)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [
+          uuidv4(),
+          leadId,
+          current.status_atual,
+          'perdido',
+          input.actor || 'admin',
+          input.reason || 'Exclusão permanente solicitada',
+        ],
+      );
+
+      await client.query('DELETE FROM commercial_integration_events WHERE lead_id = $1', [leadId]);
+      await client.query('DELETE FROM commercial_lead_transitions WHERE lead_id = $1', [leadId]);
+      await client.query('DELETE FROM commercial_leads WHERE lead_id = $1', [leadId]);
+
+      await client.query('COMMIT');
+      return { ok: true, leadId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async moveLeadStatus(leadId: string, input: MoveLeadStatusInput): Promise<CommercialLeadRecord> {
