@@ -15,36 +15,171 @@
     },
     {
       "parameters": {
-        "jsCode": "const j = items[0].json || {}; const h = j.headers || {}; const b = j.body || {}; const signature = h['x-dispatch-signature'] || ''; const timestamp = h['x-dispatch-timestamp'] || ''; const sharedToken = h['x-dispatch-shared-token'] || ''; const expectedToken = process.env.DISPATCH_SHARED_TOKEN || process.env.COMMERCIAL_DISPATCH_SHARED_TOKEN || ''; if (!signature || !timestamp) return [{ json: { ok: false, error: 'MISSING_SIGNATURE_HEADERS', statusCode: 401 } }]; if (!expectedToken || sharedToken !== expectedToken) return [{ json: { ok: false, error: 'INVALID_SHARED_TOKEN', statusCode: 401 } }]; if (!/^[a-f0-9]{64}$/i.test(signature)) return [{ json: { ok: false, error: 'INVALID_SIGNATURE_FORMAT', statusCode: 401 } }]; const tsMs = Date.parse(timestamp); if (Number.isNaN(tsMs)) return [{ json: { ok: false, error: 'INVALID_TIMESTAMP', statusCode: 401 } }]; const maxSkewMs = 5 * 60 * 1000; if (Math.abs(Date.now() - tsMs) > maxSkewMs) return [{ json: { ok: false, error: 'STALE_TIMESTAMP', statusCode: 401 } }]; const templates = { wa_lead_qualificado_v1: 'Olá, Dr(a). {{nome}}! Vi o perfil do {{escritorio}} e acredito que temos fit para estruturar o comercial digital com previsibilidade. Posso te enviar um diagnóstico rápido com 3 ajustes práticos?', wa_reuniao_agendada_lembrete_v1: 'Perfeito, {{nome}}. Reunião confirmada para {{data_hora}}. Se precisar ajustar horário, me avise por aqui e te envio novas opções.', wa_proposta_enviada_followup_v1: '{{nome}}, proposta enviada ✅ Fico à disposição para alinhar qualquer ponto. Se preferir, já marcamos 15 min para revisar juntos.', wa_negociacao_alinhamento_v1: 'Obrigado pelo retorno, {{nome}}. Ajustei os pontos da negociação e posso te apresentar as opções agora. Quer que eu te envie o resumo objetivo por aqui?', wa_fechado_boas_vindas_v1: 'Excelente, {{nome}}! Fechamento confirmado ✅ Próximo passo: onboarding inicial + cronograma de execução. Te envio os detalhes agora.' }; const key = b.templateKey || 'wa_lead_qualificado_v1'; const vars = b.variables || {}; const fallbackVars = { nome: vars.nome || vars.nomeEscritorio || 'Doutor(a)', escritorio: vars.escritorio || vars.nomeEscritorio || 'seu escritório', data_hora: vars.data_hora || vars.dataHora || 'horário a confirmar' }; let message = templates[key] || templates.wa_lead_qualificado_v1; Object.keys(fallbackVars).forEach((k) => { message = message.replaceAll(`{{${k}}}`, String(fallbackVars[k])); }); return [{ json: { ok: true, provider: 'n8n-whatsapp', externalEventId: `wa_${Date.now()}`, receivedAt: new Date().toISOString(), statusCode: 200, templateKey: key, resolvedMessage: message } }];"
+        "jsCode": "const j = items[0].json || {}; const h = j.headers || {}; const b = j.body || {}; const signature = h['x-dispatch-signature'] || ''; const timestamp = h['x-dispatch-timestamp'] || ''; const sharedToken = h['x-dispatch-shared-token'] || ''; const expectedToken = process.env.DISPATCH_SHARED_TOKEN || process.env.COMMERCIAL_DISPATCH_SHARED_TOKEN || ''; if (!signature || !timestamp) return [{ json: { authorized: false, error: 'MISSING_SIGNATURE_HEADERS', statusCode: 401 } }]; if (!expectedToken || sharedToken !== expectedToken) return [{ json: { authorized: false, error: 'INVALID_SHARED_TOKEN', statusCode: 401 } }]; if (!/^[a-f0-9]{64}$/i.test(signature)) return [{ json: { authorized: false, error: 'INVALID_SIGNATURE_FORMAT', statusCode: 401 } }]; const tsMs = Date.parse(timestamp); if (Number.isNaN(tsMs)) return [{ json: { authorized: false, error: 'INVALID_TIMESTAMP', statusCode: 401 } }]; const maxSkewMs = 5 * 60 * 1000; if (Math.abs(Date.now() - tsMs) > maxSkewMs) return [{ json: { authorized: false, error: 'STALE_TIMESTAMP', statusCode: 401 } }]; const templates = { wa_lead_qualificado_v1: 'Olá, Dr(a). {{nome}}! Vi o perfil do {{escritorio}} e acredito que temos fit para estruturar o comercial digital com previsibilidade. Posso te enviar um diagnóstico rápido com 3 ajustes práticos?', wa_reuniao_agendada_lembrete_v1: 'Perfeito, {{nome}}. Reunião confirmada para {{data_hora}}. Se precisar ajustar horário, me avise por aqui e te envio novas opções.', wa_proposta_enviada_followup_v1: '{{nome}}, proposta enviada ✅ Fico à disposição para alinhar qualquer ponto. Se preferir, já marcamos 15 min para revisar juntos.', wa_negociacao_alinhamento_v1: 'Obrigado pelo retorno, {{nome}}. Ajustei os pontos da negociação e posso te apresentar as opções agora. Quer que eu te envie o resumo objetivo por aqui?', wa_fechado_boas_vindas_v1: 'Excelente, {{nome}}! Fechamento confirmado ✅ Próximo passo: onboarding inicial + cronograma de execução. Te envio os detalhes agora.' }; const key = b.templateKey || 'wa_lead_qualificado_v1'; const vars = b.variables || {}; const fallbackVars = { nome: vars.nome || vars.nomeEscritorio || 'Doutor(a)', escritorio: vars.escritorio || vars.nomeEscritorio || 'seu escritório', data_hora: vars.data_hora || vars.dataHora || 'horário a confirmar' }; let message = templates[key] || templates.wa_lead_qualificado_v1; Object.keys(fallbackVars).forEach((k) => { message = message.replaceAll(`{{${k}}}`, String(fallbackVars[k])); }); return [{ json: { authorized: true, statusCode: 200, provider: 'evolution-api', templateKey: key, recipient: b.recipient || '', text: message } }];"
       },
-      "id": "Code_Guard",
-      "name": "Build Response",
+      "id": "Code_Prepare",
+      "name": "Validate + Resolve Template",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [520, 280]
     },
     {
       "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.authorized}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "IF_Authorized",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [760, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{($env.EVOLUTION_API_BASE_URL || '').replace(/\/$/, '') + '/message/sendText/' + ($env.EVOLUTION_INSTANCE || '')}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.EVOLUTION_API_KEY || ''}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { number: $json.recipient, text: $json.text } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "HTTP_Evolution",
+      "name": "Send via Evolution API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = items[0].json || {}; const body = r.body || {}; const externalEventId = body?.key?.id || body?.id || body?.messageId || `wa_${Date.now()}`; return [{ json: { ok: true, provider: 'evolution-api', externalEventId, receivedAt: new Date().toISOString(), statusCode: 200, providerAck: body } }];"
+      },
+      "id": "Code_Ack",
+      "name": "Build Ack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 220]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "responseBody": "={{$json}}",
-        "options": { "responseCode": "={{$json.statusCode || 200}}" }
+        "options": {
+          "responseCode": "={{$json.statusCode || 200}}"
+        }
       },
-      "id": "Respond_Final",
-      "name": "Respond Final",
+      "id": "Respond_OK",
+      "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [860, 280]
+      "position": [1470, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error || 'UNAUTHORIZED' } }}",
+        "options": {
+          "responseCode": "={{$json.statusCode || 401}}"
+        }
+      },
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1000, 380]
     }
   ],
   "connections": {
     "Webhook WhatsApp": {
-      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Validate + Resolve Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Build Response": {
-      "main": [[{ "node": "Respond Final", "type": "main", "index": 0 }]]
+    "Validate + Resolve Template": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Send via Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Evolution API": {
+      "main": [
+        [
+          {
+            "node": "Build Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ack": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {},
   "active": false
 }

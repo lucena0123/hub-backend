@@ -52,9 +52,24 @@ No n8n, configure o mesmo token:
 - `DISPATCH_SHARED_TOKEN` (ou `COMMERCIAL_DISPATCH_SHARED_TOKEN`)
 
 > Nota: validação criptográfica HMAC completa depende das permissões/recursos da instância n8n (Code sandbox).
+## WhatsApp via Evolution API
+O workflow `Hub Dispatch WhatsApp` já está preparado para envio real via Evolution API.
+
+Variáveis necessárias no n8n:
+- `EVOLUTION_API_BASE_URL` (ex.: `https://evo.seudominio.com`)
+- `EVOLUTION_INSTANCE` (nome da instância)
+- `EVOLUTION_API_KEY` (apikey da Evolution)
+- `DISPATCH_SHARED_TOKEN` (mesmo token do backend Hub)
+
+Endpoint usado no node HTTP:
+- `POST {EVOLUTION_API_BASE_URL}/message/sendText/{EVOLUTION_INSTANCE}`
+
+Payload enviado:
+- `{ number, text }`
+
 ## Evolução (recomendada)
 Depois de validar:
-- Inserir nós reais de envio (WhatsApp Cloud API / Gmail node)
+- Integrar Gmail oficial (Gmail node/API) no fluxo `Hub Dispatch Gmail`
 - Validar assinatura HMAC completa no n8n (não só presença de header)
 - Adicionar retry + dead-letter
 - Adicionar notificação de falha (Slack/Telegram)
