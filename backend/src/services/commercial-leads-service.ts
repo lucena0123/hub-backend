@@ -85,6 +85,28 @@ export interface DispatchCommercialCommunicationInput {
   variables?: Record<string, unknown>;
 }
 
+export interface CommercialScheduleSlot {
+  start: string;
+  end: string;
+  label?: string;
+}
+
+export interface RequestCommercialScheduleSlotsInput {
+  leadId: string;
+  date?: string;
+  durationMin?: number;
+  timezone?: string;
+}
+
+export interface ConfirmCommercialScheduleInput {
+  leadId: string;
+  slotStart: string;
+  slotEnd: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
+  timezone?: string;
+}
+
 const DEFAULT_DISPATCH_TEMPLATE_BY_STAGE: Record<DispatchCommercialCommunicationInput['stage'], string> = {
   primeiro_contato: 'primeiro_contato',
   diagnostico_agendado: 'diagnostico_agendado',
@@ -982,6 +1004,79 @@ export class CommercialLeadsService {
       occurredAt: row.occurred_at,
       createdAt: row.created_at,
     }));
+  }
+
+  async requestScheduleSlots(input: RequestCommercialScheduleSlotsInput): Promise<{ leadId: string; slots: CommercialScheduleSlot[] }> {
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_SLOTS_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de slots não configurado.');
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        leadId: input.leadId,
+        date: input.date,
+        durationMin: input.durationMin || 30,
+        timezone: input.timezone || 'America/Sao_Paulo',
+      }),
+    });
+
+    const data = await response.json() as { slots?: CommercialScheduleSlot[] };
+    if (!response.ok) {
+      throw new Error(`Falha ao consultar slots: HTTP ${response.status}`);
+    }
+
+    return {
+      leadId: input.leadId,
+      slots: Array.isArray(data.slots) ? data.slots : [],
+    };
+  }
+
+  async confirmScheduledMeeting(input: ConfirmCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CONFIRM_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de confirmação de agenda não configurado.');
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        leadId: input.leadId,
+        slotStart: input.slotStart,
+        slotEnd: input.slotEnd,
+        attendeeName: input.attendeeName,
+        attendeeEmail: input.attendeeEmail,
+        timezone: input.timezone || 'America/Sao_Paulo',
+      }),
+    });
+
+    const ack = await response.json() as { eventId?: string };
+    if (!response.ok) {
+      throw new Error(`Falha ao confirmar agenda: HTTP ${response.status}`);
+    }
+
+    await this.ingestIntegrationEvent({
+      leadId: input.leadId,
+      channel: 'calendar',
+      eventType: 'calendar:meeting_scheduled',
+      externalEventId: ack.eventId,
+      payload: {
+        slotStart: input.slotStart,
+        slotEnd: input.slotEnd,
+        attendeeName: input.attendeeName || null,
+        attendeeEmail: input.attendeeEmail || null,
+        providerAck: ack,
+      },
+    });
+
+    return {
+      ok: true,
+      leadId: input.leadId,
+      eventId: ack.eventId,
+    };
   }
 
   async getDispatchHealthSummary(windowDays = 7): Promise<CommercialDispatchHealthSummary> {

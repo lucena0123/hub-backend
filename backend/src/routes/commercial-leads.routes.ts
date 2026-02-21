@@ -193,6 +193,56 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.getDispatchHealthSummary(days);
   });
 
+  fastify.post<{
+    Body: {
+      leadId: string;
+      date?: string;
+      durationMin?: number;
+      timezone?: string;
+    };
+  }>('/api/comercial/scheduling/slots', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.requestScheduleSlots(request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          VALIDATION_ERROR: 400,
+        };
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+      reply.status(500);
+      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  fastify.post<{
+    Body: {
+      leadId: string;
+      slotStart: string;
+      slotEnd: string;
+      attendeeName?: string;
+      attendeeEmail?: string;
+      timezone?: string;
+    };
+  }>('/api/comercial/scheduling/confirm', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.confirmScheduledMeeting(request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          VALIDATION_ERROR: 400,
+        };
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+      reply.status(500);
+      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   fastify.get<{
     Params: { leadId: string };
     Querystring: { formType?: 'briefing' | 'onboarding' | 'custom' };
