@@ -187,6 +187,13 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get<{
+    Querystring: { days?: string };
+  }>('/api/comercial/dispatch/health', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request) => {
+    const days = request.query.days ? Number.parseInt(request.query.days, 10) : 7;
+    return commercialLeads.getDispatchHealthSummary(days);
+  });
+
+  fastify.get<{
     Params: { leadId: string };
     Querystring: { formType?: 'briefing' | 'onboarding' | 'custom' };
   }>('/api/comercial/leads/:leadId/forms/link', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {

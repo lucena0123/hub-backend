@@ -190,6 +190,23 @@ export interface CommercialIntegrationEvent {
   createdAt: string;
 }
 
+export interface CommercialDispatchHealthByChannel {
+  channel: string;
+  total: number;
+  success: number;
+  failed: number;
+  successRate: number;
+}
+
+export interface CommercialDispatchHealthSummary {
+  windowDays: number;
+  total: number;
+  success: number;
+  failed: number;
+  successRate: number;
+  byChannel: CommercialDispatchHealthByChannel[];
+}
+
 export type CommercialFormType = 'briefing' | 'onboarding' | 'custom';
 
 export interface CommercialLeadRecord {
@@ -965,6 +982,57 @@ export class CommercialLeadsService {
       occurredAt: row.occurred_at,
       createdAt: row.created_at,
     }));
+  }
+
+  async getDispatchHealthSummary(windowDays = 7): Promise<CommercialDispatchHealthSummary> {
+    const safeWindowDays = Math.min(Math.max(windowDays, 1), 90);
+
+    const result = await this.pool.query(
+      `WITH dispatch_events AS (
+         SELECT
+           channel,
+           COALESCE((payload_json->'providerAck'->>'ok')::boolean, false) AS ack_ok,
+           CASE WHEN external_event_id IS NOT NULL AND external_event_id <> '' THEN true ELSE false END AS has_external_id
+         FROM commercial_integration_events
+         WHERE event_type LIKE 'dispatch:%'
+           AND occurred_at >= NOW() - ($1::text || ' days')::interval
+       )
+       SELECT
+         channel,
+         COUNT(*)::int AS total,
+         SUM(CASE WHEN (ack_ok OR has_external_id) THEN 1 ELSE 0 END)::int AS success,
+         SUM(CASE WHEN NOT (ack_ok OR has_external_id) THEN 1 ELSE 0 END)::int AS failed
+       FROM dispatch_events
+       GROUP BY channel
+       ORDER BY channel ASC`,
+      [safeWindowDays],
+    );
+
+    const byChannel: CommercialDispatchHealthByChannel[] = result.rows.map((row) => {
+      const total = Number(row.total || 0);
+      const success = Number(row.success || 0);
+      const failed = Number(row.failed || 0);
+      return {
+        channel: String(row.channel || 'unknown'),
+        total,
+        success,
+        failed,
+        successRate: total > 0 ? Number(((success / total) * 100).toFixed(1)) : 0,
+      };
+    });
+
+    const total = byChannel.reduce((acc, item) => acc + item.total, 0);
+    const success = byChannel.reduce((acc, item) => acc + item.success, 0);
+    const failed = byChannel.reduce((acc, item) => acc + item.failed, 0);
+
+    return {
+      windowDays: safeWindowDays,
+      total,
+      success,
+      failed,
+      successRate: total > 0 ? Number(((success / total) * 100).toFixed(1)) : 0,
+      byChannel,
+    };
   }
 
   async listLeadTimeline(leadId: string, limit = 50): Promise<CommercialLeadTimelineEvent[]> {
