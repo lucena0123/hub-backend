@@ -106,6 +106,33 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     return commercialLeads.listFollowupsDue(limit);
   });
 
+  fastify.post<{
+    Body: {
+      leadId: string;
+      followupType: 'D+2' | 'D+5';
+      channel?: 'whatsapp' | 'gmail';
+    };
+  }>('/api/comercial/followups/dispatch', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.triggerFollowupDispatch(request.body);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          VALIDATION_ERROR: 400,
+        };
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
   fastify.get<{
     Querystring: { limit?: string };
   }>('/api/comercial/privacy/retention-due', { preHandler: [requireRoles(['admin', 'manager'])] }, async (request) => {

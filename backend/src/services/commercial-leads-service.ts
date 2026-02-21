@@ -193,6 +193,12 @@ export interface CommercialFollowupDue {
   dueAt: string;
 }
 
+export interface TriggerFollowupDispatchInput {
+  leadId: string;
+  followupType: 'D+2' | 'D+5';
+  channel?: 'whatsapp' | 'gmail';
+}
+
 export interface CommercialRetentionAlert {
   leadId: string;
   nomeEscritorio: string;
@@ -1177,6 +1183,73 @@ export class CommercialLeadsService {
       retentionUntil: row.retention_until,
       daysOverdue: Number(row.days_overdue || 0),
     }));
+  }
+
+  async triggerFollowupDispatch(input: TriggerFollowupDispatchInput): Promise<{ ok: true; leadId: string; eventId: string }> {
+    const channel = input.channel || 'whatsapp';
+
+    const leadResult = await this.pool.query(
+      `SELECT lead_id, nome_escritorio, status_atual, followup_d2_at, followup_d5_at
+       FROM commercial_leads
+       WHERE lead_id = $1
+       LIMIT 1`,
+      [input.leadId],
+    );
+
+    const lead = leadResult.rows[0];
+    if (!lead) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado para follow-up.');
+    }
+
+    const dueAt = input.followupType === 'D+2' ? lead.followup_d2_at : lead.followup_d5_at;
+    if (!dueAt || new Date(dueAt).getTime() > Date.now()) {
+      throw new CommercialFlowError('VALIDATION_ERROR', `Follow-up ${input.followupType} ainda não está vencido.`);
+    }
+
+    const duplicateCheck = await this.pool.query(
+      `SELECT id
+       FROM commercial_integration_events
+       WHERE lead_id = $1
+         AND event_type = $2
+         AND occurred_at >= NOW() - interval '1 day'
+       LIMIT 1`,
+      [input.leadId, `followup:${input.followupType}`],
+    );
+
+    if (duplicateCheck.rowCount && duplicateCheck.rowCount > 0) {
+      throw new CommercialFlowError('VALIDATION_ERROR', `Follow-up ${input.followupType} já disparado nas últimas 24h.`);
+    }
+
+    const stage = input.followupType === 'D+2' ? 'proposta_enviada' : 'negociacao';
+    const templateKey = input.followupType === 'D+2'
+      ? 'wa_proposta_enviada_followup_v1'
+      : 'wa_negociacao_alinhamento_v1';
+
+    const dispatch = await this.dispatchStageCommunication({
+      leadId: input.leadId,
+      channel,
+      stage,
+      templateKey,
+      variables: {
+        nomeEscritorio: lead.nome_escritorio,
+        followupType: input.followupType,
+      },
+    });
+
+    await this.ingestIntegrationEvent({
+      leadId: input.leadId,
+      channel,
+      eventType: `followup:${input.followupType}`,
+      payload: {
+        sourceEventId: dispatch.eventId,
+      },
+    });
+
+    return {
+      ok: true,
+      leadId: input.leadId,
+      eventId: dispatch.eventId,
+    };
   }
 
   async listFollowupsDue(limit = 50): Promise<CommercialFollowupDue[]> {
