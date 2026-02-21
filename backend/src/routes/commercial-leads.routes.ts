@@ -126,9 +126,30 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       dataProximaAcao?: string;
     };
   }>('/api/comercial/leads', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
-    const lead = await commercialLeads.createLead(request.body);
-    reply.status(201);
-    return lead;
+    try {
+      const lead = await commercialLeads.createLead(request.body);
+      reply.status(201);
+      return lead;
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          DOR_BLOCKED: 409,
+          INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
+          VALIDATION_ERROR: 400,
+        };
+
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+
+      reply.status(500);
+      return {
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   });
 
   fastify.get<{
