@@ -1,0 +1,35 @@
+{
+  "version": "v1",
+  "locale": "pt-BR",
+  "channels": {
+    "whatsapp": {
+      "wa_lead_qualificado_v1": "Olá, Dr(a). {{nome}}! Vi o perfil do {{escritorio}} e acredito que temos fit para estruturar o comercial digital com previsibilidade. Posso te enviar um diagnóstico rápido com 3 ajustes práticos?",
+      "wa_reuniao_agendada_lembrete_v1": "Perfeito, {{nome}}. Reunião confirmada para {{data_hora}}. Se precisar ajustar horário, me avise por aqui e te envio novas opções.",
+      "wa_proposta_enviada_followup_v1": "{{nome}}, proposta enviada ✅ Fico à disposição para alinhar qualquer ponto. Se preferir, já marcamos 15 min para revisar juntos.",
+      "wa_negociacao_alinhamento_v1": "Obrigado pelo retorno, {{nome}}. Ajustei os pontos da negociação e posso te apresentar as opções agora. Quer que eu te envie o resumo objetivo por aqui?",
+      "wa_fechado_boas_vindas_v1": "Excelente, {{nome}}! Fechamento confirmado ✅ Próximo passo: onboarding inicial + cronograma de execução. Te envio os detalhes agora." 
+    },
+    "gmail": {
+      "gm_boas_vindas_comercial_v1": {
+        "subject": "Diagnóstico comercial inicial — {{escritorio}}",
+        "body": "Olá, {{nome}},\n\nObrigado pelo interesse. Podemos iniciar com um diagnóstico rápido para mapear melhorias de posicionamento, atendimento e conversão.\n\nSe estiver de acordo, seguimos com uma conversa objetiva de 10–15 minutos.\n\nAbraço,\nEquipe Lucena"
+      },
+      "gm_convite_reuniao_v1": {
+        "subject": "Confirmação de reunião — {{data_hora}}",
+        "body": "Olá, {{nome}},\n\nSua reunião foi agendada para {{data_hora}}.\nCaso precise remarcar, responda este e-mail com duas janelas de horário.\n\nAté breve,\nEquipe Lucena"
+      },
+      "gm_envio_proposta_v1": {
+        "subject": "Proposta comercial — {{escritorio}}",
+        "body": "Olá, {{nome}},\n\nConforme alinhado, segue proposta comercial para avaliação.\n\nSe preferir, podemos marcar uma revisão rápida para esclarecer qualquer ponto.\n\nAtenciosamente,\nEquipe Lucena"
+      },
+      "gm_contraproposta_v1": {
+        "subject": "Contraproposta e próximos passos",
+        "body": "Olá, {{nome}},\n\nAtualizamos os pontos discutidos e segue a contraproposta consolidada.\n\nFico à disposição para validar o melhor cenário para seu momento.\n\nAtenciosamente,\nEquipe Lucena"
+      },
+      "gm_confirmacao_fechamento_v1": {
+        "subject": "Fechamento confirmado — próximos passos",
+        "body": "Olá, {{nome}},\n\nFechamento confirmado com sucesso.\n\nPróximos passos:\n1) envio do checklist inicial\n2) agenda de onboarding\n3) definição dos primeiros marcos\n\nConte com a gente,\nEquipe Lucena"
+      }
+    }
+  }
+}
