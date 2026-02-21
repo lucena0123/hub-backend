@@ -44,6 +44,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -82,6 +83,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -176,6 +178,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -207,6 +210,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -238,6 +242,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -272,6 +277,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -303,6 +309,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -346,6 +353,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
           NOT_FOUND: 404,
           DOR_BLOCKED: 409,
           INVALID_TRANSITION: 409,
+          DUPLICATE_LEAD: 409,
           VALIDATION_ERROR: 400,
         };
 
@@ -363,3 +371,4 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default commercialLeadsRoutes;
+

@@ -232,7 +232,7 @@ export interface CommercialLeadRecord {
 
 export class CommercialFlowError extends Error {
   constructor(
-    public code: 'INVALID_TRANSITION' | 'DOR_BLOCKED' | 'VALIDATION_ERROR' | 'NOT_FOUND',
+    public code: 'INVALID_TRANSITION' | 'DOR_BLOCKED' | 'VALIDATION_ERROR' | 'NOT_FOUND' | 'DUPLICATE_LEAD',
     message: string,
   ) {
     super(message);
@@ -422,35 +422,46 @@ export class CommercialLeadsService {
 
       if (dedupe.rowCount && dedupe.rowCount > 0) {
         throw new CommercialFlowError(
-          'VALIDATION_ERROR',
+          'DUPLICATE_LEAD',
           'Lead duplicado detectado (mesmo WhatsApp e escritório em aberto).',
         );
       }
     }
 
-    const result = await this.pool.query(
-      `INSERT INTO commercial_leads (
-        lead_id, origem, nome_escritorio, instagram, whatsapp, cidade, area_principal,
-        status_atual, responsavel, proxima_acao, data_proxima_acao, form_token
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      RETURNING *`,
-      [
-        leadId,
-        input.origem,
-        input.nomeEscritorio,
-        input.instagram || null,
-        input.whatsapp || null,
-        input.cidade || null,
-        input.areaPrincipal || null,
-        'novo_lead',
-        input.responsavel,
-        input.proximaAcao || null,
-        input.dataProximaAcao || null,
-        formToken,
-      ],
-    );
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO commercial_leads (
+          lead_id, origem, nome_escritorio, instagram, whatsapp, cidade, area_principal,
+          status_atual, responsavel, proxima_acao, data_proxima_acao, form_token
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        RETURNING *`,
+        [
+          leadId,
+          input.origem,
+          input.nomeEscritorio,
+          input.instagram || null,
+          input.whatsapp || null,
+          input.cidade || null,
+          input.areaPrincipal || null,
+          'novo_lead',
+          input.responsavel,
+          input.proximaAcao || null,
+          input.dataProximaAcao || null,
+          formToken,
+        ],
+      );
 
-    return this.mapRow(result.rows[0]);
+      return this.mapRow(result.rows[0]);
+    } catch (error) {
+      const pgCode = (error as { code?: string })?.code;
+      if (pgCode === '23505') {
+        throw new CommercialFlowError(
+          'DUPLICATE_LEAD',
+          'Lead duplicado detectado (violação de unicidade).',
+        );
+      }
+      throw error;
+    }
   }
 
   async listLeads(filters?: { status?: CommercialLeadStatus; responsavel?: string; limit?: number; offset?: number }): Promise<CommercialLeadRecord[]> {
