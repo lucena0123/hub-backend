@@ -107,6 +107,23 @@ export interface ConfirmCommercialScheduleInput {
   timezone?: string;
 }
 
+export interface UpdateCommercialScheduleInput {
+  leadId: string;
+  eventId?: string;
+  slotStart: string;
+  slotEnd: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
+  timezone?: string;
+}
+
+export interface CancelCommercialScheduleInput {
+  leadId: string;
+  eventId?: string;
+  reason?: string;
+  cancelledBy?: string;
+}
+
 const DEFAULT_DISPATCH_TEMPLATE_BY_STAGE: Record<DispatchCommercialCommunicationInput['stage'], string> = {
   primeiro_contato: 'primeiro_contato',
   diagnostico_agendado: 'diagnostico_agendado',
@@ -1046,23 +1063,16 @@ export class CommercialLeadsService {
       throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de confirmação de agenda não configurado.');
     }
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        leadId: input.leadId,
-        slotStart: input.slotStart,
-        slotEnd: input.slotEnd,
-        attendeeName: input.attendeeName,
-        attendeeEmail: input.attendeeEmail,
-        timezone: input.timezone || 'America/Sao_Paulo',
-      }),
-    });
+    await this.ensureLeadExists(input.leadId);
 
-    const ack = await response.json() as { eventId?: string };
-    if (!response.ok) {
-      throw new Error(`Falha ao confirmar agenda: HTTP ${response.status}`);
-    }
+    const ack = await this.sendSchedulingWebhook(webhookUrl, {
+      leadId: input.leadId,
+      slotStart: input.slotStart,
+      slotEnd: input.slotEnd,
+      attendeeName: input.attendeeName,
+      attendeeEmail: input.attendeeEmail,
+      timezone: input.timezone || 'America/Sao_Paulo',
+    }, 'confirmar agenda');
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
@@ -1083,6 +1093,143 @@ export class CommercialLeadsService {
       leadId: input.leadId,
       eventId: ack.eventId,
     };
+  }
+
+  async updateScheduledMeeting(input: UpdateCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_UPDATE_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de atualização de agenda não configurado.');
+    }
+
+    await this.ensureLeadExists(input.leadId);
+
+    const eventId = input.eventId || await this.resolveLatestCalendarEventId(input.leadId);
+    if (!eventId) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'eventId é obrigatório para atualizar reunião.');
+    }
+
+    const ack = await this.sendSchedulingWebhook(webhookUrl, {
+      leadId: input.leadId,
+      eventId,
+      slotStart: input.slotStart,
+      slotEnd: input.slotEnd,
+      attendeeName: input.attendeeName,
+      attendeeEmail: input.attendeeEmail,
+      timezone: input.timezone || 'America/Sao_Paulo',
+    }, 'atualizar agenda');
+
+    await this.ingestIntegrationEvent({
+      leadId: input.leadId,
+      channel: 'calendar',
+      eventType: 'calendar:meeting_updated',
+      externalEventId: ack.eventId || eventId,
+      payload: {
+        eventId,
+        slotStart: input.slotStart,
+        slotEnd: input.slotEnd,
+        attendeeName: input.attendeeName || null,
+        attendeeEmail: input.attendeeEmail || null,
+        providerAck: ack,
+      },
+    });
+
+    return {
+      ok: true,
+      leadId: input.leadId,
+      eventId: ack.eventId || eventId,
+    };
+  }
+
+  async cancelScheduledMeeting(input: CancelCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId: string }> {
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CANCEL_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de cancelamento de agenda não configurado.');
+    }
+
+    await this.ensureLeadExists(input.leadId);
+
+    const eventId = input.eventId || await this.resolveLatestCalendarEventId(input.leadId);
+    if (!eventId) {
+      throw new CommercialFlowError('VALIDATION_ERROR', 'eventId é obrigatório para cancelar reunião.');
+    }
+
+    const ack = await this.sendSchedulingWebhook(webhookUrl, {
+      leadId: input.leadId,
+      eventId,
+      reason: input.reason,
+      cancelledBy: input.cancelledBy,
+    }, 'cancelar agenda');
+
+    await this.ingestIntegrationEvent({
+      leadId: input.leadId,
+      channel: 'calendar',
+      eventType: 'calendar:meeting_canceled',
+      externalEventId: eventId,
+      payload: {
+        eventId,
+        reason: input.reason || null,
+        cancelledBy: input.cancelledBy || null,
+        providerAck: ack,
+      },
+    });
+
+    return {
+      ok: true,
+      leadId: input.leadId,
+      eventId,
+    };
+  }
+
+  private async ensureLeadExists(leadId: string): Promise<void> {
+    const lead = await this.pool.query('SELECT lead_id FROM commercial_leads WHERE lead_id = $1 LIMIT 1', [leadId]);
+    if (!lead.rows[0]) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado para integração de agenda.');
+    }
+  }
+
+  private async resolveLatestCalendarEventId(leadId: string): Promise<string | undefined> {
+    const result = await this.pool.query(
+      `SELECT external_event_id
+       FROM commercial_integration_events
+       WHERE lead_id = $1
+         AND channel = 'calendar'
+         AND external_event_id IS NOT NULL
+         AND external_event_id <> ''
+       ORDER BY occurred_at DESC
+       LIMIT 1`,
+      [leadId],
+    );
+
+    const row = result.rows[0];
+    return row?.external_event_id || undefined;
+  }
+
+  private async sendSchedulingWebhook(
+    webhookUrl: string,
+    body: Record<string, unknown>,
+    operationLabel: string,
+  ): Promise<{ eventId?: string; [k: string]: unknown }> {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const raw = await response.text();
+    let ack: { eventId?: string; [k: string]: unknown } = {};
+    if (raw) {
+      try {
+        ack = JSON.parse(raw) as { eventId?: string; [k: string]: unknown };
+      } catch {
+        ack = { raw };
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`Falha ao ${operationLabel}: HTTP ${response.status}`);
+    }
+
+    return ack;
   }
 
   async getDispatchHealthSummary(windowDays = 7): Promise<CommercialDispatchHealthSummary> {
