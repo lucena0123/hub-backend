@@ -1,0 +1,73 @@
+{
+  "name": "Hub Scheduling Slots",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Slots",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/slots",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Token_1",
+      "name": "Google Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 280],
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "client_id", "value": "={{$env.GOOGLE_CLIENT_ID || ''}}" },
+            { "name": "client_secret", "value": "={{$env.GOOGLE_CLIENT_SECRET || ''}}" },
+            { "name": "refresh_token", "value": "={{$env.GOOGLE_REFRESH_TOKEN || ''}}" },
+            { "name": "grant_type", "value": "refresh_token" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Code_1",
+      "name": "Build Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 280],
+      "parameters": {
+        "jsCode": "const body = $node['Webhook Slots'].json.body || {};\nconst duration = Math.max(15, Number(body.durationMin || 30));\nconst tz = body.timezone || 'America/Sao_Paulo';\nconst date = body.date ? new Date(body.date) : new Date();\nconst startDay = new Date(date); startDay.setHours(8,0,0,0);\nconst endDay = new Date(date); endDay.setHours(19,0,0,0);\nconst slots=[];\nfor(let t=startDay.getTime(); t+duration*60000<=endDay.getTime(); t+=30*60000){\n  const e=t+duration*60000;\n  slots.push({start:new Date(t).toISOString(), end:new Date(e).toISOString(), label:new Date(t).toLocaleString('pt-BR',{timeZone:tz})});\n  if(slots.length>=10) break;\n}\nreturn [{json:{leadId:body.leadId, slots, provider:'google-calendar'}}];"
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1020, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Slots": { "main": [[{ "node": "Google Token", "type": "main", "index": 0 }]] },
+    "Google Token": { "main": [[{ "node": "Build Slots", "type": "main", "index": 0 }]] },
+    "Build Slots": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
