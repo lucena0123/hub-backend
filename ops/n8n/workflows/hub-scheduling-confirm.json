@@ -1,0 +1,84 @@
+{
+  "name": "Hub Scheduling Confirm",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Confirm",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/confirm",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Token_1",
+      "name": "Google Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 280],
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "client_id", "value": "={{$env.GOOGLE_CLIENT_ID || ''}}" },
+            { "name": "client_secret", "value": "={{$env.GOOGLE_CLIENT_SECRET || ''}}" },
+            { "name": "refresh_token", "value": "={{$env.GOOGLE_REFRESH_TOKEN || ''}}" },
+            { "name": "grant_type", "value": "refresh_token" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Insert_1",
+      "name": "Calendar Insert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 280],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($env.GOOGLE_CALENDAR_ID || 'primary') + '/events' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$json.access_token}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { summary: 'Diagnóstico Comercial', description: 'Lead ' + ($node['Webhook Confirm'].json.body.leadId || ''), start: { dateTime: $node['Webhook Confirm'].json.body.slotStart, timeZone: $node['Webhook Confirm'].json.body.timezone || 'America/Sao_Paulo' }, end: { dateTime: $node['Webhook Confirm'].json.body.slotEnd, timeZone: $node['Webhook Confirm'].json.body.timezone || 'America/Sao_Paulo' }, attendees: $node['Webhook Confirm'].json.body.attendeeEmail ? [{ email: $node['Webhook Confirm'].json.body.attendeeEmail, displayName: $node['Webhook Confirm'].json.body.attendeeName || 'Cliente' }] : [] } }}"
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1040, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, provider: 'google-calendar', eventId: $json.id || $json.iCalUID || ('cal_' + Date.now()) } }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Confirm": { "main": [[{ "node": "Google Token", "type": "main", "index": 0 }]] },
+    "Google Token": { "main": [[{ "node": "Calendar Insert", "type": "main", "index": 0 }]] },
+    "Calendar Insert": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

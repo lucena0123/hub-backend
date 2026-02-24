@@ -1,0 +1,80 @@
+{
+  "name": "Hub Scheduling Cancel",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Cancel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/cancel",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Token_1",
+      "name": "Google Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 280],
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth2.googleapis.com/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "client_id", "value": "={{$env.GOOGLE_CLIENT_ID || ''}}" },
+            { "name": "client_secret", "value": "={{$env.GOOGLE_CLIENT_SECRET || ''}}" },
+            { "name": "refresh_token", "value": "={{$env.GOOGLE_REFRESH_TOKEN || ''}}" },
+            { "name": "grant_type", "value": "refresh_token" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Delete_1",
+      "name": "Calendar Delete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 280],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($env.GOOGLE_CALENDAR_ID || 'primary') + '/events/' + encodeURIComponent($node['Webhook Cancel'].json.body.eventId || '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$json.access_token}}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1060, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, provider: 'google-calendar', eventId: $node['Webhook Cancel'].json.body.eventId || null, canceled: true } }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Cancel": { "main": [[{ "node": "Google Token", "type": "main", "index": 0 }]] },
+    "Google Token": { "main": [[{ "node": "Calendar Delete", "type": "main", "index": 0 }]] },
+    "Calendar Delete": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
