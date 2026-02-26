@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'read';
-export type EntityType = 'client' | 'campaign' | 'process' | 'task' | 'user';
+export type EntityType = 'client' | 'campaign' | 'process' | 'task' | 'user' | 'commercial_lead' | 'commercial_dispatch';
 
 export interface AuditEvent {
   userId?: string;

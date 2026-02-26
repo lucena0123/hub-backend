@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { createAuditLog } from '../middleware/audit';
 
 export type CommercialLeadStatus =
   | 'novo_lead'
@@ -513,6 +514,14 @@ export class CommercialLeadsService {
         ],
       );
 
+      void createAuditLog(this.pool, {
+        action: 'create',
+        entityType: 'commercial_lead',
+        entityId: leadId,
+        changes: { after: { origem: input.origem, nomeEscritorio: input.nomeEscritorio, statusAtual: 'novo_lead' } },
+        metadata: { responsavel: input.responsavel },
+      });
+
       return this.mapRow(result.rows[0]);
     } catch (error) {
       const pgCode = (error as { code?: string })?.code;
@@ -631,6 +640,17 @@ export class CommercialLeadsService {
         input.observacao || `proofs_update:${input.contractStatus || '-'}:${input.paymentStatus || '-'}`,
       ],
     );
+
+    void createAuditLog(this.pool, {
+      action: 'update',
+      entityType: 'commercial_lead',
+      entityId: leadId,
+      changes: {
+        before: { contractStatus: current.contract_status, paymentStatus: current.payment_status },
+        after: { contractStatus: input.contractStatus, paymentStatus: input.paymentStatus },
+      },
+      metadata: { action: 'proofs_updated' },
+    });
 
     return this.mapRow(updated.rows[0]);
   }
@@ -820,6 +840,14 @@ export class CommercialLeadsService {
         providerAck: providerResult.ack,
       },
       occurredAt: new Date().toISOString(),
+    });
+
+    void createAuditLog(this.pool, {
+      action: 'create',
+      entityType: 'commercial_dispatch',
+      entityId: event.eventId,
+      changes: { after: { leadId: input.leadId, channel: input.channel, stage: input.stage, templateKey } },
+      metadata: { externalEventId: providerResult.externalEventId },
     });
 
     return {
@@ -1618,6 +1646,14 @@ export class CommercialLeadsService {
        VALUES ($1,$2,$3,$4,$5,$6)`,
       [uuidv4(), leadId, from, input.to, input.actor || null, input.observacao || null],
     );
+
+    void createAuditLog(this.pool, {
+      action: 'update',
+      entityType: 'commercial_lead',
+      entityId: leadId,
+      changes: { before: { statusAtual: from }, after: { statusAtual: input.to } },
+      metadata: { actor: input.actor, observacao: input.observacao },
+    });
 
     return this.mapRow(updated.rows[0]);
   }
