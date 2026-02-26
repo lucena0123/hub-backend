@@ -1,0 +1,45 @@
+{
+  "name": "Hub Scheduling Cancel Mock",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Cancel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/cancel",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Code_1",
+      "name": "Build Cancel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 280],
+      "parameters": {
+        "jsCode": "const body = $node['Webhook Cancel'].json.body || {};\nconst eventId = body.eventId || ('n8n_cal_' + Date.now());\nreturn [{ json: { ok: true, provider: 'n8n-scheduling', eventId, leadId: body.leadId || null, canceled: true, reason: body.reason || null } }];"
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [840, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Cancel": { "main": [[{ "node": "Build Cancel", "type": "main", "index": 0 }]] },
+    "Build Cancel": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": true
+}

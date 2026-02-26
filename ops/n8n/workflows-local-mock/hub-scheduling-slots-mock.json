@@ -1,0 +1,45 @@
+{
+  "name": "Hub Scheduling Slots Mock",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Slots",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/slots",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Code_1",
+      "name": "Build Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 280],
+      "parameters": {
+        "jsCode": "const body = $node['Webhook Slots'].json.body || {};\nconst duration = Math.max(15, Number(body.durationMin || 30));\nconst dateStr = body.date || new Date().toISOString().slice(0,10);\nconst [y,m,d] = dateStr.split('-').map(Number);\nconst start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));\nconst slots = [];\nfor (let i = 0; i < 3; i++) {\n  const s = new Date(start.getTime() + i * 60 * 60 * 1000);\n  const e = new Date(s.getTime() + duration * 60 * 1000);\n  slots.push({ start: s.toISOString(), end: e.toISOString(), label: s.toISOString() });\n}\nreturn [{ json: { ok: true, provider: 'n8n-scheduling', leadId: body.leadId || null, slots } }];"
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [840, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Slots": { "main": [[{ "node": "Build Slots", "type": "main", "index": 0 }]] },
+    "Build Slots": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": true
+}

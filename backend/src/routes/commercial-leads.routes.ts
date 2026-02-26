@@ -180,6 +180,21 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get<{
+    Params: { leadId: string };
+  }>('/api/comercial/leads/:leadId', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      return await commercialLeads.getLead(request.params.leadId);
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
+        return { error: error.code, message: error.message };
+      }
+      reply.status(500);
+      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  fastify.get<{
     Querystring: {
       status?: CommercialLeadStatus;
       responsavel?: string;

@@ -1,0 +1,45 @@
+{
+  "name": "Hub Scheduling Update Mock",
+  "nodes": [
+    {
+      "id": "Webhook_1",
+      "name": "Webhook Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "path": "hub/scheduling/update",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      }
+    },
+    {
+      "id": "Code_1",
+      "name": "Build Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 280],
+      "parameters": {
+        "jsCode": "const body = $node['Webhook Update'].json.body || {};\nconst eventId = body.eventId || ('n8n_cal_' + Date.now());\nreturn [{ json: { ok: true, provider: 'n8n-scheduling', eventId, leadId: body.leadId || null, slotStart: body.slotStart || null, slotEnd: body.slotEnd || null, updated: true } }];"
+      }
+    },
+    {
+      "id": "Resp_1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [840, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Update": { "main": [[{ "node": "Build Update", "type": "main", "index": 0 }]] },
+    "Build Update": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": true
+}

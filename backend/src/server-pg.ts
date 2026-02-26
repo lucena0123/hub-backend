@@ -48,15 +48,10 @@ const start = async () => {
     if (services && services.queue && services.queue.available && services.analytics) {
       workers = startWorkers((fastify as any).pool, { cacheRedis: redis, analytics: services.analytics });
     } else {
-      console.log('   Workers: skipped (BullMQ requires Redis >= 5.0)');
+      fastify.log.warn('Workers: skipped (BullMQ requires Redis >= 5.0)');
     }
 
-    console.log('\nBPMN System API is running!');
-    console.log(`   Local:   http://localhost:${PORT}`);
-    console.log(`   Network: http://${HOST}:${PORT}`);
-    console.log(`   Database: PostgreSQL (native pg driver)`);
-    console.log(`   Workers: ${workers.length} BullMQ workers`);
-    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
+    fastify.log.info(`Hub API running — http://localhost:${PORT} | workers: ${workers.length} | env: ${process.env.NODE_ENV || 'development'}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

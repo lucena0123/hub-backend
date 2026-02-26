@@ -526,6 +526,19 @@ export class CommercialLeadsService {
     }
   }
 
+  async getLead(leadId: string): Promise<CommercialLeadRecord> {
+    const result = await this.pool.query(
+      'SELECT * FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      [leadId],
+    );
+
+    if (!result.rows[0]) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    return this.mapRow(result.rows[0]);
+  }
+
   async listLeads(filters?: { status?: CommercialLeadStatus; responsavel?: string; limit?: number; offset?: number }): Promise<CommercialLeadRecord[]> {
     const where: string[] = [];
     const params: unknown[] = [];
@@ -1030,14 +1043,23 @@ export class CommercialLeadsService {
   }
 
   async requestScheduleSlots(input: RequestCommercialScheduleSlotsInput): Promise<{ leadId: string; slots: CommercialScheduleSlot[] }> {
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_SLOTS_WEBHOOK_URL;
+    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
+    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
+    const relaySecret = process.env.COMMERCIAL_SCHEDULING_RELAY_SECRET;
+
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_SLOTS_WEBHOOK_URL
+      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/slots` : undefined);
+
     if (!webhookUrl) {
       throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de slots não configurado.');
     }
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
+      },
       body: JSON.stringify({
         leadId: input.leadId,
         date: input.date,
@@ -1058,7 +1080,11 @@ export class CommercialLeadsService {
   }
 
   async confirmScheduledMeeting(input: ConfirmCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CONFIRM_WEBHOOK_URL;
+    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
+    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CONFIRM_WEBHOOK_URL
+      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/confirm` : undefined);
+
     if (!webhookUrl) {
       throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de confirmação de agenda não configurado.');
     }
@@ -1096,7 +1122,11 @@ export class CommercialLeadsService {
   }
 
   async updateScheduledMeeting(input: UpdateCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_UPDATE_WEBHOOK_URL;
+    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
+    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_UPDATE_WEBHOOK_URL
+      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/update` : undefined);
+
     if (!webhookUrl) {
       throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de atualização de agenda não configurado.');
     }
@@ -1141,7 +1171,11 @@ export class CommercialLeadsService {
   }
 
   async cancelScheduledMeeting(input: CancelCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId: string }> {
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CANCEL_WEBHOOK_URL;
+    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
+    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
+    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CANCEL_WEBHOOK_URL
+      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/cancel` : undefined);
+
     if (!webhookUrl) {
       throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de cancelamento de agenda não configurado.');
     }
