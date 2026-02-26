@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth';
 import { requireRoles } from '../middleware/rbac';
-import { CommercialFlowError, CommercialLeadStatus } from '../services/commercial-leads-service';
+import { CommercialAreaPrincipal, CommercialFlowError, CommercialLeadStatus } from '../services/commercial-leads-service';
 
 const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
@@ -145,10 +145,16 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';
       nomeEscritorio: string;
       responsavel: string;
+      nomeContato?: string;
       instagram?: string;
       whatsapp?: string;
+      email?: string;
       cidade?: string;
-      areaPrincipal?: string;
+      areaPrincipal?: CommercialAreaPrincipal;
+      qtdAdvogados?: number;
+      faturamentoEstimado?: number;
+      orcamentoMarketing?: number;
+      timezone?: string;
       proximaAcao?: string;
       dataProximaAcao?: string;
     };
@@ -570,6 +576,43 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
         error: 'INTERNAL_ERROR',
         message: error instanceof Error ? error.message : 'Unknown error',
       };
+    }
+  });
+  // ─── Update lead fields ─────────────────────────────────────────────────────
+  fastify.patch<{
+    Params: { leadId: string };
+    Body: {
+      nomeContato?: string;
+      email?: string;
+      whatsapp?: string;
+      instagram?: string;
+      cidade?: string;
+      areaPrincipal?: CommercialAreaPrincipal;
+      timezone?: string;
+      qtdAdvogados?: number;
+      valProposta?: number;
+      urlProposta?: string;
+      faturamentoEstimado?: number;
+      orcamentoMarketing?: number;
+      scoreQualificacao?: number;
+      proximaAcao?: string;
+      dataProximaAcao?: string;
+    };
+  }>('/api/comercial/leads/:leadId', { preHandler: [requireRoles(['admin', 'manager', 'analyst'])] }, async (request, reply) => {
+    try {
+      const lead = await commercialLeads.updateLead(request.params.leadId, request.body);
+      return lead;
+    } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        const statusByCode: Record<string, number> = {
+          NOT_FOUND: 404,
+          VALIDATION_ERROR: 400,
+        };
+        reply.status(statusByCode[error.code] || 400);
+        return { error: error.code, message: error.message };
+      }
+      reply.status(500);
+      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
     }
   });
 };

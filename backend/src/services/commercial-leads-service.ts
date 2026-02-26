@@ -15,14 +15,40 @@ export type CommercialLeadStatus =
   | 'nutricao'
   | 'perdido';
 
+export type CommercialAreaPrincipal = 'trabalhista' | 'aereo' | 'salario_maternidade' | 'previdenciario' | 'outro';
+
 export interface CreateCommercialLeadInput {
   origem: 'instagram' | 'indicacao' | 'site' | 'whatsapp' | 'outro';
   nomeEscritorio: string;
   responsavel: string;
+  nomeContato?: string;
   instagram?: string;
   whatsapp?: string;
+  email?: string;
   cidade?: string;
-  areaPrincipal?: string;
+  areaPrincipal?: CommercialAreaPrincipal;
+  qtdAdvogados?: number;
+  faturamentoEstimado?: number;
+  orcamentoMarketing?: number;
+  timezone?: string;
+  proximaAcao?: string;
+  dataProximaAcao?: string;
+}
+
+export interface UpdateCommercialLeadInput {
+  nomeContato?: string;
+  email?: string;
+  whatsapp?: string;
+  instagram?: string;
+  cidade?: string;
+  areaPrincipal?: CommercialAreaPrincipal;
+  timezone?: string;
+  qtdAdvogados?: number;
+  valProposta?: number;
+  urlProposta?: string;
+  faturamentoEstimado?: number;
+  orcamentoMarketing?: number;
+  scoreQualificacao?: number;
   proximaAcao?: string;
   dataProximaAcao?: string;
 }
@@ -261,10 +287,21 @@ export interface CommercialLeadRecord {
   dataEntrada: string;
   origem: string;
   nomeEscritorio: string;
+  nomeContato?: string;
   instagram?: string;
   whatsapp?: string;
+  email?: string;
   cidade?: string;
   areaPrincipal?: string;
+  qtdAdvogados?: number;
+  faturamentoEstimado?: number;
+  orcamentoMarketing?: number;
+  timezone?: string;
+  valProposta?: number;
+  calEventId?: string;
+  dataDiagnostico?: string;
+  urlProposta?: string;
+  scoreQualificacao?: number;
   statusAtual: CommercialLeadStatus;
   responsavel: string;
   proximaAcao?: string;
@@ -411,8 +448,19 @@ export class CommercialLeadsService {
         nome_escritorio TEXT NOT NULL,
         instagram TEXT,
         whatsapp TEXT,
+        email TEXT,
+        nome_contato TEXT,
         cidade TEXT,
         area_principal TEXT,
+        qtd_advogados INT,
+        faturamento_estimado NUMERIC(12,2),
+        orcamento_marketing NUMERIC(12,2),
+        timezone TEXT DEFAULT 'America/Sao_Paulo',
+        val_proposta NUMERIC(12,2),
+        cal_event_id TEXT,
+        data_diagnostico TIMESTAMPTZ,
+        url_proposta TEXT,
+        score_qualificacao SMALLINT,
         status_atual TEXT NOT NULL,
         responsavel TEXT NOT NULL,
         proxima_acao TEXT,
@@ -447,6 +495,17 @@ export class CommercialLeadsService {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS email TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS nome_contato TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS qtd_advogados INT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS faturamento_estimado NUMERIC(12,2);
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS orcamento_marketing NUMERIC(12,2);
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'America/Sao_Paulo';
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS val_proposta NUMERIC(12,2);
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS cal_event_id TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS data_diagnostico TIMESTAMPTZ;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS url_proposta TEXT;
+      ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS score_qualificacao SMALLINT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_token TEXT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_type TEXT;
       ALTER TABLE commercial_leads ADD COLUMN IF NOT EXISTS form_submitted_at TIMESTAMPTZ;
@@ -499,18 +558,25 @@ export class CommercialLeadsService {
     try {
       const result = await this.pool.query(
         `INSERT INTO commercial_leads (
-          lead_id, origem, nome_escritorio, instagram, whatsapp, cidade, area_principal,
-          status_atual, responsavel, proxima_acao, data_proxima_acao, form_token
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          lead_id, origem, nome_escritorio, nome_contato, instagram, whatsapp, email,
+          cidade, area_principal, qtd_advogados, faturamento_estimado, orcamento_marketing,
+          timezone, status_atual, responsavel, proxima_acao, data_proxima_acao, form_token
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         RETURNING *`,
         [
           leadId,
           input.origem,
           input.nomeEscritorio,
+          input.nomeContato || null,
           input.instagram || null,
           input.whatsapp || null,
+          input.email || null,
           input.cidade || null,
           input.areaPrincipal || null,
+          input.qtdAdvogados ?? null,
+          input.faturamentoEstimado ?? null,
+          input.orcamentoMarketing ?? null,
+          input.timezone || 'America/Sao_Paulo',
           'novo_lead',
           input.responsavel,
           input.proximaAcao || null,
@@ -823,13 +889,26 @@ export class CommercialLeadsService {
     }
 
     const recipient = await this.resolveDispatchRecipient(input.leadId, input.channel, input.recipient);
+
+    // Enrich template variables with lead's nome_contato if not explicitly provided
+    const leadRow = await this.pool.query(
+      'SELECT nome_contato, nome_escritorio FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      [input.leadId],
+    );
+    const leadData = leadRow.rows[0];
+    const enrichedVariables: Record<string, unknown> = {
+      nome: leadData?.nome_contato || leadData?.nome_escritorio || 'Doutor(a)',
+      nomeEscritorio: leadData?.nome_escritorio,
+      ...input.variables,
+    };
+
     const providerResult = await this.sendDispatchToProvider({
       leadId: input.leadId,
       channel: input.channel,
       stage: input.stage,
       templateKey,
       recipient,
-      variables: input.variables || {},
+      variables: enrichedVariables,
     });
 
     const event = await this.ingestIntegrationEvent({
@@ -840,7 +919,7 @@ export class CommercialLeadsService {
       payload: {
         recipient,
         templateKey,
-        variables: input.variables || {},
+        variables: enrichedVariables,
         provider: providerResult.provider,
         providerAck: providerResult.ack,
       },
@@ -868,7 +947,7 @@ export class CommercialLeadsService {
     if (explicitRecipient?.trim()) return explicitRecipient.trim();
 
     const lead = await this.pool.query(
-      'SELECT lead_id, whatsapp FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      'SELECT lead_id, whatsapp, email FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
       [leadId],
     );
 
@@ -881,9 +960,13 @@ export class CommercialLeadsService {
       return String(current.whatsapp);
     }
 
+    if (channel === 'gmail' && current.email) {
+      return String(current.email);
+    }
+
     throw new CommercialFlowError(
       'VALIDATION_ERROR',
-      `Recipient é obrigatório para dispatch via ${channel}.`,
+      `Recipient é obrigatório para dispatch via ${channel}. Cadastre o ${channel === 'gmail' ? 'e-mail' : 'WhatsApp'} do lead.`,
     );
   }
 
@@ -996,10 +1079,11 @@ export class CommercialLeadsService {
   }
 
   async requestScheduleSlots(input: RequestCommercialScheduleSlotsInput): Promise<{ leadId: string; slots: CommercialScheduleSlot[] }> {
+    const tz = input.timezone ?? await this.getLeadTimezone(input.leadId) ?? 'America/Sao_Paulo';
     const slots = await this.googleApi.getFreeBusy(
       input.date,
       input.durationMin ?? 30,
-      input.timezone ?? 'America/Sao_Paulo',
+      tz,
     );
     return { leadId: input.leadId, slots };
   }
@@ -1007,14 +1091,22 @@ export class CommercialLeadsService {
   async confirmScheduledMeeting(input: ConfirmCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
     await this.ensureLeadExists(input.leadId);
 
+    const tz = input.timezone ?? await this.getLeadTimezone(input.leadId) ?? 'America/Sao_Paulo';
+
     const ack = await this.googleApi.createEvent({
       leadId: input.leadId,
       slotStart: input.slotStart,
       slotEnd: input.slotEnd,
       attendeeName: input.attendeeName,
       attendeeEmail: input.attendeeEmail,
-      timezone: input.timezone ?? 'America/Sao_Paulo',
+      timezone: tz,
     });
+
+    // Save cal_event_id and data_diagnostico directly on the lead
+    await this.pool.query(
+      'UPDATE commercial_leads SET cal_event_id = $1, data_diagnostico = $2, updated_at = NOW() WHERE lead_id = $3',
+      [ack.eventId, input.slotStart, input.leadId],
+    );
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
@@ -1045,14 +1137,22 @@ export class CommercialLeadsService {
       throw new CommercialFlowError('VALIDATION_ERROR', 'eventId é obrigatório para atualizar reunião.');
     }
 
+    const tz = input.timezone ?? await this.getLeadTimezone(input.leadId) ?? 'America/Sao_Paulo';
+
     const ack = await this.googleApi.updateEvent(eventId, {
       leadId: input.leadId,
       slotStart: input.slotStart,
       slotEnd: input.slotEnd,
       attendeeName: input.attendeeName,
       attendeeEmail: input.attendeeEmail,
-      timezone: input.timezone ?? 'America/Sao_Paulo',
+      timezone: tz,
     });
+
+    // Update cal_event_id and data_diagnostico on the lead
+    await this.pool.query(
+      'UPDATE commercial_leads SET cal_event_id = $1, data_diagnostico = $2, updated_at = NOW() WHERE lead_id = $3',
+      [ack.eventId, input.slotStart, input.leadId],
+    );
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
@@ -1086,6 +1186,12 @@ export class CommercialLeadsService {
 
     await this.googleApi.deleteEvent(eventId);
 
+    // Clear cal_event_id and data_diagnostico from lead
+    await this.pool.query(
+      'UPDATE commercial_leads SET cal_event_id = NULL, data_diagnostico = NULL, updated_at = NOW() WHERE lead_id = $1',
+      [input.leadId],
+    );
+
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
       channel: 'calendar',
@@ -1103,6 +1209,68 @@ export class CommercialLeadsService {
       leadId: input.leadId,
       eventId,
     };
+  }
+
+  private async getLeadTimezone(leadId: string): Promise<string | undefined> {
+    const result = await this.pool.query(
+      'SELECT timezone FROM commercial_leads WHERE lead_id = $1 LIMIT 1',
+      [leadId],
+    );
+    return result.rows[0]?.timezone || undefined;
+  }
+
+  async updateLead(leadId: string, input: UpdateCommercialLeadInput): Promise<CommercialLeadRecord> {
+    const fieldMap: Record<string, string> = {
+      nomeContato: 'nome_contato',
+      email: 'email',
+      whatsapp: 'whatsapp',
+      instagram: 'instagram',
+      cidade: 'cidade',
+      areaPrincipal: 'area_principal',
+      timezone: 'timezone',
+      qtdAdvogados: 'qtd_advogados',
+      valProposta: 'val_proposta',
+      urlProposta: 'url_proposta',
+      faturamentoEstimado: 'faturamento_estimado',
+      orcamentoMarketing: 'orcamento_marketing',
+      scoreQualificacao: 'score_qualificacao',
+      proximaAcao: 'proxima_acao',
+      dataProximaAcao: 'data_proxima_acao',
+    };
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+
+    for (const [key, col] of Object.entries(fieldMap)) {
+      const val = (input as Record<string, unknown>)[key];
+      if (val !== undefined) {
+        values.push(val === '' ? null : val);
+        setClauses.push(`${col} = $${values.length}`);
+      }
+    }
+
+    if (setClauses.length === 0) {
+      return this.getLead(leadId);
+    }
+
+    values.push(leadId);
+    const result = await this.pool.query(
+      `UPDATE commercial_leads SET ${setClauses.join(', ')}, updated_at = NOW() WHERE lead_id = $${values.length} RETURNING *`,
+      values,
+    );
+
+    if (!result.rows[0]) {
+      throw new CommercialFlowError('NOT_FOUND', 'Lead não encontrado.');
+    }
+
+    void createAuditLog(this.pool, {
+      action: 'update',
+      entityType: 'commercial_lead',
+      entityId: leadId,
+      changes: { after: input as Record<string, unknown> },
+    });
+
+    return this.mapRow(result.rows[0]);
   }
 
   private async ensureLeadExists(leadId: string): Promise<void> {
@@ -1499,10 +1667,21 @@ export class CommercialLeadsService {
       dataEntrada: row.data_entrada,
       origem: row.origem,
       nomeEscritorio: row.nome_escritorio,
+      nomeContato: row.nome_contato || undefined,
       instagram: row.instagram || undefined,
       whatsapp: row.whatsapp || undefined,
+      email: row.email || undefined,
       cidade: row.cidade || undefined,
       areaPrincipal: row.area_principal || undefined,
+      qtdAdvogados: row.qtd_advogados != null ? Number(row.qtd_advogados) : undefined,
+      faturamentoEstimado: row.faturamento_estimado != null ? Number(row.faturamento_estimado) : undefined,
+      orcamentoMarketing: row.orcamento_marketing != null ? Number(row.orcamento_marketing) : undefined,
+      timezone: row.timezone || 'America/Sao_Paulo',
+      valProposta: row.val_proposta != null ? Number(row.val_proposta) : undefined,
+      calEventId: row.cal_event_id || undefined,
+      dataDiagnostico: row.data_diagnostico || undefined,
+      urlProposta: row.url_proposta || undefined,
+      scoreQualificacao: row.score_qualificacao != null ? Number(row.score_qualificacao) : undefined,
       statusAtual: row.status_atual,
       responsavel: row.responsavel,
       proximaAcao: row.proxima_acao || undefined,
