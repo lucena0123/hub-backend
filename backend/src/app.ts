@@ -48,8 +48,14 @@ export function buildApp(servicesPluginOverride?: FastifyPluginAsync) {
     });
 
     // Core plugins
+    // FRONTEND_URL supports comma-separated values for multiple allowed origins
+    // e.g. "https://lucenasolucoesdigitais.com.br,https://www.lucenasolucoesdigitais.com.br"
+    const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
     fastify.register(cors, {
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
         credentials: true,
         methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
