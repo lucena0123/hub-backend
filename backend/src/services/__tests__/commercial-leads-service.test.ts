@@ -17,6 +17,23 @@ import {
   CommercialFlowError,
   validateLeadTransition,
 } from '../commercial-leads-service';
+import type { EvolutionApiService } from '../evolution-api-service';
+import type { GoogleApiService } from '../google-api-service';
+
+// Stub API services — not called by the unit-tested methods (createLead, getLead, etc.)
+const stubEvolutionApi = {
+  resolveTemplate: vi.fn().mockReturnValue('test message'),
+  sendText: vi.fn().mockResolvedValue({ messageId: 'wa_test_001' }),
+} as unknown as EvolutionApiService;
+
+const stubGoogleApi = {
+  resolveGmailTemplate: vi.fn().mockReturnValue({ subject: 'test', html: '<p>test</p>' }),
+  sendEmail: vi.fn().mockResolvedValue({ messageId: 'gm_test_001' }),
+  getFreeBusy: vi.fn().mockResolvedValue([]),
+  createEvent: vi.fn().mockResolvedValue({ eventId: 'cal_test_001' }),
+  updateEvent: vi.fn().mockResolvedValue({ eventId: 'cal_test_001' }),
+  deleteEvent: vi.fn().mockResolvedValue(undefined),
+} as unknown as GoogleApiService;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -233,7 +250,7 @@ describe('CommercialLeadsService.createLead', () => {
       { rowCount: 0, rows: [] },          // dedupe check → no match
       { rowCount: 1, rows: [leadRow] },   // INSERT RETURNING *
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.createLead({
       origem: 'instagram',
@@ -251,7 +268,7 @@ describe('CommercialLeadsService.createLead', () => {
     const pool = makePool(
       { rowCount: 1, rows: [{ lead_id: 'existing-id' }] }, // dedupe check → found
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     await expect(
       svc.createLead({
@@ -270,7 +287,7 @@ describe('CommercialLeadsService.createLead', () => {
       .mockRejectedValueOnce(Object.assign(new Error('unique violation'), { code: '23505' }));
 
     const pool = { query: mockQuery } as unknown as Pool;
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     await expect(
       svc.createLead({
@@ -287,7 +304,7 @@ describe('CommercialLeadsService.createLead', () => {
     const pool = makePool(
       { rowCount: 1, rows: [leadRow] },  // only INSERT (no dedupe query)
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.createLead({
       origem: 'indicacao',
@@ -307,7 +324,7 @@ describe('CommercialLeadsService.getLead', () => {
   it('returns lead when found', async () => {
     const leadRow = makeLeadRow({ status_atual: 'primeiro_contato' });
     const pool = makePool({ rowCount: 1, rows: [leadRow] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.getLead('lead-uuid-001');
     expect(result.leadId).toBe('lead-uuid-001');
@@ -316,7 +333,7 @@ describe('CommercialLeadsService.getLead', () => {
 
   it('throws NOT_FOUND when lead does not exist', async () => {
     const pool = makePool({ rowCount: 0, rows: [] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.getLead('non-existent-id');
@@ -340,7 +357,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
       { rowCount: 1, rows: [updatedRow] },   // UPDATE RETURNING
       { rowCount: 1, rows: [] },             // INSERT transition
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.moveLeadStatus('lead-uuid-001', { to: 'primeiro_contato' });
     expect(result.statusAtual).toBe('primeiro_contato');
@@ -355,7 +372,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
       { rowCount: 1, rows: [updatedRow] },
       { rowCount: 1, rows: [] },
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.moveLeadStatus('lead-uuid-001', {
       to: 'diagnostico_agendado',
@@ -367,7 +384,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
   it('throws DOR_BLOCKED when dor01Ok is missing on → diagnostico_agendado', async () => {
     const existingRow = makeLeadRow({ status_atual: 'primeiro_contato' });
     const pool = makePool({ rowCount: 1, rows: [existingRow] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.moveLeadStatus('lead-uuid-001', {
@@ -382,7 +399,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
   it('throws INVALID_TRANSITION for disallowed move (novo_lead → negociacao)', async () => {
     const existingRow = makeLeadRow({ status_atual: 'novo_lead' });
     const pool = makePool({ rowCount: 1, rows: [existingRow] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.moveLeadStatus('lead-uuid-001', { to: 'negociacao' });
@@ -393,7 +410,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
 
   it('throws NOT_FOUND when lead does not exist', async () => {
     const pool = makePool({ rowCount: 0, rows: [] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.moveLeadStatus('ghost-id', { to: 'primeiro_contato' });
@@ -409,7 +426,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
       payment_status: 'pendente',
     });
     const pool = makePool({ rowCount: 1, rows: [existingRow] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.moveLeadStatus('lead-uuid-001', { to: 'fechado', dor03Ok: true });
@@ -428,7 +445,7 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
       { rowCount: 1, rows: [updatedRow] },
       { rowCount: 1, rows: [] },
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.moveLeadStatus('lead-uuid-001', { to: 'primeiro_contato' });
     expect(result.statusAtual).toBe('primeiro_contato');
@@ -449,7 +466,7 @@ describe('CommercialLeadsService.updateLeadProofs', () => {
       { rowCount: 1, rows: [updatedRow] },   // UPDATE
       { rowCount: 1, rows: [] },             // INSERT transition
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.updateLeadProofs('lead-uuid-001', { contractStatus: 'assinado' });
     expect(result.contractStatus).toBe('assinado');
@@ -465,7 +482,7 @@ describe('CommercialLeadsService.updateLeadProofs', () => {
       { rowCount: 1, rows: [updatedRow] },
       { rowCount: 1, rows: [] },
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.updateLeadProofs('lead-uuid-001', {
       contractStatus: 'assinado',
@@ -476,7 +493,7 @@ describe('CommercialLeadsService.updateLeadProofs', () => {
 
   it('throws NOT_FOUND when lead does not exist', async () => {
     const pool = makePool({ rowCount: 0, rows: [] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.updateLeadProofs('ghost-id', { contractStatus: 'assinado' });
@@ -500,7 +517,7 @@ describe('CommercialLeadsService.updateLeadPrivacy', () => {
       { rowCount: 1, rows: [updatedRow] },
       { rowCount: 1, rows: [] },
     );
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     const result = await svc.updateLeadPrivacy('lead-uuid-001', { consentGiven: true });
     expect(result.consentGiven).toBe(true);
@@ -508,7 +525,7 @@ describe('CommercialLeadsService.updateLeadPrivacy', () => {
 
   it('throws NOT_FOUND for missing lead', async () => {
     const pool = makePool({ rowCount: 0, rows: [] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.updateLeadPrivacy('ghost-id', { consentGiven: true });
@@ -525,7 +542,7 @@ describe('CommercialLeadsService.updateLeadPrivacy', () => {
 describe('CommercialLeadsService.deleteLeadPermanently', () => {
   it('throws DELETE_GUARD when confirmText is wrong', async () => {
     const pool = makePool();
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.deleteLeadPermanently('lead-uuid-001', { confirmText: 'delete' });
@@ -536,7 +553,7 @@ describe('CommercialLeadsService.deleteLeadPermanently', () => {
 
   it('throws NOT_FOUND when confirmText is correct but lead missing', async () => {
     const pool = makePool({ rowCount: 0, rows: [] });
-    const svc = new CommercialLeadsService(pool);
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
 
     try {
       await svc.deleteLeadPermanently('ghost-id', { confirmText: 'EXCLUIR' });

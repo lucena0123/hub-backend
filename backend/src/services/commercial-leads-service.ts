@@ -1,7 +1,8 @@
-import { createHmac } from 'node:crypto';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { createAuditLog } from '../middleware/audit';
+import { EvolutionApiService } from './evolution-api-service';
+import { GoogleApiService } from './google-api-service';
 
 export type CommercialLeadStatus =
   | 'novo_lead'
@@ -383,7 +384,11 @@ export function validateLeadTransition(from: CommercialLeadStatus, input: MoveLe
 }
 
 export class CommercialLeadsService {
-  constructor(private pool: Pool) {}
+  constructor(
+    private pool: Pool,
+    private evolutionApi: EvolutionApiService,
+    private googleApi: GoogleApiService,
+  ) {}
 
   getFormLink(leadId: string, formType: CommercialFormType, formToken?: string): CommercialFormLink {
     const token = formToken || uuidv4();
@@ -890,107 +895,27 @@ export class CommercialLeadsService {
     recipient: string;
     variables: Record<string, unknown>;
   }): Promise<{ provider: string; externalEventId?: string; ack: Record<string, unknown> }> {
-    const webhookEnvByChannel: Record<'whatsapp' | 'gmail', string | undefined> = {
-      whatsapp: process.env.COMMERCIAL_DISPATCH_WHATSAPP_WEBHOOK_URL,
-      gmail: process.env.COMMERCIAL_DISPATCH_GMAIL_WEBHOOK_URL,
-    };
-
-    const relayEnabled = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_ENABLED === 'true';
-    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
-    const relaySecret = process.env.COMMERCIAL_DISPATCH_RELAY_SECRET;
-
-    const webhookUrl = webhookEnvByChannel[input.channel]
-      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/${input.channel}` : undefined);
-
-    if (!webhookUrl) {
-      throw new CommercialFlowError(
-        'VALIDATION_ERROR',
-        `Webhook de dispatch não configurado para canal ${input.channel}.`,
-      );
+    if (input.channel === 'whatsapp') {
+      const text = this.evolutionApi.resolveTemplate(input.templateKey, input.variables);
+      const result = await this.evolutionApi.sendText(input.recipient, text);
+      return {
+        provider: 'evolution-api',
+        externalEventId: result.messageId,
+        ack: { messageId: result.messageId, text },
+      };
     }
 
-    const signingSecret = process.env.COMMERCIAL_DISPATCH_WEBHOOK_SIGNING_SECRET;
-    const sharedToken = process.env.COMMERCIAL_DISPATCH_SHARED_TOKEN;
-    const timeoutMs = Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_TIMEOUT_MS || '8000', 10);
-    const maxRetries = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_MAX_RETRIES || '2', 10), 0), 5);
-    const retryBaseMs = Math.min(Math.max(Number.parseInt(process.env.COMMERCIAL_DISPATCH_WEBHOOK_RETRY_BASE_MS || '500', 10), 100), 5000);
-
-    const sentAt = new Date().toISOString();
-    const body = {
-      leadId: input.leadId,
-      channel: input.channel,
-      stage: input.stage,
-      templateKey: input.templateKey,
-      recipient: input.recipient,
-      variables: input.variables,
-      sentAt,
-    };
-
-    const rawPayload = JSON.stringify(body);
-    const signature = signingSecret
-      ? createHmac('sha256', signingSecret).update(`${sentAt}.${rawPayload}`).digest('hex')
-      : undefined;
-
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        const response = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
-            ...(signature ? { 'x-dispatch-signature': signature, 'x-dispatch-timestamp': sentAt } : {}),
-            ...(sharedToken ? { 'x-dispatch-shared-token': sharedToken } : {}),
-          },
-          body: rawPayload,
-          signal: controller.signal,
-        });
-
-        const rawBody = await response.text();
-        let parsedBody: Record<string, unknown> = {};
-        if (rawBody) {
-          try {
-            parsedBody = JSON.parse(rawBody) as Record<string, unknown>;
-          } catch {
-            parsedBody = { raw: rawBody };
-          }
-        }
-
-        if (!response.ok) {
-          throw new Error(`Falha no dispatch para ${input.channel}: HTTP ${response.status}`);
-        }
-
-        const externalEventId =
-          (typeof parsedBody.externalEventId === 'string' && parsedBody.externalEventId) ||
-          (typeof parsedBody.messageId === 'string' && parsedBody.messageId) ||
-          (typeof parsedBody.id === 'string' && parsedBody.id) ||
-          undefined;
-
-        return {
-          provider: webhookUrl.includes('/api/comercial/relay/') ? 'temp-relay' : 'webhook',
-          externalEventId,
-          ack: {
-            ...parsedBody,
-            retryAttempt: attempt,
-            retriesConfigured: maxRetries,
-          },
-        };
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Falha desconhecida no dispatch');
-        if (attempt === maxRetries) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, retryBaseMs * (attempt + 1)));
-      } finally {
-        clearTimeout(timeout);
-      }
+    if (input.channel === 'gmail') {
+      const { subject, html } = this.googleApi.resolveGmailTemplate(input.templateKey, input.variables);
+      const result = await this.googleApi.sendEmail(input.recipient, subject, html);
+      return {
+        provider: 'gmail-api',
+        externalEventId: result.messageId,
+        ack: { messageId: result.messageId, subject },
+      };
     }
 
-    throw lastError || new Error(`Falha no dispatch para ${input.channel}`);
+    throw new CommercialFlowError('VALIDATION_ERROR', `Canal de dispatch inválido: ${input.channel}`);
   }
 
   async getLeadFormLink(leadId: string, formType: CommercialFormType): Promise<CommercialFormLink> {
@@ -1071,62 +996,25 @@ export class CommercialLeadsService {
   }
 
   async requestScheduleSlots(input: RequestCommercialScheduleSlotsInput): Promise<{ leadId: string; slots: CommercialScheduleSlot[] }> {
-    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
-    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
-    const relaySecret = process.env.COMMERCIAL_SCHEDULING_RELAY_SECRET;
-
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_SLOTS_WEBHOOK_URL
-      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/slots` : undefined);
-
-    if (!webhookUrl) {
-      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de slots não configurado.');
-    }
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(relaySecret ? { 'x-relay-secret': relaySecret } : {}),
-      },
-      body: JSON.stringify({
-        leadId: input.leadId,
-        date: input.date,
-        durationMin: input.durationMin || 30,
-        timezone: input.timezone || 'America/Sao_Paulo',
-      }),
-    });
-
-    const data = await response.json() as { slots?: CommercialScheduleSlot[] };
-    if (!response.ok) {
-      throw new Error(`Falha ao consultar slots: HTTP ${response.status}`);
-    }
-
-    return {
-      leadId: input.leadId,
-      slots: Array.isArray(data.slots) ? data.slots : [],
-    };
+    const slots = await this.googleApi.getFreeBusy(
+      input.date,
+      input.durationMin ?? 30,
+      input.timezone ?? 'America/Sao_Paulo',
+    );
+    return { leadId: input.leadId, slots };
   }
 
   async confirmScheduledMeeting(input: ConfirmCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
-    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
-    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CONFIRM_WEBHOOK_URL
-      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/confirm` : undefined);
-
-    if (!webhookUrl) {
-      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de confirmação de agenda não configurado.');
-    }
-
     await this.ensureLeadExists(input.leadId);
 
-    const ack = await this.sendSchedulingWebhook(webhookUrl, {
+    const ack = await this.googleApi.createEvent({
       leadId: input.leadId,
       slotStart: input.slotStart,
       slotEnd: input.slotEnd,
       attendeeName: input.attendeeName,
       attendeeEmail: input.attendeeEmail,
-      timezone: input.timezone || 'America/Sao_Paulo',
-    }, 'confirmar agenda');
+      timezone: input.timezone ?? 'America/Sao_Paulo',
+    });
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
@@ -1150,15 +1038,6 @@ export class CommercialLeadsService {
   }
 
   async updateScheduledMeeting(input: UpdateCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId?: string }> {
-    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
-    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_UPDATE_WEBHOOK_URL
-      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/update` : undefined);
-
-    if (!webhookUrl) {
-      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de atualização de agenda não configurado.');
-    }
-
     await this.ensureLeadExists(input.leadId);
 
     const eventId = input.eventId || await this.resolveLatestCalendarEventId(input.leadId);
@@ -1166,23 +1045,22 @@ export class CommercialLeadsService {
       throw new CommercialFlowError('VALIDATION_ERROR', 'eventId é obrigatório para atualizar reunião.');
     }
 
-    const ack = await this.sendSchedulingWebhook(webhookUrl, {
+    const ack = await this.googleApi.updateEvent(eventId, {
       leadId: input.leadId,
-      eventId,
       slotStart: input.slotStart,
       slotEnd: input.slotEnd,
       attendeeName: input.attendeeName,
       attendeeEmail: input.attendeeEmail,
-      timezone: input.timezone || 'America/Sao_Paulo',
-    }, 'atualizar agenda');
+      timezone: input.timezone ?? 'America/Sao_Paulo',
+    });
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
       channel: 'calendar',
       eventType: 'calendar:meeting_updated',
-      externalEventId: ack.eventId || eventId,
+      externalEventId: ack.eventId,
       payload: {
-        eventId,
+        eventId: ack.eventId,
         slotStart: input.slotStart,
         slotEnd: input.slotEnd,
         attendeeName: input.attendeeName || null,
@@ -1194,20 +1072,11 @@ export class CommercialLeadsService {
     return {
       ok: true,
       leadId: input.leadId,
-      eventId: ack.eventId || eventId,
+      eventId: ack.eventId,
     };
   }
 
   async cancelScheduledMeeting(input: CancelCommercialScheduleInput): Promise<{ ok: true; leadId: string; eventId: string }> {
-    const relayEnabled = process.env.COMMERCIAL_SCHEDULING_TEMP_RELAY_ENABLED === 'true';
-    const relayBaseUrl = process.env.COMMERCIAL_DISPATCH_TEMP_RELAY_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3001'}`;
-    const webhookUrl = process.env.COMMERCIAL_SCHEDULING_CANCEL_WEBHOOK_URL
-      || (relayEnabled ? `${relayBaseUrl}/api/comercial/relay/scheduling/cancel` : undefined);
-
-    if (!webhookUrl) {
-      throw new CommercialFlowError('VALIDATION_ERROR', 'Webhook de cancelamento de agenda não configurado.');
-    }
-
     await this.ensureLeadExists(input.leadId);
 
     const eventId = input.eventId || await this.resolveLatestCalendarEventId(input.leadId);
@@ -1215,12 +1084,7 @@ export class CommercialLeadsService {
       throw new CommercialFlowError('VALIDATION_ERROR', 'eventId é obrigatório para cancelar reunião.');
     }
 
-    const ack = await this.sendSchedulingWebhook(webhookUrl, {
-      leadId: input.leadId,
-      eventId,
-      reason: input.reason,
-      cancelledBy: input.cancelledBy,
-    }, 'cancelar agenda');
+    await this.googleApi.deleteEvent(eventId);
 
     await this.ingestIntegrationEvent({
       leadId: input.leadId,
@@ -1231,7 +1095,6 @@ export class CommercialLeadsService {
         eventId,
         reason: input.reason || null,
         cancelledBy: input.cancelledBy || null,
-        providerAck: ack,
       },
     });
 
@@ -1264,34 +1127,6 @@ export class CommercialLeadsService {
 
     const row = result.rows[0];
     return row?.external_event_id || undefined;
-  }
-
-  private async sendSchedulingWebhook(
-    webhookUrl: string,
-    body: Record<string, unknown>,
-    operationLabel: string,
-  ): Promise<{ eventId?: string; [k: string]: unknown }> {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const raw = await response.text();
-    let ack: { eventId?: string; [k: string]: unknown } = {};
-    if (raw) {
-      try {
-        ack = JSON.parse(raw) as { eventId?: string; [k: string]: unknown };
-      } catch {
-        ack = { raw };
-      }
-    }
-
-    if (!response.ok) {
-      throw new Error(`Falha ao ${operationLabel}: HTTP ${response.status}`);
-    }
-
-    return ack;
   }
 
   async getDispatchHealthSummary(windowDays = 7): Promise<CommercialDispatchHealthSummary> {

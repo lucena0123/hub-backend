@@ -24,6 +24,8 @@ import { AnomalyDetectionService } from '../services/anomaly-detection-service';
 import { OptimizationActionService } from '../services/optimization-playbook/optimization-action-service';
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import { CommercialLeadsService } from '../services/commercial-leads-service';
+import { EvolutionApiService } from '../services/evolution-api-service';
+import { GoogleApiService } from '../services/google-api-service';
 import type { AppServices } from '../types/fastify';
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -80,7 +82,19 @@ export default fp(async (fastify: FastifyInstance) => {
   const processService = new ProcessService(prisma);
   const optimizationActionService = new OptimizationActionService(prisma);
   const optimizationTaskGenerator = new OptimizationTaskGenerator(prisma);
-  const commercialLeadsService = new CommercialLeadsService(pool);
+  const evolutionApi = new EvolutionApiService(
+    process.env.EVOLUTION_API_BASE_URL ?? '',
+    process.env.EVOLUTION_INSTANCE ?? '',
+    process.env.EVOLUTION_API_KEY ?? '',
+  );
+  const googleApi = new GoogleApiService(
+    process.env.GOOGLE_CLIENT_ID ?? '',
+    process.env.GOOGLE_CLIENT_SECRET ?? '',
+    process.env.GOOGLE_REFRESH_TOKEN ?? '',
+    process.env.GOOGLE_CALENDAR_ID ?? 'primary',
+    process.env.GMAIL_FROM_ADDRESS ?? '',
+  );
+  const commercialLeadsService = new CommercialLeadsService(pool, evolutionApi, googleApi);
   await commercialLeadsService.initialize();
 
   const services: AppServices = {
