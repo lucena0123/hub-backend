@@ -5,8 +5,8 @@
  * createAuditLog is mocked to stay silent.
  */
 
-import { vi, describe, it, expect, beforeEach } from 'vitest';
-import type { Pool, PoolClient } from 'pg';
+import { vi, describe, it, expect } from 'vitest';
+import type { Pool } from 'pg';
 
 vi.mock('../../middleware/audit', () => ({
   createAuditLog: vi.fn().mockResolvedValue(undefined),

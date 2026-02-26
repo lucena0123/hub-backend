@@ -27,6 +27,7 @@ import optimizationRoutes from './routes/optimization.routes';
 import automationRoutes from './routes/automation.routes';
 import commercialDispatchRelayRoutes from './routes/commercial-dispatch-relay.routes';
 import commercialLeadsRoutes from './routes/commercial-leads.routes';
+import publicFormsRoutes from './routes/public-forms.routes';
 
 import { FastifyPluginAsync } from 'fastify';
 
@@ -85,6 +86,7 @@ export function buildApp(servicesPluginOverride?: FastifyPluginAsync) {
     fastify.register(automationRoutes);
     fastify.register(commercialDispatchRelayRoutes);
     fastify.register(commercialLeadsRoutes);
+    fastify.register(publicFormsRoutes);
 
     // Error handler
     fastify.setErrorHandler(globalErrorHandler);

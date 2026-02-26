@@ -84,8 +84,6 @@ const stubCommercialLeads = {
 const mockServicesPlugin = fp(async (fastify) => {
   const fakePrisma = {} as any;
   const fakePool = { query: vi.fn(), end: vi.fn(), connect: vi.fn() } as any;
-  const fakeRedis = { quit: vi.fn() } as any;
-
   fastify.decorate('pool', fakePool);
   fastify.decorate('prisma', fakePrisma);
   fastify.decorate('services', {
