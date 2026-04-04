@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'CPL acima do desejado (tema)',
   description: 'CPL acima do desejado para o tema detectado.',
   condition: 'cpl_last7 > targetCplOkMax AND cpl_last7 < targetCplBadMin',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignCplAboveOkRule: OptimizationRuleModule = {

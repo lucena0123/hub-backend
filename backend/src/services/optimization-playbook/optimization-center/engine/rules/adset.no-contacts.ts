@@ -12,6 +12,7 @@ const meta: OptimizationCenterRule = {
   title: 'Conjunto sem conversas',
   description: 'Conjunto de anúncios com gasto relevante e nenhuma conversa nos últimos 7 dias.',
   condition: 'spend_last7 >= R$150 AND conversations_last7 = 0',
+  appliesToObjectives: ['messages'],
 };
 
 export const adsetNoContactsRule: OptimizationRuleModule = {

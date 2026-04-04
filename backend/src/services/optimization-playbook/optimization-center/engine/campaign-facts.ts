@@ -7,6 +7,10 @@ export type CampaignFacts = {
   campaignId: string;
   campaignName: string;
   campaignStatus: string;
+  objectiveKey: string | null;
+  channelKey: string | null;
+  primaryResultKey: string;
+  primaryResultLabel: string;
   campaignBudget: number;
   minSpendForEvaluation: number;
   theme: ReturnType<typeof resolveOptimizationTheme>;
@@ -19,8 +23,13 @@ export type CampaignFacts = {
   avgCpmLast7: number;
   messagingLast7: number;
   messagingPrev7: number;
+  primaryResultLast7: number;
+  primaryResultPrev7: number;
   contactsLast7: number;
   contactsPrev7: number;
+  costPerPrimaryResult: number | null;
+  costPerPrimaryResultPrev7: number | null;
+  primaryResultDelta: number | null;
   costPerContact: number | null;
   costPerContactPrev7: number | null;
   contactsDelta: number | null;
@@ -35,6 +44,19 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
   const campaignId = String(row.campaign_id);
   const campaignName = String(row.campaign_name || '');
   const campaignStatus = String(row.campaign_status || '');
+  const objectiveKey = typeof row.objective_class_key === 'string' ? row.objective_class_key : ctx.primaryObjectiveKey ?? null;
+  const channelKey = typeof row.channel_class_key === 'string' ? row.channel_class_key : ctx.primaryChannelKey ?? null;
+  const primaryResultKey = typeof row.primary_result_key === 'string' ? row.primary_result_key : 'conversions';
+  const primaryResultLabel =
+    primaryResultKey === 'conversations'
+      ? 'conversas'
+      : primaryResultKey === 'leads'
+        ? 'leads'
+        : primaryResultKey === 'traffic_results'
+          ? 'resultados de trafego'
+          : primaryResultKey === 'reach'
+            ? 'alcance'
+            : 'resultados';
 
   const theme = resolveOptimizationTheme({
     campaignName,
@@ -74,17 +96,37 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
   const leadsPrev7 = safeInt(row.leads_prev7);
   const messagingLast7 = safeInt(row.conversations_last7);
   const messagingPrev7 = safeInt(row.conversations_prev7);
+  const primaryResultLast7 = safeInt(row.primary_result_last7);
+  const primaryResultPrev7 = safeInt(row.primary_result_prev7);
 
-  const contactsLast7 = messagingLast7 > 0 ? messagingLast7 : leadsLast7 > 0 ? leadsLast7 : conversionsLast7;
-  const contactsPrev7 = messagingPrev7 > 0 ? messagingPrev7 : leadsPrev7 > 0 ? leadsPrev7 : conversionsPrev7;
+  const contactsLast7 =
+    primaryResultLast7 > 0
+      ? primaryResultLast7
+      : messagingLast7 > 0
+        ? messagingLast7
+        : leadsLast7 > 0
+          ? leadsLast7
+          : conversionsLast7;
+  const contactsPrev7 =
+    primaryResultPrev7 > 0
+      ? primaryResultPrev7
+      : messagingPrev7 > 0
+        ? messagingPrev7
+        : leadsPrev7 > 0
+          ? leadsPrev7
+          : conversionsPrev7;
 
-  const costPerContact = contactsLast7 > 0 ? spendLast7 / contactsLast7 : null;
-  const costPerContactPrev7 = contactsPrev7 > 0 ? spendPrev7 / contactsPrev7 : null;
+  const costPerPrimaryResult = contactsLast7 > 0 ? spendLast7 / contactsLast7 : null;
+  const costPerPrimaryResultPrev7 = contactsPrev7 > 0 ? spendPrev7 / contactsPrev7 : null;
+
+  const costPerContact = costPerPrimaryResult;
+  const costPerContactPrev7 = costPerPrimaryResultPrev7;
 
   const firstReplyRate =
     messagingLast7 > 0 && firstReplyLast7 >= 0 ? (firstReplyLast7 / messagingLast7) * 100 : null;
 
   const contactsDelta = percentChange(contactsLast7, contactsPrev7);
+  const primaryResultDelta = contactsDelta;
   const cplChange =
     costPerContact != null && costPerContactPrev7 != null
       ? percentChange(costPerContact, costPerContactPrev7)
@@ -107,6 +149,10 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
     campaignId,
     campaignName,
     campaignStatus,
+    objectiveKey,
+    channelKey,
+    primaryResultKey,
+    primaryResultLabel,
     campaignBudget,
     minSpendForEvaluation,
     theme,
@@ -119,8 +165,13 @@ export const getCampaignFacts = (ctx: OptimizationRuleContext, row: any): Campai
     avgCpmLast7,
     messagingLast7,
     messagingPrev7,
+    primaryResultLast7,
+    primaryResultPrev7,
     contactsLast7,
     contactsPrev7,
+    costPerPrimaryResult,
+    costPerPrimaryResultPrev7,
+    primaryResultDelta,
     costPerContact,
     costPerContactPrev7,
     contactsDelta,

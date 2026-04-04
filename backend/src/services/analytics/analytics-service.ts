@@ -1050,7 +1050,11 @@ export class AnalyticsService {
 
     async getClientRuleConfigs(clientId: string): Promise<Array<{ ruleId: string; enabled: boolean; parameters: any }>> {
         const rows = await this.prisma.clientRuleConfig.findMany({
-            where: { clientId },
+            where: {
+                clientId,
+                campaignId: null,
+                ruleProfileId: null,
+            },
             select: { ruleId: true, enabled: true, parameters: true },
         });
         return rows.map((row) => ({
@@ -1107,39 +1111,120 @@ export class AnalyticsService {
       c.name as campaign_name,
       c.status as campaign_status,
       c.platform as platform,
+      c.objective as objective,
+      c.objective_class_key as objective_class_key,
+      c.channel_class_key as channel_class_key,
+      c.rule_profile_id as rule_profile_id,
       c.budget as budget,
       c.optimization_theme_key as optimization_theme_key,
       c.optimization_subtheme_key as optimization_subtheme_key,
       COALESCE(SUM(cm.spend), 0) as spend_total,
       COALESCE(SUM(cm.impressions), 0)::int as impressions_total,
+      COALESCE(SUM(cm.reach), 0)::int as reach_total,
       COALESCE(SUM(cm.clicks), 0)::int as clicks_total,
       COALESCE(SUM(cm.conversions), 0)::int as conversions_total,
       COALESCE(SUM(cm.leads), 0)::int as leads_total,
       COALESCE(SUM(cm.messaging_conversations), 0)::int as conversations_total,
       COALESCE(SUM(cm.messaging_first_reply), 0)::int as first_reply_total,
+      COALESCE(SUM(cm.link_clicks), 0)::int as link_clicks_total,
+      COALESCE(SUM(cm.landing_page_views), 0)::int as landing_page_views_total,
       COALESCE(AVG(cm.frequency), 0) as avg_frequency_total,
       COALESCE(AVG(cm.cpm), 0) as avg_cpm_total,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.spend ELSE 0 END), 0) as spend_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END), 0)::int as impressions_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0)::int as reach_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0)::int as conversions_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int as leads_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_first_reply ELSE 0 END), 0)::int as first_reply_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.frequency ELSE NULL END), 0) as avg_frequency_last7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.spend ELSE 0 END), 0) as spend_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END), 0)::int as impressions_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0)::int as reach_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0)::int as conversions_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int as leads_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_first_reply ELSE 0 END), 0)::int as first_reply_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.frequency ELSE NULL END), 0) as avg_frequency_prev7,
-      COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_prev7
+      COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_prev7,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages' THEN 'conversations'
+        WHEN COALESCE(c.objective_class_key, '') = 'lead' THEN 'leads'
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic' THEN 'traffic_results'
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness' THEN 'reach'
+        ELSE 'conversions'
+      END as primary_result_key,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(cm.messaging_conversations), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(cm.leads), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(SUM(cm.landing_page_views), 0), NULLIF(SUM(cm.link_clicks), 0), SUM(cm.clicks), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(SUM(cm.reach), 0), SUM(cm.impressions), 0)::int
+        ELSE COALESCE(NULLIF(SUM(cm.conversions), 0), NULLIF(SUM(cm.leads), 0), SUM(cm.messaging_conversations), 0)::int
+      END as primary_result_total,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.clicks ELSE 0 END),
+            0
+          )::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END),
+            0
+          )::int
+        ELSE COALESCE(
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0),
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0),
+          SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END),
+          0
+        )::int
+      END as primary_result_last7,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.clicks ELSE 0 END),
+            0
+          )::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END),
+            0
+          )::int
+        ELSE COALESCE(
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0),
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0),
+          SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END),
+          0
+        )::int
+      END as primary_result_prev7
     FROM campaigns c
     LEFT JOIN campaign_metrics cm ON cm.campaign_id = c.id AND cm.date >= ${new Date(start)} AND cm.date <= ${new Date(end)}
     WHERE c."clientId" = ${clientId}
       AND (${campaignId || null}::text IS NULL OR c.id = ${campaignId || null})
-    GROUP BY c.id, c.name, c.status, c.platform, c.budget, c.optimization_theme_key, c.optimization_subtheme_key
+    GROUP BY c.id, c.name, c.status, c.platform, c.objective, c.objective_class_key, c.channel_class_key, c.rule_profile_id, c.budget, c.optimization_theme_key, c.optimization_subtheme_key
     ORDER BY spend_total DESC`;
     }
 
@@ -1156,24 +1241,104 @@ export class AnalyticsService {
         am.adset_id,
         am.adset_name,
         am.campaign_id,
+        c.objective_class_key as objective_class_key,
+        c.channel_class_key as channel_class_key,
         COALESCE(SUM(am.spend), 0)::float as spend_total,
         COALESCE(SUM(am.messaging_conversations), 0)::int as conversations_total,
+        COALESCE(SUM(am.leads), 0)::int as leads_total,
+        COALESCE(SUM(am.conversions), 0)::int as conversions_total,
+        COALESCE(SUM(am.link_clicks), 0)::int as link_clicks_total,
+        COALESCE(SUM(am.landing_page_views), 0)::int as landing_page_views_total,
+        COALESCE(SUM(am.clicks), 0)::int as clicks_total,
         COALESCE(SUM(am.impressions), 0)::int as impressions_total,
         COALESCE(SUM(am.reach), 0)::int as reach_total,
         COALESCE(AVG(am.frequency), 0)::float as avg_frequency,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.spend ELSE 0 END), 0)::float as spend_last7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int as leads_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0)::int as conversions_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.clicks ELSE 0 END), 0)::int as clicks_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0)::int as reach_last7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.spend ELSE 0 END), 0)::float as spend_prev7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int as leads_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0)::int as conversions_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.clicks ELSE 0 END), 0)::int as clicks_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0)::int as reach_prev7,
         COALESCE(AVG(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.frequency ELSE NULL END), 0)::float as avg_frequency_last7,
-        (SELECT COUNT(DISTINCT acm.ad_id) FROM ad_creative_metrics acm WHERE acm.adset_id = am.adset_id AND acm.date >= ${new Date(endMinus6)})::int as ad_count
+        (SELECT COUNT(DISTINCT acm.ad_id) FROM ad_creative_metrics acm WHERE acm.adset_id = am.adset_id AND acm.date >= ${new Date(endMinus6)})::int as ad_count,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(am.messaging_conversations), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(am.leads), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(NULLIF(SUM(am.landing_page_views), 0), NULLIF(SUM(am.link_clicks), 0), SUM(am.clicks), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(NULLIF(SUM(am.reach), 0), SUM(am.impressions), 0)::int
+          ELSE COALESCE(NULLIF(SUM(am.conversions), 0), NULLIF(SUM(am.leads), 0), SUM(am.messaging_conversations), 0)::int
+        END as primary_result_total,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0),
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.clicks ELSE 0 END),
+              0
+            )::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.impressions ELSE 0 END),
+              0
+            )::int
+          ELSE COALESCE(
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0),
+            SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END),
+            0
+          )::int
+        END as primary_result_last7,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0),
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.clicks ELSE 0 END),
+              0
+            )::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.impressions ELSE 0 END),
+              0
+            )::int
+          ELSE COALESCE(
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0),
+            SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END),
+            0
+          )::int
+        END as primary_result_prev7
       FROM adset_metrics am
       JOIN campaigns c ON c.id = am.campaign_id
       WHERE c."clientId" = ${clientId}
         AND am.date >= ${new Date(start)}
         AND am.date <= ${new Date(end)}
         AND (${campaignId || null}::text IS NULL OR am.campaign_id = ${campaignId || null})
-      GROUP BY am.adset_id, am.adset_name, am.campaign_id
+      GROUP BY am.adset_id, am.adset_name, am.campaign_id, c.objective_class_key, c.channel_class_key
       ORDER BY spend_total DESC`;
     }
 
@@ -1249,6 +1414,8 @@ export class AnalyticsService {
       SELECT
         m.creative_snapshot_id,
         MAX(m.creative_id) as creative_id,
+        MAX(c.objective_class_key) as objective_class_key,
+        MAX(c.channel_class_key) as channel_class_key,
         array_agg(DISTINCT c.name) as campaigns,
         array_agg(DISTINCT c.optimization_theme_key) FILTER (WHERE c.optimization_theme_key IS NOT NULL) as optimization_theme_keys,
         array_agg(DISTINCT c.optimization_subtheme_key) FILTER (WHERE c.optimization_subtheme_key IS NOT NULL) as optimization_subtheme_keys,
@@ -1257,12 +1424,30 @@ export class AnalyticsService {
         COUNT(DISTINCT m.ad_id)::int as ads_count,
         COALESCE(SUM(m.spend), 0) as total_spend,
         COALESCE(SUM(m.messaging_conversations), 0)::int as total_conversations,
+        COALESCE(SUM(COALESCE((m.metadata->>'leads')::int, 0)), 0)::int as total_leads,
+        COALESCE(SUM(m.conversions), 0)::int as total_conversions,
+        COALESCE(SUM(m.link_clicks), 0)::int as total_link_clicks,
+        COALESCE(SUM(m.landing_page_views), 0)::int as total_landing_page_views,
+        COALESCE(SUM(m.clicks), 0)::int as total_clicks,
+        COALESCE(SUM(m.reach), 0)::int as total_reach,
         COALESCE(AVG(NULLIF(m.hook_rate, 0)), 0) as hook_rate_avg,
         COALESCE(AVG(NULLIF(m.hold_rate, 0)), 0) as hold_rate_avg,
         COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.spend ELSE 0 END), 0) as spend_last7,
-        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conv_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN COALESCE((m.metadata->>'leads')::int, 0) ELSE 0 END), 0)::int as leads_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.conversions ELSE 0 END), 0)::int as conversions_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.clicks ELSE 0 END), 0)::int as clicks_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.reach ELSE 0 END), 0)::int as reach_last7,
         COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.spend ELSE 0 END), 0) as spend_prev7,
-        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conv_prev7
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN COALESCE((m.metadata->>'leads')::int, 0) ELSE 0 END), 0)::int as leads_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.conversions ELSE 0 END), 0)::int as conversions_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.clicks ELSE 0 END), 0)::int as clicks_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.reach ELSE 0 END), 0)::int as reach_prev7
       FROM ad_creative_metrics m
       JOIN campaigns c ON c.id = m.campaign_id
       WHERE c."clientId" = ${clientId}
@@ -1275,18 +1460,57 @@ export class AnalyticsService {
     SELECT
       a.creative_snapshot_id,
       a.creative_id,
+      a.objective_class_key,
+      a.channel_class_key,
       a.campaigns,
       a.objectives,
       a.ad_names,
       a.ads_count,
       a.total_spend,
       a.total_conversations,
+      a.total_leads,
+      a.total_conversions,
+      a.total_link_clicks,
+      a.total_landing_page_views,
+      a.total_clicks,
+      a.total_reach,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.total_conversations
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.total_leads
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.total_landing_page_views, 0), NULLIF(a.total_link_clicks, 0), a.total_clicks, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.total_reach, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.total_conversions, 0), NULLIF(a.total_leads, 0), a.total_conversations, 0)::int
+      END as primary_result_total,
       a.hook_rate_avg,
       a.hold_rate_avg,
       a.spend_last7,
-      a.conv_last7,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.conversations_last7
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.leads_last7
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.landing_page_views_last7, 0), NULLIF(a.link_clicks_last7, 0), a.clicks_last7, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.reach_last7, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.conversions_last7, 0), NULLIF(a.leads_last7, 0), a.conversations_last7, 0)::int
+      END as conv_last7,
       a.spend_prev7,
-      a.conv_prev7,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.conversations_prev7
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.leads_prev7
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.landing_page_views_prev7, 0), NULLIF(a.link_clicks_prev7, 0), a.clicks_prev7, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.reach_prev7, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.conversions_prev7, 0), NULLIF(a.leads_prev7, 0), a.conversations_prev7, 0)::int
+      END as conv_prev7,
       s.headline as headline,
       s.primary_text as primary_text,
       s.description as description,

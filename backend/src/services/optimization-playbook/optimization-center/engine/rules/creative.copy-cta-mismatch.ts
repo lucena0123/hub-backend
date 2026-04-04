@@ -12,6 +12,7 @@ const meta: OptimizationCenterRule = {
   title: 'CTA pouco compatível com conversa',
   description: 'CTA não é WhatsApp/Mensagem. Isso pode reduzir conversas iniciadas.',
   condition: 'cta_type not in preferredCtaTypes',
+  appliesToObjectives: ['messages'],
 };
 
 export const creativeCopyCtaMismatchRule: OptimizationRuleModule = {

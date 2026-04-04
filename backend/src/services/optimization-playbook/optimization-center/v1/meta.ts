@@ -6,7 +6,7 @@ export const OPTIMIZATION_CENTER_PLAYBOOK_V1_META = {
   version: 'v1.2.0',
   updatedAt: '2026-02-04',
   description:
-    'Playbook de otimização para campanhas de geração de demanda via Meta (WhatsApp/Mensagem), com regras por tema e guardrails de dados.',
+    'Playbook de otimização multi-escopo para campanhas de mensagens, leads, conversão, tráfego e awareness, com regras por perfil e guardrails de dados.',
   copy: {
     preferredCtaTypes: ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
     prohibitedPhrases: ['garantido', '100%', 'resultado garantido', 'causa ganha', 'processo ganho'],

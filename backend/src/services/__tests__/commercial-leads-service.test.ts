@@ -24,12 +24,15 @@ import type { GoogleApiService } from '../google-api-service';
 const stubEvolutionApi = {
   resolveTemplate: vi.fn().mockReturnValue('test message'),
   sendText: vi.fn().mockResolvedValue({ messageId: 'wa_test_001' }),
+  sendInteractiveButtons: vi.fn().mockResolvedValue({ messageId: 'wa_interactive_test_001' }),
+  getInstanceIntegrationType: vi.fn().mockResolvedValue('WHATSAPP-BAILEYS'),
 } as unknown as EvolutionApiService;
 
 const stubGoogleApi = {
   resolveGmailTemplate: vi.fn().mockReturnValue({ subject: 'test', html: '<p>test</p>' }),
   sendEmail: vi.fn().mockResolvedValue({ messageId: 'gm_test_001' }),
   getFreeBusy: vi.fn().mockResolvedValue([]),
+  getFreeBusyForCalendar: vi.fn().mockResolvedValue([]),
   createEvent: vi.fn().mockResolvedValue({ eventId: 'cal_test_001' }),
   updateEvent: vi.fn().mockResolvedValue({ eventId: 'cal_test_001' }),
   deleteEvent: vi.fn().mockResolvedValue(undefined),
@@ -364,7 +367,11 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
   });
 
   it('transitions primeiro_contato → diagnostico_agendado with dor01Ok', async () => {
-    const existingRow = makeLeadRow({ status_atual: 'primeiro_contato' });
+    const existingRow = makeLeadRow({
+      status_atual: 'primeiro_contato',
+      cal_event_id: 'cal_001',
+      cal_meet_url: 'https://meet.google.com/abc-defg-hij',
+    });
     const updatedRow = makeLeadRow({ status_atual: 'diagnostico_agendado', dor01_ok: true });
 
     const pool = makePool(
@@ -379,6 +386,36 @@ describe('CommercialLeadsService.moveLeadStatus', () => {
       dor01Ok: true,
     });
     expect(result.statusAtual).toBe('diagnostico_agendado');
+  });
+
+  it('throws VALIDATION_ERROR when diagnostico_agendado has no calendar event', async () => {
+    const existingRow = makeLeadRow({ status_atual: 'primeiro_contato', cal_event_id: null });
+    const pool = makePool({ rowCount: 1, rows: [existingRow] });
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    await expect(
+      svc.moveLeadStatus('lead-uuid-001', { to: 'diagnostico_agendado', dor01Ok: true }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'MISSING_CALENDAR_EVENT' },
+    });
+  });
+
+  it('throws VALIDATION_ERROR when diagnostico_agendado has no meet link', async () => {
+    const existingRow = makeLeadRow({
+      status_atual: 'primeiro_contato',
+      cal_event_id: 'cal_001',
+      cal_meet_url: null,
+    });
+    const pool = makePool({ rowCount: 1, rows: [existingRow] });
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    await expect(
+      svc.moveLeadStatus('lead-uuid-001', { to: 'diagnostico_agendado', dor01Ok: true }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'MISSING_MEET_LINK' },
+    });
   });
 
   it('throws DOR_BLOCKED when dor01Ok is missing on → diagnostico_agendado', async () => {
@@ -535,6 +572,59 @@ describe('CommercialLeadsService.updateLeadPrivacy', () => {
   });
 });
 
+describe('CommercialLeadsService.submitLeadForm', () => {
+  it('auto-dispatches scheduling invite on first briefing submission when hybrid flag is enabled', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+
+    const existingRow = makeLeadRow({
+      form_type: null,
+      form_submitted_at: null,
+      timezone: 'America/Sao_Paulo',
+    });
+    const updatedRow = makeLeadRow({
+      form_type: 'briefing',
+      form_submitted_at: new Date().toISOString(),
+    });
+
+    const pool = makePool(
+      { rowCount: 1, rows: [existingRow] },
+      { rowCount: 1, rows: [updatedRow] },
+      { rowCount: 1, rows: [] },
+    );
+
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-briefing-001',
+      leadId: 'lead-uuid-001',
+    });
+    const inviteSpy = vi.spyOn(svc, 'createHybridSchedulingInvite').mockResolvedValue({
+      inviteId: 'invite-001',
+      leadId: 'lead-uuid-001',
+      calendarUrl: 'https://hub.dev/forms/comercial/scheduling?token=t1&leadId=lead-uuid-001',
+      suggestedSlots: [],
+      channelsSent: ['whatsapp', 'gmail'],
+      sentAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await svc.submitLeadForm('lead-uuid-001', {
+      formType: 'briefing',
+      payload: { source: 'public_form' },
+    });
+
+    expect(inviteSpy).toHaveBeenCalledWith('lead-uuid-001', expect.objectContaining({
+      timezone: 'America/Sao_Paulo',
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+  });
+});
+
 // ---------------------------------------------------------------------------
 // CommercialLeadsService.deleteLeadPermanently
 // ---------------------------------------------------------------------------
@@ -560,5 +650,471 @@ describe('CommercialLeadsService.deleteLeadPermanently', () => {
     } catch (e) {
       expect((e as CommercialFlowError).code).toBe('NOT_FOUND');
     }
+  });
+});
+
+describe('CommercialLeadsService.message context', () => {
+  it('uses gmail followup template when channel is gmail', async () => {
+    const pool = makePool(
+      {
+        rowCount: 1,
+        rows: [{
+          lead_id: 'lead-uuid-001',
+          nome_escritorio: 'Escritório Exemplo Ltda',
+          status_atual: 'proposta_enviada',
+          followup_d2_at: new Date(Date.now() - 60_000).toISOString(),
+          followup_d5_at: null,
+        }],
+      },
+      { rowCount: 0, rows: [] },
+    );
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication').mockResolvedValue({
+      ok: true,
+      leadId: 'lead-uuid-001',
+      channel: 'gmail',
+      stage: 'proposta_enviada',
+      eventId: 'evt-001',
+    });
+    vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({ ok: true, eventId: 'evt-002', leadId: 'lead-uuid-001' });
+
+    await svc.triggerFollowupDispatch({
+      leadId: 'lead-uuid-001',
+      followupType: 'D+2',
+      channel: 'gmail',
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'gmail',
+      stage: 'proposta_enviada',
+      templateKey: 'gm_proposta_enviada_followup_v1',
+    }));
+  });
+
+  it('blocks scheduling invite without briefing and returns BRIEFING_REQUIRED', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+
+    const pool = makePool({
+      rowCount: 1,
+      rows: [makeLeadRow({ form_type: null, email: 'lead@exemplo.com' })],
+    });
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    const ingestSpy = vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-ctx-001',
+      leadId: 'lead-uuid-001',
+    });
+
+    await expect(svc.createHybridSchedulingInvite('lead-uuid-001')).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'BRIEFING_REQUIRED' },
+    });
+
+    expect(ingestSpy).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'dispatch:context_blocked',
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+  });
+
+  it('uses link template when quick confirm is disabled', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevQuick = process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED = 'false';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com' })] },
+      { rowCount: 1, rows: [] },
+      { rowCount: 1, rows: [] },
+    );
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    vi.spyOn(svc, 'createSchedulingLink').mockResolvedValue({
+      leadId: 'lead-uuid-001',
+      token: 'tok_001',
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      url: 'https://hub.dev/forms/comercial/scheduling?token=tok_001&leadId=lead-uuid-001',
+    });
+    vi.spyOn(svc as any, 'collectSuggestedSlots').mockResolvedValue([
+      { start: '2026-03-01T10:00:00.000Z', end: '2026-03-01T10:30:00.000Z' },
+    ]);
+
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication').mockResolvedValue({
+      ok: true,
+      leadId: 'lead-uuid-001',
+      channel: 'whatsapp',
+      stage: 'diagnostico_agendado',
+      eventId: 'evt-ds-001',
+    });
+    vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-invite-001',
+      leadId: 'lead-uuid-001',
+    });
+
+    await svc.createHybridSchedulingInvite('lead-uuid-001');
+
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'whatsapp',
+      templateKey: 'wa_briefing_recebido_agendamento_link_v1',
+    }));
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'gmail',
+      templateKey: 'gm_briefing_recebido_agendamento_link_v1',
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED = prevQuick;
+  });
+
+  it('blocks google booking invite when lead has no email', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'true';
+
+    const pool = makePool({
+      rowCount: 1,
+      rows: [makeLeadRow({ form_type: 'briefing', email: null })],
+    });
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    await expect(svc.createHybridSchedulingInvite('lead-uuid-001')).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'LEAD_EMAIL_REQUIRED' },
+    });
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+  });
+
+  it('blocks google booking invite when responsável has no booking config', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'true';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com', responsavel: 'Sem Config' })] },
+      { rowCount: 0, rows: [] },
+    );
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    await expect(svc.createHybridSchedulingInvite('lead-uuid-001')).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'CALENDAR_LINK_NOT_CONFIGURED' },
+    });
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+  });
+
+  it('uses google suggestions template when 2 slots are available in google booking mode', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'true';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com', responsavel: 'Matheus' })] },
+      {
+        rowCount: 1,
+        rows: [{
+          id: 'cfg-001',
+          responsavel_key: 'Matheus',
+          calendar_id: 'primary',
+          booking_url: 'https://calendar.google.com/calendar/u/0/appointments/schedules/abc123',
+          owner_email: 'matheus@lucena.com',
+          timezone: 'America/Sao_Paulo',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+      },
+    );
+
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    vi.spyOn(svc as any, 'collectGoogleBookingSuggestedSlots').mockResolvedValue([
+      { start: '2026-03-01T10:00:00.000Z', end: '2026-03-01T10:30:00.000Z' },
+      { start: '2026-03-01T14:00:00.000Z', end: '2026-03-01T14:30:00.000Z' },
+    ]);
+
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication').mockResolvedValue({
+      ok: true,
+      leadId: 'lead-uuid-001',
+      channel: 'whatsapp',
+      stage: 'diagnostico_agendado',
+      eventId: 'evt-google-001',
+    });
+    const ingestSpy = vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-google-002',
+      leadId: 'lead-uuid-001',
+    });
+
+    const result = await svc.createHybridSchedulingInvite('lead-uuid-001');
+    expect(result.provider).toBe('google_booking');
+    expect(result.suggestedSlots).toHaveLength(2);
+    expect(result.whatsappMode).toBe('text_reply');
+    expect(result.interactiveAttempted).toBe(false);
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'whatsapp',
+      templateKey: 'wa_briefing_recebido_agendamento_google_sugestoes_v1',
+    }));
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'gmail',
+      templateKey: 'gm_briefing_recebido_agendamento_google_sugestoes_v1',
+    }));
+    expect(ingestSpy).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'scheduling:invite_sent',
+      payload: expect.objectContaining({
+        suggestionCount: 2,
+      }),
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+  });
+
+  it('keeps text reply mode in baileys even when interactive flag is enabled', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    const prevInteractive = process.env.COMMERCIAL_WHATSAPP_INTERACTIVE_SCHEDULING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'true';
+    process.env.COMMERCIAL_WHATSAPP_INTERACTIVE_SCHEDULING_ENABLED = 'true';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com', responsavel: 'Matheus' })] },
+      {
+        rowCount: 1,
+        rows: [{
+          id: 'cfg-001',
+          responsavel_key: 'Matheus',
+          calendar_id: 'primary',
+          booking_url: 'https://calendar.google.com/calendar/u/0/appointments/schedules/abc123',
+          owner_email: 'matheus@lucena.com',
+          timezone: 'America/Sao_Paulo',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+      },
+    );
+
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    vi.spyOn(svc as any, 'collectGoogleBookingSuggestedSlots').mockResolvedValue([
+      { start: '2026-03-01T10:00:00.000Z', end: '2026-03-01T10:30:00.000Z' },
+      { start: '2026-03-01T14:00:00.000Z', end: '2026-03-01T14:30:00.000Z' },
+    ]);
+
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication').mockResolvedValue({
+      ok: true,
+      leadId: 'lead-uuid-001',
+      channel: 'whatsapp',
+      stage: 'diagnostico_agendado',
+      eventId: 'evt-google-001',
+    });
+    vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-google-003',
+      leadId: 'lead-uuid-001',
+    });
+
+    const sendInteractiveSpy = vi.spyOn(stubEvolutionApi as unknown as { sendInteractiveButtons: (...args: unknown[]) => unknown }, 'sendInteractiveButtons');
+    const result = await svc.createHybridSchedulingInvite('lead-uuid-001');
+
+    expect(result.whatsappMode).toBe('text_reply');
+    expect(result.interactiveAttempted).toBe(false);
+    expect(sendInteractiveSpy).not.toHaveBeenCalled();
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'whatsapp',
+      templateKey: 'wa_briefing_recebido_agendamento_google_sugestoes_v1',
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+    process.env.COMMERCIAL_WHATSAPP_INTERACTIVE_SCHEDULING_ENABLED = prevInteractive;
+  });
+
+  it('uses link-only template when google booking has less than 2 suggestions', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'true';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com', responsavel: 'Matheus' })] },
+      {
+        rowCount: 1,
+        rows: [{
+          id: 'cfg-001',
+          responsavel_key: 'Matheus',
+          calendar_id: 'primary',
+          booking_url: 'https://calendar.google.com/calendar/u/0/appointments/schedules/abc123',
+          owner_email: 'matheus@lucena.com',
+          timezone: 'America/Sao_Paulo',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+      },
+    );
+
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+    vi.spyOn(svc as any, 'collectGoogleBookingSuggestedSlots').mockResolvedValue([
+      { start: '2026-03-01T10:00:00.000Z', end: '2026-03-01T10:30:00.000Z' },
+    ]);
+
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication').mockResolvedValue({
+      ok: true,
+      leadId: 'lead-uuid-001',
+      channel: 'whatsapp',
+      stage: 'diagnostico_agendado',
+      eventId: 'evt-google-003',
+    });
+    vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-google-004',
+      leadId: 'lead-uuid-001',
+    });
+
+    const result = await svc.createHybridSchedulingInvite('lead-uuid-001');
+    expect(result.provider).toBe('google_booking');
+    expect(result.suggestedSlots).toHaveLength(0);
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'whatsapp',
+      templateKey: 'wa_briefing_recebido_agendamento_link_v1',
+    }));
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'gmail',
+      templateKey: 'gm_briefing_recebido_agendamento_link_v1',
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+  });
+
+  it('considers invite sent when one channel fails and the other succeeds', async () => {
+    const prevHybrid = process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED;
+    const prevPublic = process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED;
+    const prevQuick = process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED;
+    const prevGoogle = process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED;
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = 'true';
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = 'true';
+    process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED = 'false';
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = 'false';
+
+    const pool = makePool(
+      { rowCount: 1, rows: [makeLeadRow({ form_type: 'briefing', email: 'lead@exemplo.com', whatsapp: '+5511999990001' })] },
+      { rowCount: 1, rows: [] },
+      { rowCount: 1, rows: [] },
+    );
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    vi.spyOn(svc, 'createSchedulingLink').mockResolvedValue({
+      leadId: 'lead-uuid-001',
+      token: 'tok_001',
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      url: 'https://hub.dev/forms/comercial/scheduling?token=tok_001&leadId=lead-uuid-001',
+    });
+    vi.spyOn(svc as any, 'collectSuggestedSlots').mockResolvedValue([
+      { start: '2026-03-01T10:00:00.000Z', end: '2026-03-01T10:30:00.000Z' },
+    ]);
+
+    const dispatchSpy = vi.spyOn(svc, 'dispatchStageCommunication');
+    dispatchSpy
+      .mockRejectedValueOnce(new Error('whatsapp outage'))
+      .mockResolvedValueOnce({
+        ok: true,
+        leadId: 'lead-uuid-001',
+        channel: 'gmail',
+        stage: 'diagnostico_agendado',
+        eventId: 'evt-gmail-001',
+      });
+
+    const ingestSpy = vi.spyOn(svc, 'ingestIntegrationEvent').mockResolvedValue({
+      ok: true,
+      eventId: 'evt-invite-001',
+      leadId: 'lead-uuid-001',
+    });
+
+    const result = await svc.createHybridSchedulingInvite('lead-uuid-001');
+    expect(result.channelsSent).toEqual(['gmail']);
+    expect(result.channelErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: 'whatsapp' }),
+      ]),
+    );
+    expect(dispatchSpy).toHaveBeenCalledTimes(2);
+    expect(ingestSpy).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'scheduling:invite_sent',
+      payload: expect.objectContaining({
+        channels: ['gmail'],
+        channelErrors: expect.arrayContaining([
+          expect.objectContaining({ channel: 'whatsapp' }),
+        ]),
+      }),
+    }));
+
+    process.env.COMMERCIAL_SCHEDULING_INVITE_HYBRID_ENABLED = prevHybrid;
+    process.env.COMMERCIAL_PUBLIC_SCHEDULING_ENABLED = prevPublic;
+    process.env.COMMERCIAL_SCHEDULING_QUICK_CONFIRM_ENABLED = prevQuick;
+    process.env.COMMERCIAL_GOOGLE_BOOKING_ENABLED = prevGoogle;
+  });
+
+  it('emits dispatch:template_error when strict mode has no configured template', async () => {
+    const prevStrict = process.env.COMMERCIAL_TEMPLATE_STRICT_MODE_ENABLED;
+    process.env.COMMERCIAL_TEMPLATE_STRICT_MODE_ENABLED = 'true';
+
+    const pool = makePool(
+      { rowCount: 0, rows: [] },
+      { rowCount: 1, rows: [{ lead_id: 'lead-uuid-001', status_atual: 'primeiro_contato' }] },
+      { rowCount: 1, rows: [] },
+      { rowCount: 1, rows: [] },
+    );
+    const svc = new CommercialLeadsService(pool, stubEvolutionApi, stubGoogleApi);
+
+    await expect(
+      svc.dispatchStageCommunication({
+        leadId: 'lead-uuid-001',
+        channel: 'whatsapp',
+        stage: 'primeiro_contato',
+      }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: { reasonCode: 'TEMPLATE_NOT_CONFIGURED' },
+    });
+
+    const queryMock = (pool as unknown as { query: ReturnType<typeof vi.fn> }).query;
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO commercial_integration_events'),
+      expect.arrayContaining(['lead-uuid-001', 'custom', 'dispatch:template_error']),
+    );
+
+    process.env.COMMERCIAL_TEMPLATE_STRICT_MODE_ENABLED = prevStrict;
   });
 });

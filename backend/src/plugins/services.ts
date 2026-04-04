@@ -26,7 +26,34 @@ import { OptimizationTaskGenerator } from '../services/optimization-playbook/opt
 import { CommercialLeadsService } from '../services/commercial-leads-service';
 import { EvolutionApiService } from '../services/evolution-api-service';
 import { GoogleApiService } from '../services/google-api-service';
+import { RuleProfileService } from '../services/rule-profile-service';
+import { FinanceService } from '../services/finance-service';
+import { ProjectService } from '../services/project-service';
+import { CustomerSuccessService } from '../services/customer-success-service';
 import type { AppServices } from '../types/fastify';
+
+const REQUIRED_RULE_PROFILE_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: 'clients', column: 'business_niche_key' },
+  { table: 'clients', column: 'default_channel_key' },
+  { table: 'campaigns', column: 'objective_class_key' },
+  { table: 'campaigns', column: 'channel_class_key' },
+  { table: 'campaigns', column: 'rule_profile_id' },
+];
+
+async function hasRuleProfileSchema() {
+  const rows = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND (
+        (table_name = 'clients' AND column_name IN ('business_niche_key', 'default_channel_key'))
+        OR (table_name = 'campaigns' AND column_name IN ('objective_class_key', 'channel_class_key', 'rule_profile_id'))
+      )
+  `;
+
+  const found = new Set(rows.map((row) => `${row.table_name}.${row.column_name}`));
+  return REQUIRED_RULE_PROFILE_COLUMNS.every((item) => found.has(`${item.table}.${item.column}`));
+}
 
 export default fp(async (fastify: FastifyInstance) => {
   // Connect infrastructure
@@ -43,6 +70,21 @@ export default fp(async (fastify: FastifyInstance) => {
   } catch (err) {
     fastify.log.error({ err }, 'Failed to connect Prisma');
     throw err;
+  }
+
+  try {
+    const schemaOk = await hasRuleProfileSchema();
+    if (!schemaOk) {
+      process.env.RULE_PROFILE_ENGINE_ENABLED = 'false';
+      process.env.RULE_PROFILE_BLOCK_ON_MISSING_CLASSIFICATION = 'false';
+      fastify.log.warn(
+        '[rule-profile] schema incompleto detectado; engine em modo degradado (RULE_PROFILE_ENGINE_ENABLED=false, RULE_PROFILE_BLOCK_ON_MISSING_CLASSIFICATION=false)',
+      );
+    }
+  } catch (err) {
+    process.env.RULE_PROFILE_ENGINE_ENABLED = 'false';
+    process.env.RULE_PROFILE_BLOCK_ON_MISSING_CLASSIFICATION = 'false';
+    fastify.log.warn({ err }, '[rule-profile] falha no schema health-check; engine em modo degradado');
   }
 
   const cacheService = new CacheService(redis as any);
@@ -77,9 +119,13 @@ export default fp(async (fastify: FastifyInstance) => {
   const clientService = new ClientService(prisma, clientAudit);
   const notificationService = new NotificationService(pool);
   const anomalyService = new AnomalyDetectionService(pool, notificationService);
-  const campaignService = new CampaignService(prisma);
+  const ruleProfileService = new RuleProfileService(prisma);
+  const campaignService = new CampaignService(prisma, ruleProfileService);
   const authService = new AuthService(prisma);
   const processService = new ProcessService(prisma);
+  const financeService = new FinanceService(prisma);
+  const projectService = new ProjectService(prisma);
+  const customerSuccessService = new CustomerSuccessService(prisma);
   const optimizationActionService = new OptimizationActionService(prisma);
   const optimizationTaskGenerator = new OptimizationTaskGenerator(prisma);
   const evolutionApi = new EvolutionApiService(
@@ -119,6 +165,10 @@ export default fp(async (fastify: FastifyInstance) => {
     optimizationAction: optimizationActionService,
     optimizationTaskGenerator: optimizationTaskGenerator,
     commercialLeads: commercialLeadsService,
+    ruleProfiles: ruleProfileService,
+    finance: financeService,
+    projects: projectService,
+    customerSuccess: customerSuccessService,
     metaAds: undefined as any, // MetaAdsService is now instantiated dynamically per request
   };
 

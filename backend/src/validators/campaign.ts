@@ -7,6 +7,8 @@ import { z } from 'zod';
 // Valid platforms
 const platforms = ['meta', 'google', 'tiktok', 'linkedin', 'twitter', 'other'] as const;
 const campaignStatuses = ['active', 'paused', 'completed', 'draft'] as const;
+const objectiveClassKeys = ['messages', 'lead', 'conversion', 'traffic', 'awareness'] as const;
+const channelClassKeys = ['meta', 'google', 'tiktok', 'linkedin', 'whatsapp', 'messenger', 'instagram', 'facebook', 'other'] as const;
 
 /**
  * Schema for creating a new campaign
@@ -21,7 +23,10 @@ export const campaignCreateSchema = z.object({
   externalId: z.string().max(100).optional(),
   optimizationThemeKey: z.string().max(100).optional(),
   optimizationSubthemeKey: z.string().max(100).optional(),
-  status: z.enum(campaignStatuses).optional().default('active'),
+  objectiveClassKey: z.enum(objectiveClassKeys).optional(),
+  channelClassKey: z.enum(channelClassKeys).optional(),
+  ruleProfileId: z.string().uuid('ruleProfileId must be a valid UUID').optional(),
+  status: z.enum(campaignStatuses).optional().default('draft'),
 });
 
 /**
@@ -37,6 +42,9 @@ export const campaignUpdateSchema = z.object({
   spent: z.number().min(0, 'Spent cannot be negative').optional(),
   optimizationThemeKey: z.string().max(100).nullable().optional(),
   optimizationSubthemeKey: z.string().max(100).nullable().optional(),
+  objectiveClassKey: z.enum(objectiveClassKeys).nullable().optional(),
+  channelClassKey: z.enum(channelClassKeys).nullable().optional(),
+  ruleProfileId: z.string().uuid('ruleProfileId must be a valid UUID').nullable().optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided for update',
 });

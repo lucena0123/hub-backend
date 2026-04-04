@@ -23,6 +23,10 @@ import { OptimizationActionService } from '../services/optimization-playbook/opt
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import { MetaAdsService } from '../services/meta-ads/service';
 import { CommercialLeadsService } from '../services/commercial-leads-service';
+import { RuleProfileService } from '../services/rule-profile-service';
+import { FinanceService } from '../services/finance-service';
+import { ProjectService } from '../services/project-service';
+import { CustomerSuccessService } from '../services/customer-success-service';
 
 export interface AppServices {
   clients: ClientService;
@@ -47,6 +51,10 @@ export interface AppServices {
   optimizationAction: OptimizationActionService;
   optimizationTaskGenerator: OptimizationTaskGenerator;
   commercialLeads: CommercialLeadsService;
+  ruleProfiles: RuleProfileService;
+  finance: FinanceService;
+  projects: ProjectService;
+  customerSuccess: CustomerSuccessService;
 }
 
 declare module 'fastify' {

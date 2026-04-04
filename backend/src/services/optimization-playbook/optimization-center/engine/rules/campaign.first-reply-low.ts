@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'Baixa taxa de primeira resposta',
   description: 'Muitas conversas iniciadas, mas pouca primeira resposta do usuário.',
   condition: 'conversations_last7 >= minContactsForEvaluation AND first_reply_rate < firstReplyRateMin',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignFirstReplyLowRule: OptimizationRuleModule = {

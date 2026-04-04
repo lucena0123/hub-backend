@@ -9,9 +9,10 @@ const optimizationCenterRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { period?: string; startDate?: string; endDate?: string; campaignId?: string };
   }>('/api/clients/:clientId/optimization-center', async (request, reply) => {
     try {
-      const { analytics } = fastify.services;
+      const { analytics, ruleProfiles } = fastify.services;
       return await buildOptimizationCenter({
         analytics,
+        ruleProfiles,
         clientId: request.params.clientId,
         query: request.query,
       });

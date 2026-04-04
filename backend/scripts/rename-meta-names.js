@@ -76,7 +76,6 @@ const isCanonicalCampaignName = (name) => {
   if (!name.includes('[OBJ=') || !name.includes('[PROD=') || !name.includes('[FUNIL=')) return false;
   if (!name.includes('[BUDGET=') || !name.includes('[REG=') || !name.includes('[LANG=')) return false;
   if (!hasDateTag(name)) return false;
-  if (!hasThemeTag(name)) return false;
   if (!/\[(CONT|ONETIME|TESTE)\]/.test(name)) return false;
   return true;
 };
@@ -124,8 +123,16 @@ const parseObjective = (name, objectiveField) => {
     const v = String(objectiveField).toUpperCase();
     if (v.includes('LEAD') || v.includes('MESSAGE')) return 'LEAD';
     if (v.includes('SALES')) return 'SALES';
-    if (v.includes('AWARE') || v.includes('REACH') || v.includes('TRAFFIC')) return 'LEAD';
+    if (v.includes('TRAFFIC')) return 'TRAFFIC';
+    if (v.includes('AWARE') || v.includes('REACH') || v.includes('AUDIENCE')) return 'AUD';
   }
+  return '?';
+};
+
+const inferFunnel = (obj) => {
+  if (obj === 'SALES') return 'BOFU';
+  if (obj === 'TRAFFIC' || obj === 'AUD') return 'TOFU';
+  if (obj === 'LEAD') return 'MOFU';
   return '?';
 };
 
@@ -159,7 +166,7 @@ const parseLifecycle = (campaignName) => {
 
 const campaignSuggestion = (row) => {
   const obj = parseObjective(row.name, row.objective);
-  const funil = obj === '?' ? '?' : 'MOFU';
+  const funil = inferFunnel(obj);
   const prod = parseProduct(row.name);
   const themeTag = parseThemeTag(row.name);
   const lifecycle = parseLifecycle(row.name);
@@ -270,6 +277,14 @@ const REPAIR_OVERRIDES = {
       '120240932229130563',
       '[OBJ=LEAD] [PROD=Rescisao_Indireta] [FUNIL=MOFU] [TRABALHISTA] [CONT] [BUDGET=UNK] [REG=BR] [LANG=PT] [2026-02-02] |CAM',
     ],
+    [
+      '120242969304000548',
+      '[OBJ=SALES] [PROD=Curso_Crochetin] [FUNIL=BOFU] [CONT] [BUDGET=UNK] [REG=BR] [LANG=PT] [2026-02-23] |CAM',
+    ],
+    [
+      '120242972835040548',
+      '[OBJ=TRAFFIC] [PROD=Trafego_Curso] [FUNIL=TOFU] [CONT] [BUDGET=UNK] [REG=BR] [LANG=PT] [2026-02-23] |CAM',
+    ],
   ]),
   adset: new Map([
     [
@@ -279,6 +294,40 @@ const REPAIR_OVERRIDES = {
     [
       '120240932229140563',
       '01_[AUD=Publico_Aberto_20_50_Manual_Geral] [HEAT=COLD] [WIN=ALL] [FUNIL=MOFU] [PLAC=IG] [REG=BR] [LANG=PT] [2026-02-02] |AS',
+    ],
+    [
+      '120239063044600436',
+      '01_[AUD=Publico_Específico_Manual] [HEAT=COLD] [WIN=ALL] [FUNIL=MOFU] [PLAC=ADVPLUS] [REG=BR] [LANG=PT] [2025-03-03] |AS',
+    ],
+    [
+      '120242969304010548',
+      '01_[AUD=Publico_Mulheres_25_50_Croche_Bolsas] [HEAT=COLD] [WIN=ALL] [FUNIL=BOFU] [PLAC=ADVPLUS] [REG=BR] [LANG=PT] [2026-02-23] |AS',
+    ],
+    [
+      '120242972835050548',
+      '01_[AUD=Publico_25_50_Artesanato_Croche_Costura] [HEAT=COLD] [WIN=ALL] [FUNIL=TOFU] [PLAC=IG] [REG=BR] [LANG=PT] [2026-02-23] |AS',
+    ],
+  ]),
+  ad: new Map([
+    [
+      '120240932229150563',
+      'AD_[ANG=RescisaoIndireta] [FORM=IMG] [VAR=v01] [CTA=WHATSAPP] [LANG=PT] [REG=BR] [2026-02-02] |AD',
+    ],
+    [
+      '120240932661550563',
+      'AD_[ANG=Maternidade] [FORM=IMG] [VAR=v01] [CTA=WHATSAPP] [LANG=PT] [REG=BR-CE+RJ] [2026-02-02] |AD',
+    ],
+    [
+      '120241280831550563',
+      'AD_[ANG=RescisaoIndireta] [FORM=IMG] [VAR=v02] [CTA=WHATSAPP] [LANG=PT] [REG=BR] [2026-02-11] |AD',
+    ],
+    [
+      '120241283323460563',
+      'AD_[ANG=Maternidade] [FORM=IMG] [VAR=v02] [CTA=WHATSAPP] [LANG=PT] [REG=BR-CE+RJ] [2026-02-11] |AD',
+    ],
+    [
+      '120242969303990548',
+      'AD_[ANG=Curso_Crochetin] [FORM=VIDEO] [VAR=v01] [CTA=LEARN_MORE] [LANG=PT] [REG=BR] [2026-02-23] |AD',
     ],
   ]),
 };
@@ -364,7 +413,8 @@ const renameEntity = async (id, name) => {
   }
 
   for (const row of ads.rows) {
-    const newName = adSuggestion(row);
+    const override = REPAIR_OVERRIDES.ad.get(row.ad_id);
+    const newName = override || adSuggestion(row);
     operations.push({
       type: 'ad',
       id: row.ad_id,

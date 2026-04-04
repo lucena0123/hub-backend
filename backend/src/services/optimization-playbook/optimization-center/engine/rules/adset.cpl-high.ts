@@ -12,6 +12,7 @@ const meta: OptimizationCenterRule = {
   title: 'CPL do conjunto acima da média',
   description: 'Custo por conversa do conjunto é 1.5x maior que a média da campanha.',
   condition: 'adset_cpl >= campaign_avg_cpl * 1.5 AND conversations >= 2',
+  appliesToObjectives: ['messages'],
 };
 
 export const adsetCplHighRule: OptimizationRuleModule = {

@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'CPL acima do ideal (tema)',
   description: 'CPL acima do limite do tema (alto risco de ineficiência).',
   condition: 'cpl_last7 >= targetCplBadMin',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignCplHighRule: OptimizationRuleModule = {

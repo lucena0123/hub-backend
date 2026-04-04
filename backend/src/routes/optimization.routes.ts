@@ -469,7 +469,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         }
 
         const configs = await fastify.prisma.clientRuleConfig.findMany({
-            where: { clientId }
+            where: {
+                clientId,
+                campaignId: null,
+                ruleProfileId: null,
+            }
         });
 
         const mergedRules = rules.map((rule: any) => {
@@ -676,17 +680,30 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
         }
 
-        const config = await fastify.prisma.clientRuleConfig.upsert({
+        const existingConfig = await fastify.prisma.clientRuleConfig.findFirst({
             where: {
-                clientId_ruleId: { clientId, ruleId }
-            },
-            update: { enabled },
-            create: {
                 clientId,
                 ruleId,
-                enabled
-            }
+                ruleProfileId: null,
+                campaignId: null,
+            },
+            select: { id: true },
         });
+
+        const config = existingConfig
+            ? await fastify.prisma.clientRuleConfig.update({
+                where: { id: existingConfig.id },
+                data: { enabled },
+            })
+            : await fastify.prisma.clientRuleConfig.create({
+                data: {
+                    clientId,
+                    ruleId,
+                    enabled,
+                    ruleProfileId: null,
+                    campaignId: null,
+                },
+            });
 
         await logOptimizationAudit({
             userId: request.user?.id,
@@ -747,17 +764,30 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             }
         }
 
-        const config = await fastify.prisma.clientRuleConfig.upsert({
+        const existingConfig = await fastify.prisma.clientRuleConfig.findFirst({
             where: {
-                clientId_ruleId: { clientId, ruleId }
-            },
-            update: { parameters },
-            create: {
                 clientId,
                 ruleId,
-                parameters
-            }
+                ruleProfileId: null,
+                campaignId: null,
+            },
+            select: { id: true },
         });
+
+        const config = existingConfig
+            ? await fastify.prisma.clientRuleConfig.update({
+                where: { id: existingConfig.id },
+                data: { parameters },
+            })
+            : await fastify.prisma.clientRuleConfig.create({
+                data: {
+                    clientId,
+                    ruleId,
+                    parameters,
+                    ruleProfileId: null,
+                    campaignId: null,
+                },
+            });
 
         await logOptimizationAudit({
             userId: request.user?.id,

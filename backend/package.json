@@ -4,8 +4,10 @@
   "description": "BPMN System - Backend API",
   "main": "dist/server-pg.js",
   "scripts": {
+    "predev": "prisma migrate deploy",
     "dev": "tsx watch src/server-pg.ts",
     "build": "tsc",
+    "prestart": "prisma migrate deploy",
     "start": "node dist/server-pg.js",
     "seed:mock": "tsx src/seed-mock.ts",
     "cleanup:mock": "tsx src/cleanup-mock.ts",

@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'Gasto sem gerar contatos',
   description: 'Gasto relevante e nenhum contato nos últimos 7 dias.',
   condition: 'spend_last7 >= minSpendForEvaluation AND contacts_last7 = 0',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignNoContactsRule: OptimizationRuleModule = {

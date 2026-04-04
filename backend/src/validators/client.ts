@@ -9,6 +9,8 @@ export interface ClientCreateData {
   email: string;
   cpfCnpj?: string;
   metaAdAccountId?: string;
+  businessNicheKey: string;
+  defaultChannelKey: string;
   tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget: number;
@@ -21,6 +23,8 @@ export interface ClientUpdateData {
   email?: string;
   cpfCnpj?: string;
   metaAdAccountId?: string | null;
+  businessNicheKey?: string;
+  defaultChannelKey?: string;
   tier?: 'basic' | 'standard' | 'premium' | 'enterprise';
   status?: 'active' | 'inactive' | 'pending';
   budget?: number;
@@ -48,6 +52,14 @@ export function validateClientCreate(data: any): { valid: boolean; errors: Valid
     errors.push({ field: 'email', message: 'Email is required' });
   } else if (!isValidEmail(data.email)) {
     errors.push({ field: 'email', message: 'Invalid email format' });
+  }
+
+  if (!data.businessNicheKey || typeof data.businessNicheKey !== 'string' || data.businessNicheKey.trim().length === 0) {
+    errors.push({ field: 'businessNicheKey', message: 'Business niche key is required' });
+  }
+
+  if (!data.defaultChannelKey || typeof data.defaultChannelKey !== 'string' || data.defaultChannelKey.trim().length === 0) {
+    errors.push({ field: 'defaultChannelKey', message: 'Default channel key is required' });
   }
 
   if (data.budget === undefined || data.budget === null) {
@@ -198,6 +210,18 @@ export function validateClientUpdate(data: any): { valid: boolean; errors: Valid
     errors.push({ field: 'tier', message: 'Tier must be basic, standard, premium, or enterprise' });
   }
 
+  if (data.businessNicheKey !== undefined) {
+    if (typeof data.businessNicheKey !== 'string' || data.businessNicheKey.trim().length === 0) {
+      errors.push({ field: 'businessNicheKey', message: 'Business niche key must be a non-empty string' });
+    }
+  }
+
+  if (data.defaultChannelKey !== undefined) {
+    if (typeof data.defaultChannelKey !== 'string' || data.defaultChannelKey.trim().length === 0) {
+      errors.push({ field: 'defaultChannelKey', message: 'Default channel key must be a non-empty string' });
+    }
+  }
+
   // Status validation (if provided)
   if (data.status !== undefined && !['active', 'inactive', 'pending'].includes(data.status)) {
     errors.push({ field: 'status', message: 'Status must be active, inactive, or pending' });
@@ -219,6 +243,8 @@ export function prepareClientData(data: ClientCreateData): any {
     email: data.email.toLowerCase().trim(),
     cpfCnpj: data.cpfCnpj?.replace(/\D/g, '') || null,
     metaAdAccountId: normalizedMetaAdAccountId,
+    businessNicheKey: data.businessNicheKey.trim().toLowerCase(),
+    defaultChannelKey: data.defaultChannelKey.trim().toLowerCase(),
     tier: data.tier || calculateTier(data.budget),
     status: data.status || 'active',
     budget: data.budget,

@@ -10,9 +10,11 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { CommercialFlowError } from '../services/commercial-leads-service';
 
 const publicFormsRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify as any;
+  const { commercialLeads } = fastify.services;
 
   /**
    * GET /api/public/forms/meta
@@ -88,16 +90,11 @@ const publicFormsRoutes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const submittedAt = new Date().toISOString();
-
-      await pool.query(
-        `UPDATE commercial_leads
-         SET form_type = $2,
-             form_submitted_at = $3,
-             form_payload_json = $4::jsonb,
-             updated_at = NOW()
-         WHERE lead_id = $1`,
-        [leadId, formType, submittedAt, JSON.stringify(payload)],
-      );
+      await commercialLeads.submitLeadForm(leadId, {
+        formType,
+        payload,
+        submittedAt,
+      });
 
       return {
         ok: true,
@@ -106,6 +103,10 @@ const publicFormsRoutes: FastifyPluginAsync = async (fastify) => {
         submittedAt,
       };
     } catch (error) {
+      if (error instanceof CommercialFlowError) {
+        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
+        return { error: error.code, message: error.message, details: error.details };
+      }
       fastify.log.error({ error }, '[public-forms] form submission failed');
       reply.status(500);
       return { error: 'INTERNAL_ERROR', message: 'Falha ao registrar formulário.' };

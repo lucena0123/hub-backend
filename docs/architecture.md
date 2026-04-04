@@ -1,5 +1,7 @@
 # Arquitetura do Sistema - Hierarquia BPMN v5
 
+> Nota: este documento descreve o blueprint operacional e a hierarquia BPMN alvo. Para a leitura do produto implementado hoje, com comparativo `estado atual x estado ideal`, use `docs/product-relevance-map.md`.
+
 Sistema de automacao B2B com 24 subprocessos em 8 niveis (0-7), 558 tasks, 40+ lanes e 20+ gateways de decisao.
 
 ## Estrutura Hierarquica

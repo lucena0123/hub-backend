@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'Queda brusca de contatos',
   description: 'Queda relevante de contatos comparando 7d vs 7d anterior.',
   condition: 'contacts_prev7 >= minContactsForEvaluation AND delta_contacts_pct <= contactsDropPctWarning',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignContactsDropRule: OptimizationRuleModule = {
