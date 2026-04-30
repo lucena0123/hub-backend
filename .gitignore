@@ -48,3 +48,15 @@ yarn-error.log*
 tmp/
 temp/
 *.tmp
+
+# Arquivos de auditoria/sync (adicionado em 2026-04-29)
+audit-projects.ps1
+audit.json
+auditoria-projetos.csv
+auditoria-projetos.md
+sync-all-to-git.ps1
+sync-log.txt
+sync-log-utf8.txt
+.gitignore-additions.txt
+fix-and-retry.ps1
+backups/

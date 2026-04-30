@@ -64,8 +64,11 @@ export function buildApp(servicesPluginOverride?: FastifyPluginAsync) {
         .split(',')
         .map((o) => o.trim())
         .filter(Boolean);
+
+    const isDev = !IS_PRODUCTION;
+
     fastify.register(cors, {
-        origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+        origin: isDev ? true : (allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins),
         credentials: true,
         methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],

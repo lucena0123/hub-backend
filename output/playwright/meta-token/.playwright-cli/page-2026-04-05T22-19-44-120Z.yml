@@ -1,0 +1,518 @@
+- generic [ref=e2]:
+  - generic:
+    - iframe
+  - generic:
+    - iframe
+  - generic:
+    - iframe
+  - generic:
+    - iframe
+  - generic [ref=e3]:
+    - navigation "Principal" [ref=e354]:
+      - generic [ref=e361]:
+        - generic [ref=e363]:
+          - button "Abrir menu de navegação móvel" [ref=e365] [cursor=pointer]:
+            - img [ref=e368]
+          - link "Página inicial da Meta" [ref=e370] [cursor=pointer]:
+            - /url: https://developers.facebook.com/
+            - img "Logotipo Nav" [ref=e371]
+        - generic [ref=e374]:
+          - link "Meus apps" [ref=e375] [cursor=pointer]:
+            - /url: /apps/
+          - button "Pesquisar" [ref=e376] [cursor=pointer]:
+            - img "Pesquisar" [ref=e377]
+    - main [ref=e7]:
+      - generic "Depurador de Token de Acessos" [ref=e9]:
+        - generic [ref=e10]:
+          - heading "Depurador de Token de Acessos" [level=1] [ref=e11]
+          - generic [ref=e12]:
+            - link "Depurador de Compartilhamento" [ref=e13] [cursor=pointer]:
+              - /url: /tools/debug/
+            - link "Invalidador de lote" [ref=e14] [cursor=pointer]:
+              - /url: /tools/debug/sharing/batch/
+            - link "Token de acesso" [ref=e15] [cursor=pointer]:
+              - /url: /tools/debug/accesstoken/
+            - generic [ref=e17]:
+              - generic [ref=e18]:
+                - text: "Versão da API:"
+                - button [ref=e19] [cursor=pointer]
+              - button "v24.0" [ref=e22] [cursor=pointer]:
+                - generic [ref=e23]: v24.0
+          - generic [ref=e26]:
+            - textbox "Insira um token de acesso para depurar." [ref=e28]: EAAK3FmdyNkgBRPkh6JGNgiAK4P5KcZBQgDr3IZC4wbMmwhGAwB9TKZCsqozq9VGrOLbeb0TP2OfbRQmEdT8ALLknKNv8dF1RW9fz0me71mdEv69kzmITPtZBRS4i9eGZC51kKBY7fyglMumYdw5NtL7RnU0XBR396OkP97nf0IepeBgNs1eKSzdTYL1ftOtXtOOYrO5oPD3myzyGsdZBBowYFLZAGqwZAZAaUoxmh7HOXqMWGTIQnogZDZD
+            - button "Depurar" [ref=e30] [cursor=pointer]
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e35]: Informações do token de acesso
+          - table [ref=e37]:
+            - rowgroup [ref=e38]:
+              - 'row "ID do Aplicativo 764256806123080 : Analista" [ref=e39]':
+                - cell "ID do Aplicativo" [ref=e40]
+                - 'cell "764256806123080 : Analista" [ref=e41]':
+                  - generic [ref=e42]:
+                    - text: "764256806123080 :"
+                    - link "Analista" [ref=e43] [cursor=pointer]:
+                      - /url: https://www.facebook.com/games/?app_id=764256806123080
+              - row "Tipo User" [ref=e44]:
+                - cell "Tipo" [ref=e45]
+                - cell "User" [ref=e46]:
+                  - link "User" [ref=e48] [cursor=pointer]:
+                    - /url: /docs/facebook-login/access-tokens/#usertokens
+              - 'row "ID do usuário no escopo do aplicativo Learn More 10237595668333760 : Matheus Lucena O usuário instalou este aplicativo pela última vez via API N/A" [ref=e49]':
+                - cell "ID do usuário no escopo do aplicativo Learn More" [ref=e50]:
+                  - text: ID do usuário no escopo do aplicativo
+                  - link "Learn More" [ref=e52] [cursor=pointer]:
+                    - /url: /docs/apps/for-business/
+                - 'cell "10237595668333760 : Matheus Lucena O usuário instalou este aplicativo pela última vez via API N/A" [ref=e53]':
+                  - text: "10237595668333760 : Matheus Lucena"
+                  - generic [ref=e54]: O usuário instalou este aplicativo pela última vez via API N/A
+              - row "Emitido Desconhecida" [ref=e55]:
+                - cell "Emitido" [ref=e56]
+                - cell "Desconhecida" [ref=e57]:
+                  - generic [ref=e58]: Desconhecida
+              - row "Expira 1775433600 (em cerca de uma hora)" [ref=e59]:
+                - cell "Expira" [ref=e60]
+                - cell "1775433600 (em cerca de uma hora)" [ref=e61]:
+                  - generic [ref=e62]:
+                    - text: 1775433600 (
+                    - generic [ref=e63]: em cerca de uma hora
+                    - text: )
+              - row "O acesso aos dados expira 1777843426 (em cerca de um mês)" [ref=e64]:
+                - cell "O acesso aos dados expira" [ref=e65]
+                - cell "1777843426 (em cerca de um mês)" [ref=e66]:
+                  - generic [ref=e67]:
+                    - text: 1777843426 (
+                    - generic [ref=e68]: em cerca de um mês
+                    - text: )
+              - row "Válido Verdadeiro" [ref=e69]:
+                - cell "Válido" [ref=e70]
+                - cell "Verdadeiro" [ref=e71]
+              - row "Origem Unknown" [ref=e72]:
+                - cell "Origem" [ref=e73]
+                - cell "Unknown" [ref=e74]
+              - row [ref=e75]:
+                - cell "Escopos" [ref=e76]
+                - cell [ref=e77]:
+                  - link [ref=e79] [cursor=pointer]:
+                    - /url: /docs/reference/login/#permissions
+          - generic [ref=e82]: Escopos granulares
+          - table [ref=e84]:
+            - rowgroup [ref=e85]:
+              - 'row "pages_manage_cta 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e86]':
+                - cell "pages_manage_cta" [ref=e87]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e88]':
+                  - generic [ref=e90]:
+                    - generic [ref=e91]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e92] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=Aag4wkS2tMuiG0qIUCqHzXxJTB42mALLFM7s963ouQSO0BFNpe1ZiAgZ3AZNaHqk9XzAwEsxN0ozCtZC
+                    - text: ","
+                    - generic [ref=e93]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e94] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AaiKu_8C6WG4k8NmzF-wBV20nCjdLnuqDPWeTQj6Lc23H9th5yDLlyy4Ea_tl8YDvp5bZaT7drDLazAS
+              - 'row "pages_manage_instant_articles 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e95]':
+                - cell "pages_manage_instant_articles" [ref=e96]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e97]':
+                  - generic [ref=e99]:
+                    - generic [ref=e100]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e101] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AagazPFE9K_5gTRUgL3SRuHvEKxSKMBSrIQPu0uuwKZDeUPEEWYpjJT3V-vKmWCMTWoZNaLfkJHatFIk
+                    - text: ","
+                    - generic [ref=e102]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e103] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AajydItnNNZ8afCJRuQNLwz-k-DhWmJ2EOYQ0V6KGol4iKNXxczafKrzjXtXofIPAaFTiFuUuM1Z6sWr
+              - 'row "pages_show_list 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e104]':
+                - cell "pages_show_list" [ref=e105]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e106]':
+                  - generic [ref=e108]:
+                    - generic [ref=e109]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e110] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AahUmQTRDGgdB2qoYKLkn-qv6r9RC-HIrnLZeO7fz05UVOw8c8E-Btdwn9Sx2VUKF7DjGLr72-WDj3Vv
+                    - text: ","
+                    - generic [ref=e111]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e112] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AahGjvBOvXRun3AruhEfIhoZzLBNs5OC6eT0jaDVxlkLot1dNF1D-DNqWNda_D_EdO0VRwjBMud4V1cq
+              - 'row "read_page_mailboxes 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e113]':
+                - cell "read_page_mailboxes" [ref=e114]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e115]':
+                  - generic [ref=e117]:
+                    - generic [ref=e118]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e119] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AagPVa6MbZKq9x7020BNs7J9MT7xJ-4jF7iHOBHobOrh87JyXn4FHpp6te7w7xCpmrVUwPokn_d5adeU
+                    - text: ","
+                    - generic [ref=e120]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e121] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AahRVzjPz0Yo1tyrnu1zU_5rrN_XfqmOa62rE7LJ97BII-kVVUpO_MLyRVfkJWWODA9y07FgamUjH_PR
+              - row "ads_management Applies to all objects" [ref=e122]:
+                - cell "ads_management" [ref=e123]
+                - cell "Applies to all objects" [ref=e124]:
+                  - generic [ref=e126]: Applies to all objects
+              - row "ads_read Applies to all objects" [ref=e127]:
+                - cell "ads_read" [ref=e128]
+                - cell "Applies to all objects" [ref=e129]:
+                  - generic [ref=e131]: Applies to all objects
+              - row "business_management Applies to all objects" [ref=e132]:
+                - cell "business_management" [ref=e133]
+                - cell "Applies to all objects" [ref=e134]:
+                  - generic [ref=e136]: Applies to all objects
+              - 'row "pages_messaging 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e137]':
+                - cell "pages_messaging" [ref=e138]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e139]':
+                  - generic [ref=e141]:
+                    - generic [ref=e142]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e143] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AahbWe5LXhjqC0EJYtJAC1BA6RtRvQo0ZNor95fiiXTB1rMVUtzaKyUbN9k3Kt-Kk9PBFuDxdRp8QSEB
+                    - text: ","
+                    - generic [ref=e144]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e145] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagVW4w8ts4583ax2Q-nWmGCN6GvG6cw24h48xaTikv-Cg-iPmEEfZrps-tdAygH_JM6iXMAn6c7LJxb
+              - 'row "pages_messaging_phone_number 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e146]':
+                - cell "pages_messaging_phone_number" [ref=e147]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e148]':
+                  - generic [ref=e150]:
+                    - generic [ref=e151]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e152] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AajWUgBwe13MnL5v5HsnYrDwp-hwklHjQ1SdIOh4ynrPhLKx3zUm10jE2ErqlkueltbVa3Wp21Uur0FI
+                    - text: ","
+                    - generic [ref=e153]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e154] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AahKF0AlGmsKx9XmquS3HjUd5c_0inyhARrbfz6zyZ6bAUmzKygkgd4HbF6Kn5WQoxwKyPuBYrLjeyKg
+              - 'row "pages_messaging_subscriptions 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e155]':
+                - cell "pages_messaging_subscriptions" [ref=e156]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e157]':
+                  - generic [ref=e159]:
+                    - generic [ref=e160]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e161] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AaglrqSQmFpFgXs8MqMFCdnV55ISL4mNjPRW6McEH6vl4zdu7sLfCsLfJiUdW5fBQDYS2JG5hzDs04Uc
+                    - text: ","
+                    - generic [ref=e162]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e163] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagmM5bWiGZ2JOpd_hg27yb6LbVet8gr_MgjUYo91H3gPuzpn4KFmDoa1kW1W9XoxcFiZc_H_GftxCJ4
+              - row "instagram_basic 17841468851664876, 17841463569416649, 17841401703182429" [ref=e164]:
+                - cell "instagram_basic" [ref=e165]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e166]:
+                  - generic [ref=e168]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_manage_comments 17841468851664876, 17841463569416649, 17841401703182429" [ref=e169]:
+                - cell "instagram_manage_comments" [ref=e170]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e171]:
+                  - generic [ref=e173]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_manage_insights 17841468851664876, 17841463569416649, 17841401703182429" [ref=e174]:
+                - cell "instagram_manage_insights" [ref=e175]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e176]:
+                  - generic [ref=e178]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_content_publish 17841468851664876, 17841463569416649, 17841401703182429" [ref=e179]:
+                - cell "instagram_content_publish" [ref=e180]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e181]:
+                  - generic [ref=e183]: 17841468851664876, 17841463569416649, 17841401703182429
+              - 'row "leads_retrieval 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e184]':
+                - cell "leads_retrieval" [ref=e185]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e186]':
+                  - generic [ref=e188]:
+                    - generic [ref=e189]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e190] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=Aag2cpqwp1SSY2ieYIRuJPzjGcMy8XDLH7Uq16c2g1t81LdbE7CN5CFE30tP2_5UTFTuAU4w8U4yxOmV
+                    - text: ","
+                    - generic [ref=e191]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e192] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagJ7VrDVezcWCuuJOG3CqChzpB_kiKCpKHxlR9zvuKvDHtyyO8y8uqyoojV8wbp2VKFlA-OVd9QfnNQ
+              - row "whatsapp_business_management 499809106549608" [ref=e193]:
+                - cell "whatsapp_business_management" [ref=e194]
+                - cell "499809106549608" [ref=e195]:
+                  - generic [ref=e197]: "499809106549608"
+              - row "instagram_manage_messages 17841468851664876, 17841463569416649, 17841401703182429" [ref=e198]:
+                - cell "instagram_manage_messages" [ref=e199]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e200]:
+                  - generic [ref=e202]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "attribution_read Applies to all objects" [ref=e203]:
+                - cell "attribution_read" [ref=e204]
+                - cell "Applies to all objects" [ref=e205]:
+                  - generic [ref=e207]: Applies to all objects
+              - 'row "page_events 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e208]':
+                - cell "page_events" [ref=e209]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e210]':
+                  - generic [ref=e212]:
+                    - generic [ref=e213]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e214] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=Aahy1plnR8RIpnlfkbXfK4gci31DEg2IBeqnD_ltwSB6Fba6-Uym1ndt3aZ650spprSIr28m7KBEVard
+                    - text: ","
+                    - generic [ref=e215]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e216] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagRL1YNtNX2myjuZB_pbdScZuCCglMkP-4AW7mykuRHjD-GCdrJonC0wLI9Uh2PpRvJ0Ugl0RKvVkAz
+              - row "commerce_account_read_settings Applies to all objects" [ref=e217]:
+                - cell "commerce_account_read_settings" [ref=e218]
+                - cell "Applies to all objects" [ref=e219]:
+                  - generic [ref=e221]: Applies to all objects
+              - row "commerce_account_manage_orders Applies to all objects" [ref=e222]:
+                - cell "commerce_account_manage_orders" [ref=e223]
+                - cell "Applies to all objects" [ref=e224]:
+                  - generic [ref=e226]: Applies to all objects
+              - row "commerce_account_read_orders Applies to all objects" [ref=e227]:
+                - cell "commerce_account_read_orders" [ref=e228]
+                - cell "Applies to all objects" [ref=e229]:
+                  - generic [ref=e231]: Applies to all objects
+              - row "commerce_account_read_reports Applies to all objects" [ref=e232]:
+                - cell "commerce_account_read_reports" [ref=e233]
+                - cell "Applies to all objects" [ref=e234]:
+                  - generic [ref=e236]: Applies to all objects
+              - 'row "pages_read_engagement 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e237]':
+                - cell "pages_read_engagement" [ref=e238]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e239]':
+                  - generic [ref=e241]:
+                    - generic [ref=e242]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e243] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AahJeGLG9-VEHMKbA84Q_yv-oJGdjRNjlkKNBVjAHiNHfiMhdsLyuNDRX-idNr5ydljIHc7TshILCEEP
+                    - text: ","
+                    - generic [ref=e244]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e245] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagrlHbh_GLh-2eqPLBCEJtr0Jl0QI3oYv6GwLlpvvppQ5Bs-J8__RB9RzcvdquIVtZw20OR7A-QkKqW
+              - 'row "pages_manage_metadata 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e246]':
+                - cell "pages_manage_metadata" [ref=e247]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e248]':
+                  - generic [ref=e250]:
+                    - generic [ref=e251]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e252] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AagjRMLPtdwCz2SsPxDr4beq2hYewwaAC_jQTnz3_GYZ_ViJ6GjktqaAa1pLCI6SkdFXoK_gKAEhIhKi
+                    - text: ","
+                    - generic [ref=e253]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e254] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagrthSkkpm91ZNlS7AHsA9rYyXZPSev9YwxBJ_KNt0ORrnVeTIewbNbQ-4tMZHfO0Dz5G1qz0fnrRFj
+              - 'row "pages_read_user_content 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e255]':
+                - cell "pages_read_user_content" [ref=e256]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e257]':
+                  - generic [ref=e259]:
+                    - generic [ref=e260]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e261] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AaifBCYREEFOwkfneOkd7wN-9JdXkWas2mnfs5wc6G-M_8ch9ZCo00IUFE8wEOsh2BoP-kqPpl9qTQZJ
+                    - text: ","
+                    - generic [ref=e262]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e263] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=Aaia3kvgaDU_Bd-ECtV1K8d2qBntnOAs-OBYqIvGaUW1oQaeHB44FK6KGa_Ux3_XIPTEg-ECPBN3GxTa
+              - 'row "pages_manage_ads 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e264]':
+                - cell "pages_manage_ads" [ref=e265]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e266]':
+                  - generic [ref=e268]:
+                    - generic [ref=e269]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e270] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AaiU6_O-whsLISJz5WFuJlk_wQnXcm0oRYzUOutNGOTHHPfZnX9GukG1FX6s7gCnxohMjC-TVLKyJXxF
+                    - text: ","
+                    - generic [ref=e271]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e272] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=Aaj4L89sb8nCM8tPP9etz1wkNgSLprWuLFjJg0997CgYzZ3KYYvhHUqNhHDLC2sqHgCQFnjq4tTHVQ8Q
+              - 'row "pages_manage_posts 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e273]':
+                - cell "pages_manage_posts" [ref=e274]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e275]':
+                  - generic [ref=e277]:
+                    - generic [ref=e278]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e279] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AajiuMaCBbVnuHZuWOCY4N3N5ZmElSeyJ1LplSmOvGqFwYVakLAFxD0wV8ymwkByVFqTyEzqekLiBy4j
+                    - text: ","
+                    - generic [ref=e280]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e281] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagGGwtLsosaAUPZUzelFwHnrgEwTcN8SLVFMC78eQxALh1BWfKK6uVKdLWDQ9K-5a9JFCDojxHnGUBF
+              - 'row "pages_manage_engagement 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e282]':
+                - cell "pages_manage_engagement" [ref=e283]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e284]':
+                  - generic [ref=e286]:
+                    - generic [ref=e287]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e288] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=AaiYoUWerDmgjdhggJEt9sKjgm4KYQmdeCO5uX2ThcrW7pw9iPJXsgXCth_SHudtQtHZ1WbX2G77Gec3
+                    - text: ","
+                    - generic [ref=e289]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e290] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=Aaiqypav_1OnR3sv0QAtKD-n7xjGh2_6b8G5v1Q04pPCcnF2WOUTCxKHLljryLM56CKR-bZnK8ySNjv6
+              - row "whatsapp_business_messaging 499809106549608" [ref=e291]:
+                - cell "whatsapp_business_messaging" [ref=e292]
+                - cell "499809106549608" [ref=e293]:
+                  - generic [ref=e295]: "499809106549608"
+              - row "instagram_shopping_tag_products 17841468851664876, 17841463569416649, 17841401703182429" [ref=e296]:
+                - cell "instagram_shopping_tag_products" [ref=e297]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e298]:
+                  - generic [ref=e300]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_branded_content_brand 17841468851664876, 17841463569416649, 17841401703182429" [ref=e301]:
+                - cell "instagram_branded_content_brand" [ref=e302]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e303]:
+                  - generic [ref=e305]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_branded_content_creator 17841468851664876, 17841463569416649, 17841401703182429" [ref=e306]:
+                - cell "instagram_branded_content_creator" [ref=e307]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e308]:
+                  - generic [ref=e310]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_branded_content_ads_brand 17841468851664876, 17841463569416649, 17841401703182429" [ref=e311]:
+                - cell "instagram_branded_content_ads_brand" [ref=e312]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e313]:
+                  - generic [ref=e315]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_manage_events 17841468851664876, 17841463569416649, 17841401703182429" [ref=e316]:
+                - cell "instagram_manage_events" [ref=e317]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e318]:
+                  - generic [ref=e320]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "instagram_manage_upcoming_events 17841468851664876, 17841463569416649, 17841401703182429" [ref=e321]:
+                - cell "instagram_manage_upcoming_events" [ref=e322]
+                - cell "17841468851664876, 17841463569416649, 17841401703182429" [ref=e323]:
+                  - generic [ref=e325]: 17841468851664876, 17841463569416649, 17841401703182429
+              - row "manage_app_solution 764256806123080" [ref=e326]:
+                - cell "manage_app_solution" [ref=e327]
+                - cell "764256806123080" [ref=e328]:
+                  - generic [ref=e330]: "764256806123080"
+              - 'row "pages_utility_messaging 192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e331]':
+                - cell "pages_utility_messaging" [ref=e332]
+                - 'cell "192744840580473 : Crochetin, 101258158323238 : Lucena Soluções Digitais" [ref=e333]':
+                  - generic [ref=e335]:
+                    - generic [ref=e336]:
+                      - text: "192744840580473 :"
+                      - link "Crochetin" [ref=e337] [cursor=pointer]:
+                        - /url: https://facebook.com/crochetin.oficial?eid=Aai-jm2VkyWU8STPCLY1F7pxnG44rWMvrWYIyzp-JO2jNp5eCaszxJaZ5TTzZoMUjP2zkiUSAy3wiiGB
+                    - text: ","
+                    - generic [ref=e338]:
+                      - text: "101258158323238 :"
+                      - link "Lucena Soluções Digitais" [ref=e339] [cursor=pointer]:
+                        - /url: https://facebook.com/LucenaMidiaDigital?eid=AagAC-SKIUlPEKNnMJp4mPRg7nVXH_TO6IYunT8mlXsQKe5syKE39RcIoXDUPKPTxh3upDiEw_l-GnjA
+              - row "paid_marketing_messages Applies to all objects" [ref=e340]:
+                - cell "paid_marketing_messages" [ref=e341]
+                - cell "Applies to all objects" [ref=e342]:
+                  - generic [ref=e344]: Applies to all objects
+              - row "whatsapp_business_manage_events 499809106549608" [ref=e345]:
+                - cell "whatsapp_business_manage_events" [ref=e346]
+                - cell "499809106549608" [ref=e347]:
+                  - generic [ref=e349]: "499809106549608"
+        - generic [ref=e351]:
+          - button "Estender token de acesso" [disabled] [ref=e352]
+          - generic [ref=e491]:
+            - heading "Este novo token de acesso de vida longa expirará em 4 de junho de 2026:" [level=4] [ref=e492]
+            - heading "EAAK3FmdyNkgBRAiPypVQOZAFUZBSbMg7YX9x0IZCkMsws6KVWEvImgcowKhanA3fiBXphkPzsf7i1WZC0MR11Qiygo0Np7mBExhNjWTAlzQdDTVHNaT8iXp0p2szpVop6rZBv6U6bhHU4evKXjn4UYxg1tnABd54guF3Y04H44hWqhXzYaLpjx93odmMn6xzlemA1ZCyMHRkiGVAZDZD Depurar" [level=4] [ref=e494]:
+              - generic [ref=e496]:
+                - code [ref=e498]: EAAK3FmdyNkgBRAiPypVQOZAFUZBSbMg7YX9x0IZCkMsws6KVWEvImgcowKhanA3fiBXphkPzsf7i1WZC0MR11Qiygo0Np7mBExhNjWTAlzQdDTVHNaT8iXp0p2szpVop6rZBv6U6bhHU4evKXjn4UYxg1tnABd54guF3Y04H44hWqhXzYaLpjx93odmMn6xzlemA1ZCyMHRkiGVAZDZD
+                - link "Depurar" [ref=e500] [cursor=pointer]:
+                  - /url: /tools/debug/accesstoken/?access_token=EAAK3FmdyNkgBRAiPypVQOZAFUZBSbMg7YX9x0IZCkMsws6KVWEvImgcowKhanA3fiBXphkPzsf7i1WZC0MR11Qiygo0Np7mBExhNjWTAlzQdDTVHNaT8iXp0p2szpVop6rZBv6U6bhHU4evKXjn4UYxg1tnABd54guF3Y04H44hWqhXzYaLpjx93odmMn6xzlemA1ZCyMHRkiGVAZDZD
+    - contentinfo [ref=e382]:
+      - generic [ref=e383]:
+        - separator [ref=e384]
+        - generic [ref=e386]:
+          - generic [ref=e388]:
+            - generic [ref=e390]:
+              - img "Meta" [ref=e392]
+              - list [ref=e394]:
+                - listitem [ref=e501]:
+                  - link "Facebook" [ref=e502] [cursor=pointer]:
+                    - /url: https://www.facebook.com/MetaforDevelopers
+                    - img "Facebook" [ref=e503]
+                - listitem [ref=e504]:
+                  - link "Instagram" [ref=e505] [cursor=pointer]:
+                    - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.instagram.com%2Fmetafordevelopers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4pZl_qYyQbhsA6jRV8wltSH4RO4x8Qx3Ymb3Qdbsv9jrVvjQUCcMnli4LG9A_aem_AIV2K-ZixSeGKvlXg0c-Pg&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                    - img "Instagram" [ref=e506]
+                - listitem [ref=e507]:
+                  - link "X" [ref=e508] [cursor=pointer]:
+                    - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Ftwitter.com%2Fmetafordevs%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7kctMR4Lh1QaM_nQxMsGXqJ1ikfw_b73MPBL4s0-jBNxVOaeWphb08e0ZXCQ_aem_olhl0RcsPPxn7g1TAae8lQ&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                    - img "X" [ref=e509]
+                - listitem [ref=e510]:
+                  - link "LinkedIn" [ref=e511] [cursor=pointer]:
+                    - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.linkedin.com%2Fshowcase%2Fmeta-for-developers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4qyeCxtcTQD_iO7mRSE_DMDXIrmrEo0avkOq49lbqxL3G6zHtGFtmcwty7Rw_aem_YxdDo8oEK4IuLLSJqWwNAA&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                    - img "LinkedIn" [ref=e512]
+                - listitem [ref=e513]:
+                  - link "YouTube" [ref=e514] [cursor=pointer]:
+                    - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.youtube.com%2FMetaDevelopers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7kctMR4Lh1QaM_nQxMsGXqJ1ikfw_b73MPBL4s0-jBNxVOaeWphb08e0ZXCQ_aem_olhl0RcsPPxn7g1TAae8lQ&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                    - img "YouTube" [ref=e515]
+            - generic [ref=e396]:
+              - generic [ref=e399]:
+                - heading "Desenvolva com a Meta" [level=2] [ref=e400]:
+                  - generic [ref=e401]: Desenvolva com a Meta
+                - list [ref=e402]:
+                  - listitem [ref=e403]:
+                    - link "IA" [ref=e405] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fai%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7iFKdYz0t1sN7h0-ZmFIz6r1v_xhKt4BEyDYszbo-oSbFOxG469lRJHO6J_g_aem_gowVChjT1RMFUOr_Zf5f2A&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                  - listitem [ref=e406]:
+                    - link "Meta Horizon" [ref=e408] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fhorizon%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7pcWRyHw0Q34sxUwG-ZPtUvvDftM5qSuo7NWxM_k1ONRXxA_CFDjs9tYBnbw_aem_MPD2NNXSQI5N7MZG147OMA&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                  - listitem [ref=e409]:
+                    - link "Tecnologias sociais" [ref=e411] [cursor=pointer]:
+                      - /url: /social-technologies/
+              - generic [ref=e414]:
+                - heading "Notícias" [level=2] [ref=e415]:
+                  - generic [ref=e416]: Notícias
+                - list [ref=e417]:
+                  - listitem [ref=e418]:
+                    - link "Meta for Developers" [ref=e420] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fblog%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4Y9koYlozrel0lQRiVSFqbxjdEUIjXE7a2l4Cnw7w5ucr_MXagiAZMMWtSIQ_aem_UBPPlvfd8Hpv5KUXDvLYJw&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                  - listitem [ref=e421]:
+                    - link "Blog" [ref=e423] [cursor=pointer]:
+                      - /url: /blog/
+                  - listitem [ref=e424]:
+                    - link "Casos de sucesso" [ref=e426] [cursor=pointer]:
+                      - /url: /success-stories/
+              - generic [ref=e429]:
+                - heading "Suporte" [level=2] [ref=e430]:
+                  - generic [ref=e431]: Suporte
+                - list [ref=e432]:
+                  - listitem [ref=e433]:
+                    - link "Suporte ao desenvolvedor" [ref=e435] [cursor=pointer]:
+                      - /url: /support/
+                  - listitem [ref=e436]:
+                    - link "Ferramenta de bug" [ref=e438] [cursor=pointer]:
+                      - /url: /support/bugs/
+                  - listitem [ref=e439]:
+                    - link "Status da plataforma" [ref=e441] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fmetastatus.com%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4SDgSGiAjC3QPJ2BXg-ugpNf1tPLwMoMdiQe4k4Vg7FKrGniLjW0E97TCCpQ_aem_rmrfTrAfyenpi7kwEqERaQ&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                  - listitem [ref=e442]:
+                    - link "Fórum da Comunidade de Desenvolvedores" [ref=e444] [cursor=pointer]:
+                      - /url: https://www.facebook.com/groups/fbdevelopers/
+                  - listitem [ref=e445]:
+                    - link "Relatar um incidente" [ref=e447] [cursor=pointer]:
+                      - /url: /incident/report/
+              - generic [ref=e450]:
+                - heading "Quem somos" [level=2] [ref=e451]:
+                  - generic [ref=e452]: Quem somos
+                - list [ref=e453]:
+                  - listitem [ref=e454]:
+                    - link "Sobre" [ref=e456] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fabout.fb.com%2F&h=AT4dknqcoxxoDJF5t0GtZdR2smp6BLJwyYJ0e_7x_Ved-lVQRc2130uPD9ePZ9Y4ZXIyscQAhyH-cA0kLfRw2NbPKgMyXz4cBmUM4vwON2PPj9KYQM0qzPHfDF62FmJaNjrxBmXpZvyOHTtpGe4
+                  - listitem [ref=e457]:
+                    - link "Carreiras" [ref=e459] [cursor=pointer]:
+                      - /url: https://www.facebook.com/careers
+              - generic [ref=e462]:
+                - heading "Termos e políticas" [level=2] [ref=e463]:
+                  - generic [ref=e464]: Termos e políticas
+                - list [ref=e465]:
+                  - listitem [ref=e466]:
+                    - link "Iniciativas de plataforma responsável" [ref=e468] [cursor=pointer]:
+                      - /url: /products/responsible-platform-initiatives/
+                  - listitem [ref=e469]:
+                    - link "Termos da plataforma" [ref=e471] [cursor=pointer]:
+                      - /url: /terms/dfc_platform_terms/
+                  - listitem [ref=e472]:
+                    - link "Políticas do Desenvolvedor" [ref=e474] [cursor=pointer]:
+                      - /url: /devpolicy/
+                  - listitem [ref=e475]:
+                    - link "Política de Privacidade" [ref=e477] [cursor=pointer]:
+                      - /url: https://www.facebook.com/about/privacy
+                  - listitem [ref=e478]:
+                    - link "Cookies" [ref=e480] [cursor=pointer]:
+                      - /url: https://www.facebook.com/help/cookies
+          - button "Alterar idioma" [ref=e485] [cursor=pointer]:
+            - generic [ref=e487]: Português (Brasil)

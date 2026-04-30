@@ -1,0 +1,70 @@
+- generic [ref=e4]:
+  - generic [ref=e9]:
+    - generic [ref=e15]:
+      - img "Símbolo da Meta" [ref=e20]
+      - generic [ref=e30]:
+        - generic [ref=e35]:
+          - text: Comece a usar o
+          - generic [ref=e36]: Meta for Developers
+        - generic [ref=e40]: "Gerencie tudo relacionado aos apps que você criou para você ou sua empresa, incluindo:"
+        - list [ref=e46]:
+          - listitem [ref=e47]:
+            - generic [ref=e48]: •
+            - generic [ref=e49]: Crie apps com casos de uso que podem conectar seu ao Facebook, Instagram, WhatsApp, Threads e outros.
+          - listitem [ref=e50]:
+            - generic [ref=e51]: •
+            - generic [ref=e52]: Solicite acesso a permissões e recursos na Análise do App.
+          - listitem [ref=e53]:
+            - generic [ref=e54]: •
+            - generic [ref=e55]: Gerencie apps e acompanhe análises, como chamadas de API e limites de tráfego do usuário
+          - listitem [ref=e56]:
+            - generic [ref=e57]: •
+            - generic [ref=e58]: Descubra novas formas de alcançar seus usuários
+          - listitem [ref=e59]:
+            - generic [ref=e60]: •
+            - generic [ref=e61]: Conclua todos os requisitos de verificação e acesso a dados para manter seus apps seguros e confiáveis
+    - generic [ref=e67]:
+      - generic [ref=e70]: Entrar no Meta for Developers
+      - button "Entrar com o Facebook" [ref=e73] [cursor=pointer]:
+        - generic [ref=e74]:
+          - img [ref=e76]
+          - generic [ref=e79]: Entrar com o Facebook
+      - button "Criar nova conta" [ref=e82] [cursor=pointer]:
+        - generic [ref=e85]: Criar nova conta
+      - separator [ref=e87]
+      - button "Entrar com uma conta gerenciada da Meta" [ref=e90] [cursor=pointer]:
+        - generic [ref=e93]: Entrar com uma conta gerenciada da Meta
+      - img "Logotipo da Meta" [ref=e95]
+  - generic [ref=e106]:
+    - link "© 2026 Meta" [ref=e108] [cursor=pointer]:
+      - /url: https://www.facebook.com/
+    - generic [ref=e109]:
+      - generic [ref=e110]:
+        - link "Sobre" [ref=e111] [cursor=pointer]:
+          - /url: https://www.meta.com/about/
+        - link "Desenvolvedores" [ref=e112] [cursor=pointer]:
+          - /url: https://developers.meta.com/
+        - link "Carreiras" [ref=e113] [cursor=pointer]:
+          - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.metacareers.com%2F&h=AT7RUjQ6aQ4uTWwJ83TJHeqlp5TRfCOQUw7Y1GGL4NxQTyRIXBXBbtAO90Nqied-LZ6CL-cyO6wnGBNDtGD_GB41XKT2tcTp_DQIOG05K-s9KqG2vhdbOWeRIz3k9C-MWovBb9Q2P1-wx3ZXHHH0lwOjga1HZWl_ohWDwQ
+        - link "Privacidade" [ref=e114] [cursor=pointer]:
+          - /url: https://www.facebook.com/privacy/explanation
+        - link "Cookies" [ref=e115] [cursor=pointer]:
+          - /url: https://www.facebook.com/help/cookies
+        - link "Termos" [ref=e116] [cursor=pointer]:
+          - /url: https://www.facebook.com/policies/
+        - link "Central de Ajuda" [ref=e117] [cursor=pointer]:
+          - /url: https://www.facebook.com/business/help/
+      - generic [ref=e118]:
+        - link "Português (Brasil)" [ref=e119] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - link "English (US)" [ref=e120] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - link "English (UK)" [ref=e121] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - link "Español" [ref=e122] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - link "Français (France)" [ref=e123] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - link "Español (España)" [ref=e124] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fdevelopers.facebook.com%2Ftools%2Fexplorer%2F
+        - button "Mais idiomas" [ref=e125] [cursor=pointer]: Mais idiomas
