@@ -16,55 +16,12 @@ import type {
   MetaInsightsResponse,
   MetaListResponse,
 } from './types';
-
-type MetaInsightsParams = {
-  since: string;
-  until: string;
-  limit?: number;
-};
-
-type PaginatedFetchOptions = {
-  fields: string[];
-  level: string;
-  since: string;
-  until: string;
-  limit: number;
-  breakdowns?: string[];
-};
-
-export type MetaWriteOperation =
-  | 'pause_ad'
-  | 'resume_ad'
-  | 'set_adset_daily_budget'
-  | 'set_campaign_daily_budget'
-  | 'pause_campaign'
-  | 'activate_campaign'
-  | 'pause_adset'
-  | 'activate_adset';
-
-export type MetaWritebackError = {
-  message: string;
-  status: number | null;
-  code: number | null;
-  fbtraceId: string | null;
-  raw: unknown;
-};
-
-export type MetaWritebackResult = {
-  success: boolean;
-  dryRun: boolean;
-  operation: MetaWriteOperation;
-  objectId: string;
-  request: {
-    method: 'GET' | 'POST';
-    url: string;
-    body?: Record<string, string>;
-  };
-  response: Record<string, unknown> | null;
-  error: MetaWritebackError | null;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+import { parseMetaGraphError, parseMetaRequestException } from './graph-errors';
+import { buildMetaGraphUrl, normalizeMetaAccountId } from './graph-utils';
+import type { MetaInsightsParams, PaginatedFetchOptions } from './request-types';
+import { isRecord } from './request-types';
+import type { MetaWritebackError, MetaWritebackResult } from './writeback-types';
+export type { MetaWriteOperation, MetaWritebackError, MetaWritebackResult } from './writeback-types';
 
 export class MetaAdsService {
   private accessToken: string;
@@ -103,17 +60,11 @@ export class MetaAdsService {
   }
 
   private normalizeAccountId(value: unknown): string | null {
-    if (typeof value !== 'string') return null;
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    return trimmed.replace(/^act_/i, '');
+    return normalizeMetaAccountId(value);
   }
 
   private buildGraphUrl(path: string, query?: Record<string, string>) {
-    const base = `https://graph.facebook.com/${this.apiVersion}/${path}`;
-    if (!query || Object.keys(query).length === 0) return base;
-    const params = new URLSearchParams(query);
-    return `${base}?${params.toString()}`;
+    return buildMetaGraphUrl(this.apiVersion, path, query);
   }
 
   private async requestGraph(params: {
@@ -144,65 +95,30 @@ export class MetaAdsService {
       const data = (await response.json()) as any;
 
       if (!response.ok) {
-        const message = (data && typeof data === 'object' && data.error && typeof data.error.message === 'string' ? data.error.message : null) ??
-          `Meta API request failed (HTTP ${response.status})`;
-        const code =
-          data && typeof data === 'object' && data.error && typeof data.error.code === 'number' ? data.error.code : null;
-        const fbtraceId =
-          data && typeof data === 'object' && data.error && typeof data.error.fbtrace_id === 'string' ? data.error.fbtrace_id : null;
-
         return {
           ok: false,
           url,
           data,
-          error: {
-            message,
-            status: response.status,
-            code,
-            fbtraceId,
-            raw: data,
-          },
+          error: parseMetaGraphError(data, `Meta API request failed (HTTP ${response.status})`, response.status),
         };
       }
 
       if (data && typeof data === 'object' && data.error) {
-        const message = typeof data.error.message === 'string' ? data.error.message : 'Meta API returned an error payload';
-        const code = typeof data.error.code === 'number' ? data.error.code : null;
-        const fbtraceId = typeof data.error.fbtrace_id === 'string' ? data.error.fbtrace_id : null;
         return {
           ok: false,
           url,
           data,
-          error: {
-            message,
-            status: response.status,
-            code,
-            fbtraceId,
-            raw: data,
-          },
+          error: parseMetaGraphError(data, 'Meta API returned an error payload', response.status),
         };
       }
 
       return { ok: true, url, data };
     } catch (error) {
-      const message =
-        (error as Error)?.name === 'AbortError'
-          ? `Meta API request timeout after ${params.timeoutMs ?? 30000}ms`
-          : error instanceof Error
-            ? error.message
-            : 'Meta API request failed';
-
       return {
         ok: false,
         url,
         data: null,
-        error: {
-          message,
-          status: null,
-          code: null,
-          fbtraceId: null,
-          raw: error,
-        },
+        error: parseMetaRequestException(error, params.timeoutMs ?? 30000),
       };
     } finally {
       clearTimeout(timeout);
@@ -673,6 +589,78 @@ export class MetaAdsService {
       return { success: false, dryRun: false, operation: 'activate_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
     }
     return { success: true, dryRun: false, operation: 'activate_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+  async renameCampaign(campaignId: string, name: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(campaignId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { name },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'rename_campaign', objectId, request, response: { success: true, dryRun: true, name }, error: null };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'rename_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+
+    return { success: true, dryRun: false, operation: 'rename_campaign', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+
+  async renameAdSet(adsetId: string, name: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adsetId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { name },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'rename_adset', objectId, request, response: { success: true, dryRun: true, name }, error: null };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'adset' });
+    if (!scope.ok) {
+      return { success: false, dryRun: false, operation: 'rename_adset', objectId, request, response: null, error: scope.error };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'rename_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+
+    return { success: true, dryRun: false, operation: 'rename_adset', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
+  }
+
+  async renameAd(adId: string, name: string, options?: { dryRun?: boolean }): Promise<MetaWritebackResult> {
+    const objectId = String(adId ?? '').trim();
+    const dryRun = Boolean(options?.dryRun);
+    const request = {
+      method: 'POST' as const,
+      url: this.buildGraphUrl(objectId),
+      body: { name },
+    };
+
+    if (dryRun) {
+      return { success: true, dryRun: true, operation: 'rename_ad', objectId, request, response: { success: true, dryRun: true, name }, error: null };
+    }
+
+    const scope = await this.assertObjectBelongsToAccount({ objectId, objectType: 'ad' });
+    if (!scope.ok) {
+      return { success: false, dryRun: false, operation: 'rename_ad', objectId, request, response: null, error: scope.error };
+    }
+
+    const res = await this.requestGraph({ method: 'POST', path: objectId, body: request.body });
+    if (!res.ok) {
+      return { success: false, dryRun: false, operation: 'rename_ad', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : null, error: res.error };
+    }
+
+    return { success: true, dryRun: false, operation: 'rename_ad', objectId, request: { ...request, url: res.url }, response: isRecord(res.data) ? (res.data as any) : { success: true }, error: null };
   }
 
   private async delay(ms: number): Promise<void> {

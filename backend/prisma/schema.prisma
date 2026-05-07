@@ -45,7 +45,8 @@ model Client {
   healthSnapshots                HealthSnapshot[]
   accountReviews                 AccountReview[]
   expansionOpportunities         ExpansionOpportunity[]
-
+  metaGovernanceIssues           MetaGovernanceIssue[]
+  metaNamingOverrides            MetaNamingOverride[]
   @@map("clients")
 }
 
@@ -126,7 +127,7 @@ model Campaign {
   campaignRuleContext    CampaignRuleContext?
   client_rule_configs    ClientRuleConfig[]
   ruleProfile            RuleProfile?             @relation("CampaignRuleProfile", fields: [ruleProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-
+  metaGovernanceIssues    MetaGovernanceIssue[]
   @@index([clientId])
   @@index([platform])
   @@index([objectiveClassKey])
@@ -518,12 +519,70 @@ model SyncHistory {
   triggeredBy       String?   @map("triggered_by")
   metadata          Json?
   created_at        DateTime? @default(now()) @db.Timestamp(6)
-
+  metaGovernanceIssues MetaGovernanceIssue[]
   @@index([accountId, startedAt(sort: Desc)], map: "idx_sync_history_account")
   @@index([platform], map: "idx_sync_history_platform")
   @@index([startedAt(sort: Desc)], map: "idx_sync_history_started_at")
   @@index([status], map: "idx_sync_history_status")
   @@map("sync_history")
+}
+
+model MetaGovernanceIssue {
+  id                  String      @id @default(uuid())
+  issueKey            String      @unique @map("issue_key")
+  syncId              String      @map("sync_id")
+  clientId            String      @map("client_id")
+  accountId           String?     @map("account_id")
+  entityType          String      @map("entity_type")
+  entityExternalId    String      @map("entity_external_id")
+  campaignId          String?     @map("campaign_id")
+  issueType           String      @map("issue_type")
+  status              String
+  currentName         String?     @map("current_name")
+  expectedName        String?     @map("expected_name")
+  currentCreatedTime  DateTime?   @map("current_created_time") @db.Timestamp(6)
+  expectedCreatedTime DateTime?   @map("expected_created_time") @db.Timestamp(6)
+  beforePayload       Json?       @map("before_payload")
+  afterPayload        Json?       @map("after_payload")
+  metaError           String?     @map("meta_error")
+  dbError             String?     @map("db_error")
+  details             Json?
+  firstSeenAt         DateTime    @default(now()) @map("first_seen_at") @db.Timestamp(6)
+  lastSeenAt          DateTime    @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  resolvedAt          DateTime?   @map("resolved_at") @db.Timestamp(6)
+  autoFixed           Boolean     @default(false) @map("auto_fixed")
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamp(6)
+  syncHistory         SyncHistory @relation(fields: [syncId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign            Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([clientId, status], map: "idx_meta_governance_issues_client_status")
+  @@index([syncId], map: "idx_meta_governance_issues_sync")
+  @@index([entityType, entityExternalId], map: "idx_meta_governance_issues_entity")
+  @@index([issueType, status], map: "idx_meta_governance_issues_type_status")
+  @@index([lastSeenAt(sort: Desc)], map: "idx_meta_governance_issues_last_seen")
+  @@map("meta_governance_issues")
+}
+
+model MetaNamingOverride {
+  id               String   @id @default(uuid())
+  clientId         String   @map("client_id")
+  entityType       String   @map("entity_type")
+  entityExternalId String?  @map("entity_external_id")
+  productKey       String?  @map("product_key")
+  themeKey         String?  @map("theme_key")
+  audienceKey      String?  @map("audience_key")
+  overridePayload  Json     @map("override_payload")
+  priority         Int      @default(100)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([clientId, entityType, active, priority], map: "idx_meta_naming_overrides_client_type_active_priority")
+  @@index([entityExternalId], map: "idx_meta_naming_overrides_entity_external")
+  @@map("meta_naming_overrides")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

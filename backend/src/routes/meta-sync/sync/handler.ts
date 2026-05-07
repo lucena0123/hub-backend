@@ -1,11 +1,12 @@
 import { validateMetaSync } from '../../../validators/meta-sync';
 import { MetaAdsService } from '../../../services/meta-ads-service';
+import { runMetaGovernanceStage } from '../../../services/meta-governance/runner';
 import { runningMetaSyncJobsByAccount } from '../running-jobs';
 import { getMetaSyncChunkDays, splitDateRange } from '../utils';
 import { runMetaSyncWork } from '../sync-work';
 
 export const createSyncMetaAdsHandler = (fastify: any) => {
-  const { prisma } = fastify;
+  const { prisma, pool } = fastify;
   const { syncHistory: syncHistoryService, cache: cacheService } = fastify.services;
 
   return async (request: any, reply: any) => {
@@ -21,11 +22,9 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
       }
 
       const body = validation.data!;
-
       const accessToken = process.env.META_ACCESS_TOKEN;
 
-      const fromBody =
-        typeof body.accountId === 'string' && body.accountId.trim() ? body.accountId.trim().replace(/^act_/i, '') : null;
+      const fromBody = typeof body.accountId === 'string' && body.accountId.trim() ? body.accountId.trim().replace(/^act_/i, '') : null;
 
       let fromClient: string | null = null;
       if (body.clientId) {
@@ -49,7 +48,6 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
       }
 
       const adAccountId = fromBody || fromClient || process.env.META_AD_ACCOUNT_ID || null;
-
       if (!accessToken || !adAccountId) {
         reply.status(400);
         return {
@@ -75,7 +73,6 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
       const { since, until } = resolveDateRange(body.since, body.until);
       const chunkDays = getMetaSyncChunkDays();
       const dateChunks = splitDateRange(since, until, chunkDays);
-
       const shouldRunAsync = body.async || body.syncLevel === 'full' || (body.since && body.until && dateChunks.length > 1);
 
       if (shouldRunAsync) {
@@ -95,12 +92,13 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
       }
 
       const breakdownUnits = body.syncLevel === 'full' ? dateChunks.length * 5 : 0;
-      const adUnits = body.syncLevel === 'ad' || body.syncLevel === 'full' ? dateChunks.length + 1 : 0; // +1 = creative metadata linking
+      const adUnits = body.syncLevel === 'ad' || body.syncLevel === 'full' ? dateChunks.length + 1 : 0;
       const totalUnits =
-        dateChunks.length + // campaign metrics always
+        dateChunks.length +
         (body.syncLevel === 'adset' || body.syncLevel === 'full' ? dateChunks.length : 0) +
         adUnits +
-        breakdownUnits;
+        breakdownUnits +
+        1;
 
       syncId = await syncHistoryService.createSyncRecord({
         platform: 'meta',
@@ -233,7 +231,34 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           progress: progressTracker,
         });
 
+        let governanceSummary: Record<string, unknown> | null = null;
+        let governanceError: string | null = null;
+
+        await progressTracker.setStage('governance', 1, 'Validando nomenclatura e datas da Meta...');
+        try {
+          const governanceResult = await runMetaGovernanceStage({
+            pool,
+            metaService,
+            clientId: body.clientId,
+            accountId: adAccountId,
+            syncId: syncId!,
+            dryRun: body.dryRun,
+          });
+          governanceSummary = governanceResult.summary as unknown as Record<string, unknown>;
+          await updateMetadata({ governance: { summary: governanceSummary } });
+        } catch (error) {
+          governanceError = error instanceof Error ? error.message : 'Falha desconhecida na governança Meta';
+          await updateMetadata({ governance: { error: governanceError } });
+          fastify.log.error({ err: error, syncId }, 'Meta governance stage failed');
+        }
+        await progressTracker.completeUnit(null, null, governanceError ? 'Governança Meta finalizada com falhas.' : 'Governança Meta concluída.');
+
         const duration = Date.now() - startTime;
+        const governancePatch = governanceSummary
+          ? { governance: { summary: governanceSummary } }
+          : governanceError
+            ? { governance: { error: governanceError } }
+            : {};
 
         if (result.outcome === 'no_insights') {
           if (syncId) {
@@ -248,20 +273,20 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           }
 
           if (syncId && syncMetadata) {
-            const progress = (syncMetadata.progress as Record<string, unknown>) || {};
-            syncMetadata = {
-              ...syncMetadata,
+            syncMetadata = mergeRecords(syncMetadata, {
+              ...governancePatch,
               state: 'success',
               progress: {
-                ...progress,
                 overallCompleted: totalUnits,
-                stageCompleted: (progress.stageTotal as any) ?? (progress.stageCompleted as any) ?? 0,
+                stage: 'governance',
+                stageTotal: 1,
+                stageCompleted: 1,
                 currentSince: null,
                 currentUntil: null,
                 message: 'Concluído (nenhum insight no período).',
                 updatedAt: new Date().toISOString(),
               },
-            };
+            });
             await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
           }
 
@@ -271,10 +296,10 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             message: 'No insights returned for the selected period',
             totalInsights: 0,
             mapped: 0,
-            unmapped: 0,
             since,
             until,
             duration,
+            governanceSummary,
           };
         }
 
@@ -291,26 +316,26 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           }
 
           if (syncId && syncMetadata) {
-            const progress = (syncMetadata.progress as Record<string, unknown>) || {};
-            syncMetadata = {
-              ...syncMetadata,
+            syncMetadata = mergeRecords(syncMetadata, {
+              ...governancePatch,
               state: result.unmapped.length > 0 ? 'partial' : 'success',
               progress: {
-                ...progress,
                 overallCompleted: totalUnits,
-                stageCompleted: (progress.stageTotal as any) ?? (progress.stageCompleted as any) ?? 0,
+                stage: 'governance',
+                stageTotal: 1,
+                stageCompleted: 1,
                 currentSince: null,
                 currentUntil: null,
                 message: 'Concluído (dry-run).',
                 updatedAt: new Date().toISOString(),
               },
-            };
+            });
             await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
           }
 
           fastify.log.info(
             { syncId, totalInsights: result.totalInsights, mapped: result.mappedTotal, unmapped: result.unmapped.length, duration },
-            'Meta sync dry-run completed'
+            'Meta sync dry-run completed',
           );
 
           return {
@@ -323,12 +348,12 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             since,
             until,
             duration,
+            governanceSummary,
           };
         }
 
         const adCoverage = result.coverage;
-        const adCoverageHasIssues =
-          Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
+        const adCoverageHasIssues = Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
         const isPartial = result.unmapped.length > 0 || adCoverageHasIssues;
 
         if (syncId) {
@@ -351,12 +376,12 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             unmapped: result.unmapped.length,
             duration,
           },
-          'Meta sync completed successfully'
+          'Meta sync completed successfully',
         );
 
         if (syncId && syncMetadata) {
-          syncMetadata = {
-            ...syncMetadata,
+          syncMetadata = mergeRecords(syncMetadata, {
+            ...governancePatch,
             state: isPartial ? 'partial' : 'success',
             ...(adCoverageHasIssues
               ? {
@@ -366,7 +391,17 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
                   },
                 }
               : {}),
-          };
+            progress: {
+              overallCompleted: totalUnits,
+              stage: 'governance',
+              stageTotal: 1,
+              stageCompleted: 1,
+              currentSince: null,
+              currentUntil: null,
+              message: isPartial ? 'Concluído com pendências.' : 'Concluído com sucesso.',
+              updatedAt: new Date().toISOString(),
+            },
+          });
           await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
         }
 
@@ -380,6 +415,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           since,
           until,
           duration,
+          governanceSummary,
         };
       };
 
@@ -398,11 +434,16 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
             }
 
             if (syncId && syncMetadata) {
-              syncMetadata = {
-                ...syncMetadata,
+              syncMetadata = mergeRecords(syncMetadata, {
                 state: 'failed',
                 error: error instanceof Error ? error.message : 'Unknown error',
-              };
+                progress: {
+                  overallCompleted,
+                  stageCompleted,
+                  message: 'Falha na sincronização Meta.',
+                  updatedAt: new Date().toISOString(),
+                },
+              });
               await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
             }
 
@@ -413,7 +454,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
                 stack: error instanceof Error ? error.stack : undefined,
                 duration,
               },
-              'Meta sync failed (async)'
+              'Meta sync failed (async)',
             );
           } finally {
             const running = runningMetaSyncJobsByAccount.get(accountKey);
@@ -470,7 +511,7 @@ export const createSyncMetaAdsHandler = (fastify: any) => {
           stack: error instanceof Error ? error.stack : undefined,
           duration,
         },
-        'Meta sync failed'
+        'Meta sync failed',
       );
 
       reply.status(500);

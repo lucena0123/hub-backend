@@ -10,6 +10,7 @@ import type IORedis from 'ioredis';
 import { QUEUE_NAMES } from '../config/queues';
 import { prisma } from '../config/prisma';
 import { MetaAdsService } from '../services/meta-ads-service';
+import { runMetaGovernanceStage } from '../services/meta-governance/runner';
 import { SyncHistoryService } from '../services/sync-history-service';
 import { CacheService } from '../services/cache-service';
 import { NotificationService } from '../services/notification-service';
@@ -19,11 +20,11 @@ import { getMetaSyncChunkDays, splitDateRange } from '../routes/meta-sync/utils'
 type MetaSyncJobData = { clientId: string };
 
 const noopLogger = {
-  info: () => { },
-  warn: () => { },
+  info: () => {},
+  warn: () => {},
   error: console.error,
-  debug: () => { },
-  trace: () => { },
+  debug: () => {},
+  trace: () => {},
   fatal: console.error,
   child: () => noopLogger as any,
 };
@@ -39,12 +40,7 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
       const { clientId } = job.data;
       const startTime = Date.now();
 
-      // Resolve client credentials
-      const clientResult = await pool.query(
-        `SELECT id, "metaAdAccountId" FROM clients WHERE id = $1 AND status = 'active'`,
-        [clientId]
-      );
-
+      const clientResult = await pool.query(`SELECT id, "metaAdAccountId" FROM clients WHERE id = $1 AND status = 'active'`, [clientId]);
       if (clientResult.rows.length === 0) {
         throw new Error(`Client ${clientId} not found or inactive`);
       }
@@ -56,12 +52,10 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           : process.env.META_AD_ACCOUNT_ID || null;
 
       const accessToken = process.env.META_ACCESS_TOKEN || null;
-
       if (!accessToken || !adAccountId) {
         throw new Error(`Client ${clientId}: missing Meta credentials (accessToken or adAccountId)`);
       }
 
-      // Date range: last 7 days
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - 7);
@@ -70,6 +64,7 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
 
       const chunkDays = getMetaSyncChunkDays();
       const dateChunks = splitDateRange(since, until, chunkDays);
+      const totalUnits = dateChunks.length + dateChunks.length + (dateChunks.length + 1) + dateChunks.length * 5 + 1;
 
       const metaService = new MetaAdsService({
         accessToken,
@@ -77,7 +72,6 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
         apiVersion: process.env.META_API_VERSION,
       });
 
-      // Create sync record
       const syncId = await syncHistoryService.createSyncRecord({
         platform: 'meta',
         accountId: adAccountId,
@@ -91,7 +85,7 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           chunkDays,
           chunksTotal: dateChunks.length,
           progress: {
-            overallTotal: dateChunks.length * 4 + dateChunks.length * 5, // campaign + adset + ad + breakdowns
+            overallTotal: totalUnits,
             overallCompleted: 0,
             stage: 'campaign',
             stageTotal: dateChunks.length,
@@ -123,7 +117,7 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
         chunkDays,
         chunksTotal: dateChunks.length,
         progress: {
-          overallTotal: dateChunks.length * 4 + dateChunks.length * 3,
+          overallTotal: totalUnits,
           overallCompleted: 0,
           stage: 'campaign',
           stageTotal: dateChunks.length,
@@ -168,7 +162,6 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
         completeUnit: async (currentSince: string | null, currentUntil: string | null, message?: string) => {
           overallCompleted += 1;
           stageCompleted += 1;
-          // update progress periodically, not every unit
           if (overallCompleted % 3 === 0 || message) {
             await updateProgress({
               overallCompleted,
@@ -197,7 +190,34 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           progress: progressTracker,
         });
 
+        let governanceSummary: Record<string, unknown> | null = null;
+        let governanceError: string | null = null;
+
+        await progressTracker.setStage('governance', 1, 'Validando nomenclatura e datas da Meta...');
+        try {
+          const governanceResult = await runMetaGovernanceStage({
+            pool,
+            metaService,
+            clientId,
+            accountId: adAccountId,
+            syncId,
+            dryRun: false,
+          });
+          governanceSummary = governanceResult.summary as unknown as Record<string, unknown>;
+          await updateMetadata({ governance: { summary: governanceSummary } });
+        } catch (error) {
+          governanceError = error instanceof Error ? error.message : 'Falha desconhecida na governança Meta';
+          await updateMetadata({ governance: { error: governanceError } });
+          noopLogger.error(error);
+        }
+        await progressTracker.completeUnit(null, null, governanceError ? 'Governança Meta finalizada com falhas.' : 'Governança Meta concluída.');
+
         const duration = Date.now() - startTime;
+        const governancePatch = governanceSummary
+          ? { governance: { summary: governanceSummary } }
+          : governanceError
+            ? { governance: { error: governanceError } }
+            : {};
 
         if (result.outcome === 'no_insights') {
           await syncHistoryService.completeSyncSuccess(syncId, {
@@ -208,11 +228,27 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
             partial: false,
             durationMs: duration,
           });
+
+          syncMetadata = mergeRecords(syncMetadata, {
+            ...governancePatch,
+            state: 'success',
+            progress: {
+              overallCompleted: totalUnits,
+              stage: 'governance',
+              stageTotal: 1,
+              stageCompleted: 1,
+              currentSince: null,
+              currentUntil: null,
+              message: 'Concluído (nenhum insight no período).',
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
         } else {
           const adCoverage = result.coverage;
-          const adCoverageHasIssues =
-            Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
+          const adCoverageHasIssues = Boolean(adCoverage?.missingAdCampaigns?.length) || Boolean(adCoverage?.failedAdChunks?.length);
           const isPartial = result.unmapped.length > 0 || adCoverageHasIssues;
+
           await syncHistoryService.completeSyncSuccess(syncId, {
             totalInsights: result.totalInsights,
             mappedCampaigns: result.mappedTotal,
@@ -221,18 +257,43 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
             partial: isPartial,
             durationMs: duration,
           });
+
+          syncMetadata = mergeRecords(syncMetadata, {
+            ...governancePatch,
+            state: isPartial ? 'partial' : 'success',
+            ...(adCoverageHasIssues
+              ? {
+                  adCoverage: {
+                    missingCampaigns: adCoverage?.missingAdCampaigns ?? [],
+                    failedChunks: adCoverage?.failedAdChunks ?? [],
+                  },
+                }
+              : {}),
+            progress: {
+              overallCompleted: totalUnits,
+              stage: 'governance',
+              stageTotal: 1,
+              stageCompleted: 1,
+              currentSince: null,
+              currentUntil: null,
+              message: isPartial ? 'Concluído com pendências.' : 'Concluído com sucesso.',
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
         }
 
-        // Notify on success
-        await notificationService.create({
-          clientId,
-          type: 'sync_completed',
-          severity: 'info',
-          title: 'Sincronização concluída',
-          message: `Meta Ads sincronizado: ${result.totalInsights} insights importados.`,
-          metadata: { syncId, outcome: result.outcome, totalInsights: result.totalInsights, duration },
-          expiresInHours: 48,
-        }).catch(() => { });
+        await notificationService
+          .create({
+            clientId,
+            type: 'sync_completed',
+            severity: 'info',
+            title: 'Sincronização concluída',
+            message: `Meta Ads sincronizado: ${result.totalInsights} insights importados.`,
+            metadata: { syncId, outcome: result.outcome, totalInsights: result.totalInsights, duration },
+            expiresInHours: 48,
+          })
+          .catch(() => {});
 
         return {
           clientId,
@@ -247,23 +308,36 @@ export function createMetaSyncWorker(pool: Pool, connection: IORedis, deps: { ca
           await syncHistoryService.completeSyncFailure(syncId, error, duration);
         }
 
-        // Notify on failure
-        await notificationService.create({
-          clientId,
-          type: 'sync_failed',
-          severity: 'critical',
-          title: 'Erro na sincronização',
-          message: `Falha ao sincronizar Meta Ads: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
-          metadata: { syncId, duration },
-          expiresInHours: 72,
-        }).catch(() => { });
+        syncMetadata = mergeRecords(syncMetadata, {
+          state: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          progress: {
+            overallCompleted,
+            stageCompleted,
+            message: 'Falha na sincronização Meta.',
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        await syncHistoryService.updateSyncMetadata(syncId, syncMetadata);
 
-        throw error; // BullMQ will handle retry
+        await notificationService
+          .create({
+            clientId,
+            type: 'sync_failed',
+            severity: 'critical',
+            title: 'Erro na sincronização',
+            message: `Falha ao sincronizar Meta Ads: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+            metadata: { syncId, duration },
+            expiresInHours: 72,
+          })
+          .catch(() => {});
+
+        throw error;
       }
     },
     {
       connection,
       concurrency: 2,
-    }
+    },
   );
 }
