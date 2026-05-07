@@ -22,11 +22,12 @@ import { AnomalyDetectionService } from '../services/anomaly-detection-service';
 import { OptimizationActionService } from '../services/optimization-playbook/optimization-action-service';
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import { MetaAdsService } from '../services/meta-ads/service';
-import { CommercialLeadsService } from '../services/commercial-leads-service';
+import { CommercialLeadsService } from '../modules/commercial';
 import { RuleProfileService } from '../services/rule-profile-service';
 import { FinanceService } from '../services/finance-service';
 import { ProjectService } from '../services/project-service';
 import { CustomerSuccessService } from '../services/customer-success-service';
+import { MetaGovernanceStore } from '../services/meta-governance/store';
 
 export interface AppServices {
   clients: ClientService;
@@ -48,6 +49,7 @@ export interface AppServices {
   analytics: AnalyticsService;
   anomaly: AnomalyDetectionService;
   metaAds: MetaAdsService;
+  metaGovernance: MetaGovernanceStore;
   optimizationAction: OptimizationActionService;
   optimizationTaskGenerator: OptimizationTaskGenerator;
   commercialLeads: CommercialLeadsService;
