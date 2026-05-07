@@ -2,476 +2,29 @@ import type { FastifyPluginAsync } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 
 import { requireAuth } from '../../middleware/rbac';
-import { MetaAdsService } from '../../services/meta-ads-service';
 import { buildOptimizationCenter } from './optimization-center/handler';
-
-type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'expired';
-
-const toNullableString = (value: unknown) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const parseLimit = (raw: unknown) => {
-  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
-  const limit = Number.isFinite(parsed) ? parsed : 50;
-  return Math.max(1, Math.min(200, limit));
-};
-
-const parseOffset = (raw: unknown) => {
-  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
-  const offset = Number.isFinite(parsed) ? parsed : 0;
-  return Math.max(0, offset);
-};
-
-const mapProposalRow = (row: any) => ({
-  proposalId: String(row.id),
-  clientId: String(row.client_id),
-  platform: row.platform,
-  accountId: row.account_id ?? null,
-  source: row.source,
-  sourceItemId: row.source_item_id ?? null,
-  ruleId: row.rule_id ?? null,
-  playbookVersion: row.playbook_version ?? null,
-  severity: row.severity ?? null,
-  category: row.category ?? null,
-  action: row.action ?? null,
-  title: row.title ?? null,
-  description: row.description ?? null,
-  entity: row.entity_type && row.entity_id ? { type: row.entity_type, id: row.entity_id } : null,
-  recommendedPayload: row.recommended_payload ?? null,
-  status: row.status as ProposalStatus,
-  createdBy: {
-    type: row.created_by_type,
-    userId: row.created_by_user_id ?? null,
-  },
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  lastDecision: row.last_decision
-    ? {
-      decision: row.last_decision,
-      reason: row.last_decision_reason ?? null,
-      decidedByUserId: row.last_decided_by_user_id ?? null,
-      decidedAt: row.last_decided_at ?? null,
-    }
-    : null,
-});
-
-const mapApprovalRow = (row: any) => ({
-  approvalId: String(row.id),
-  proposalId: String(row.proposal_id),
-  decision: row.decision,
-  reason: row.reason ?? null,
-  decidedByUserId: row.decided_by_user_id,
-  decidedAt: row.decided_at,
-  createdAt: row.created_at,
-});
-
-const mapExecutionRow = (row: any) => ({
-  executionId: String(row.id),
-  proposalId: String(row.proposal_id),
-  status: row.status,
-  attempts: typeof row.attempts === 'number' ? row.attempts : 0,
-  idempotencyKey: row.idempotency_key ?? null,
-  dryRun: Boolean(row.dry_run),
-  requestPayload: row.request_payload ?? null,
-  metaResponse: row.meta_response ?? null,
-  error: row.error_message
-    ? {
-      message: row.error_message,
-      stack: row.error_stack ?? null,
-    }
-    : null,
-  startedAt: row.started_at ?? null,
-  completedAt: row.completed_at ?? null,
-  executedBy: {
-    type: row.executed_by_type,
-    userId: row.executed_by_user_id ?? null,
-  },
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
-
-const mapHistoryRow = (row: any) => {
-  const entityName =
-    row.campaign_name ??
-    row.adset_name ??
-    row.creative_headline ??
-    row.creative_primary_text ??
-    null;
-
-  return {
-    executionId: String(row.execution_id),
-    proposalId: String(row.proposal_id),
-    clientId: String(row.client_id),
-    status: row.execution_status,
-    attempts: typeof row.attempts === 'number' ? row.attempts : 0,
-    dryRun: Boolean(row.dry_run),
-    requestPayload: row.request_payload ?? null,
-    metaResponse: row.meta_response ?? null,
-    error: row.error_message
-      ? { message: row.error_message, stack: row.error_stack ?? null }
-      : null,
-    startedAt: row.started_at ?? null,
-    completedAt: row.completed_at ?? null,
-    createdAt: row.execution_created_at,
-    updatedAt: row.execution_updated_at,
-    executedBy: {
-      type: row.executed_by_type,
-      userId: row.executed_by_user_id ?? null,
-    },
-    action: row.action ?? null,
-    title: row.title ?? null,
-    description: row.description ?? null,
-    category: row.category ?? null,
-    severity: row.severity ?? null,
-    entity: row.entity_type && row.entity_id
-      ? {
-          type: row.entity_type,
-          id: row.entity_id,
-          name: entityName,
-        }
-      : null,
-    source: row.source ?? null,
-    proposalCreatedAt: row.proposal_created_at ?? null,
-    proposalUpdatedAt: row.proposal_updated_at ?? null,
-  };
-};
+import {
+  mapProposalRow,
+  parseLimit,
+  parseOffset,
+  toNullableString,
+} from './action-proposals/mappers';
+import {
+  getActionProposalDetail,
+  listActionExecutions,
+  listActionHistory,
+  listActionProposals,
+} from './action-proposals/repository';
 
 const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify;
 
-  const runExecutionAsync = async (executionId: string) => {
-    const accessToken = process.env.META_ACCESS_TOKEN;
-    const writebackEnabled = String(process.env.META_WRITEBACK_ENABLED || '').trim().toLowerCase() === 'true';
-
-    const markFailed = async (opts: { message: string; stack?: string | null; metaResponse?: unknown }) => {
-      try {
-        await pool.query(
-          `UPDATE action_executions
-           SET status = 'failed',
-               error_message = $2,
-               error_stack = $3,
-               meta_response = COALESCE($4::jsonb, meta_response),
-               completed_at = NOW(),
-               updated_at = NOW()
-           WHERE id = $1`,
-          [executionId, opts.message, opts.stack ?? null, opts.metaResponse ?? null]
-        );
-      } catch (error) {
-        fastify.log.error({ error, executionId }, 'Failed to mark action execution as failed');
-      }
-    };
-
-    const markSuccess = async (opts: { metaResponse: unknown }) => {
-      try {
-        await pool.query(
-          `UPDATE action_executions
-           SET status = 'success',
-               meta_response = $2::jsonb,
-               completed_at = NOW(),
-               updated_at = NOW()
-           WHERE id = $1`,
-          [executionId, opts.metaResponse]
-        );
-      } catch (error) {
-        fastify.log.error({ error, executionId }, 'Failed to mark action execution as success');
-      }
-    };
-
-    const startRunning = async () => {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const current = await client.query(
-          `SELECT id, status, attempts, proposal_id, dry_run
-           FROM action_executions
-           WHERE id = $1
-           FOR UPDATE`,
-          [executionId]
-        );
-
-        if (current.rows.length === 0) {
-          await client.query('ROLLBACK');
-          return { ok: false as const, reason: 'not_found' as const };
-        }
-
-        const status = String(current.rows[0].status || '');
-        if (status !== 'queued') {
-          await client.query('ROLLBACK');
-          return { ok: false as const, reason: 'already_started' as const, status };
-        }
-
-        await client.query(
-          `UPDATE action_executions
-           SET status = 'running',
-               attempts = attempts + 1,
-               started_at = NOW(),
-               completed_at = NULL,
-               error_message = NULL,
-               error_stack = NULL,
-               updated_at = NOW()
-           WHERE id = $1`,
-          [executionId]
-        );
-
-        await client.query('COMMIT');
-        return { ok: true as const };
-      } catch (error) {
-        await client.query('ROLLBACK');
-        return { ok: false as const, reason: 'db_error' as const, error };
-      } finally {
-        client.release();
-      }
-    };
-
-    const start = await startRunning();
-    if (!start.ok) {
-      if (start.reason === 'db_error') fastify.log.error({ error: (start as any).error, executionId }, 'Failed to start execution');
-      return;
+  const enqueueExecutionJob = async (executionId: string) => {
+    const job = await fastify.services.queue.addActionExecutionJob(executionId);
+    if (!job) {
+      throw new Error('Queue service not available (BullMQ disabled)');
     }
-
-    try {
-      const executionResult = await pool.query(
-        `SELECT id, proposal_id, dry_run, request_payload
-         FROM action_executions
-         WHERE id = $1
-         LIMIT 1`,
-        [executionId]
-      );
-
-      const execution = executionResult.rows?.[0];
-      if (!execution) {
-        await markFailed({ message: 'Execution not found after startRunning' });
-        return;
-      }
-
-      const dryRun = Boolean(execution.dry_run) || !writebackEnabled;
-      if (!accessToken && !dryRun) {
-        await markFailed({
-          message: 'Missing META_ACCESS_TOKEN (backend .env)',
-          metaResponse: { error: 'missing_meta_access_token' },
-        });
-        return;
-      }
-
-      const proposalId = String(execution.proposal_id);
-      const proposalResult = await pool.query(
-        `SELECT
-          id,
-          client_id,
-          platform,
-          account_id,
-          action,
-          entity_type,
-          entity_id,
-          status,
-          recommended_payload
-         FROM action_proposals
-         WHERE id = $1
-         LIMIT 1`,
-        [proposalId]
-      );
-
-      const proposal = proposalResult.rows?.[0];
-      if (!proposal) {
-        await markFailed({ message: 'Proposal not found for execution', metaResponse: { proposalId } });
-        return;
-      }
-
-      if (String(proposal.status) !== 'approved') {
-        await markFailed({
-          message: `Proposal status is not approved (current=${String(proposal.status)})`,
-          metaResponse: { proposalId, status: proposal.status },
-        });
-        return;
-      }
-
-      const accountId =
-        typeof proposal.account_id === 'string' && proposal.account_id.trim() ? proposal.account_id.trim().replace(/^act_/i, '') : null;
-
-      if (!accountId) {
-        await markFailed({
-          message: 'Missing Meta ad account id for proposal (account_id is null)',
-          metaResponse: { proposalId, clientId: proposal.client_id },
-        });
-        return;
-      }
-
-      const metaService = new MetaAdsService({
-        accessToken: accessToken ?? 'dry_run',
-        adAccountId: accountId,
-        apiVersion: process.env.META_API_VERSION,
-      });
-
-      const action = String(proposal.action || '');
-      const entityType = String(proposal.entity_type || '');
-      const entityId = String(proposal.entity_id || '');
-
-      const executeWithRetry = async (fn: () => Promise<{ ok: boolean; meta: any; retryable: boolean }>) => {
-        const maxAttempts = 3;
-        let lastMeta: any = null;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          if (attempt > 1) {
-            await pool.query('UPDATE action_executions SET attempts = attempts + 1, updated_at = NOW() WHERE id = $1', [executionId]);
-          }
-          const res = await fn();
-          lastMeta = res.meta;
-          if (res.ok) return { ok: true as const, meta: lastMeta };
-          if (!res.retryable || attempt === maxAttempts) return { ok: false as const, meta: lastMeta };
-          await sleep(1000 * Math.pow(2, attempt - 1));
-        }
-        return { ok: false as const, meta: lastMeta };
-      };
-
-      const result = await executeWithRetry(async () => {
-        if (action === 'pause' && entityType === 'creative') {
-          const adIdsResult = await pool.query(
-            `SELECT ad_id, COALESCE(SUM(spend), 0) as spend
-             FROM ad_creative_metrics
-             WHERE creative_snapshot_id = $1
-               AND platform = 'meta'
-               AND date >= (CURRENT_DATE - 7)
-             GROUP BY ad_id
-             ORDER BY spend DESC
-             LIMIT 20`,
-            [entityId]
-          );
-
-          const adIds = adIdsResult.rows.map((r: any) => String(r.ad_id)).filter((id: string) => Boolean(id));
-          if (adIds.length === 0) {
-            return {
-              ok: false,
-              retryable: false,
-              meta: { error: 'no_ads_found_for_snapshot', snapshotId: entityId },
-            };
-          }
-
-          const operations = [];
-          for (const adId of adIds) {
-            operations.push(await metaService.pauseAd(adId, { dryRun }));
-          }
-
-          const ok = operations.every((op: any) => Boolean(op?.success));
-          const retryable = operations.some((op: any) => {
-            const status = op?.error?.status;
-            const code = op?.error?.code;
-            return status === null || (typeof status === 'number' && status >= 500) || code === 4 || code === 17;
-          });
-
-          return {
-            ok,
-            retryable: !ok && retryable,
-            meta: {
-              operation: 'pause_ads',
-              dryRun,
-              adIds,
-              operations,
-            },
-          };
-        }
-
-        if (action === 'scale' && entityType === 'campaign') {
-          const campaignResult = await pool.query(
-            `SELECT id, "externalId", budget
-             FROM campaigns
-             WHERE id = $1 OR "externalId" = $1
-             LIMIT 1`,
-            [entityId]
-          );
-
-          if (campaignResult.rows.length === 0) {
-            return {
-              ok: false,
-              retryable: false,
-              meta: { error: 'campaign_not_found', campaignId: entityId },
-            };
-          }
-
-          const campaign = campaignResult.rows[0];
-          const campaignExternalId = String(campaign.externalId || entityId);
-          const currentBudget = Number(campaign.budget ?? 0);
-
-          if (!Number.isFinite(currentBudget) || currentBudget <= 0) {
-            return {
-              ok: false,
-              retryable: false,
-              meta: { error: 'campaign_budget_invalid', campaignId: entityId, currentBudget },
-            };
-          }
-
-          const nextBudget = Math.round(currentBudget * 1.2 * 100) / 100;
-          const operation = await metaService.setCampaignDailyBudget(campaignExternalId, nextBudget, { dryRun });
-
-          if (operation.success && !dryRun) {
-            await pool.query(
-              `UPDATE campaigns SET budget = $2, "updatedAt" = NOW() WHERE id = $1 OR "externalId" = $1`,
-              [entityId, nextBudget]
-            );
-          }
-
-          const retryable = !operation.success && (() => {
-            const status = operation.error?.status;
-            const code = operation.error?.code;
-            return status === null || (typeof status === 'number' && status >= 500) || code === 4 || code === 17;
-          })();
-
-          return {
-            ok: operation.success,
-            retryable: Boolean(retryable),
-            meta: {
-              operation: 'scale_campaign_budget',
-              dryRun,
-              campaignId: entityId,
-              currentBudget,
-              nextBudget,
-              result: operation,
-            },
-          };
-        }
-
-        return {
-          ok: false,
-          retryable: false,
-          meta: { error: 'unsupported_action', action, entityType, entityId },
-        };
-      });
-
-      const requestPayload = {
-        proposalId,
-        action,
-        entityType,
-        entityId,
-        dryRun,
-        generatedAt: new Date().toISOString(),
-      };
-
-      await pool.query('UPDATE action_executions SET request_payload = $2::jsonb, updated_at = NOW() WHERE id = $1', [
-        executionId,
-        requestPayload,
-      ]);
-
-      if (!result.ok) {
-        await markFailed({
-          message: 'Action execution failed',
-          metaResponse: result.meta,
-        });
-        return;
-      }
-
-      await markSuccess({ metaResponse: result.meta });
-      if (!dryRun) {
-        await pool.query('UPDATE action_proposals SET status = $2, updated_at = NOW() WHERE id = $1', [proposalId, 'executed']);
-      }
-    } catch (error) {
-      await markFailed({
-        message: error instanceof Error ? error.message : 'Unknown execution error',
-        stack: error instanceof Error ? error.stack ?? null : null,
-      });
-    }
+    return job;
   };
 
   fastify.get<{
@@ -488,31 +41,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const entityType = toNullableString(request.query.entityType);
         const limit = parseLimit(request.query.limit);
 
-        const result = await pool.query(
-          `SELECT
-            p.*,
-            a.decision AS last_decision,
-            a.reason AS last_decision_reason,
-            a.decided_by_user_id AS last_decided_by_user_id,
-            a.decided_at AS last_decided_at
-          FROM action_proposals p
-          LEFT JOIN LATERAL (
-            SELECT decision, reason, decided_by_user_id, decided_at
-            FROM action_approvals
-            WHERE proposal_id = p.id
-            ORDER BY decided_at DESC
-            LIMIT 1
-          ) a ON TRUE
-          WHERE p.client_id = $1
-            AND ($2::text IS NULL OR p.status = $2)
-            AND ($3::text IS NULL OR p.action = $3)
-            AND ($4::text IS NULL OR p.entity_type = $4)
-          ORDER BY p.created_at DESC
-          LIMIT $5`,
-          [clientId, status, action, entityType, limit]
-        );
-
-        const proposals = result.rows.map(mapProposalRow);
+        const proposals = await listActionProposals(pool, clientId, { status, action, entityType, limit });
         return { clientId, total: proposals.length, proposals };
       } catch (error) {
         reply.status(500);
@@ -553,97 +82,17 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const limit = parseLimit(request.query.limit);
         const offset = parseOffset(request.query.offset);
 
-        const params = [
-          clientId,
+        const { total, history } = await listActionHistory(pool, clientId, {
           status,
           action,
           entityType,
           entityId,
+          campaignId,
           startDate,
           endDate,
-          campaignId,
-        ];
-
-        const whereClause = `
-          p.client_id = $1
-          AND ($2::text IS NULL OR e.status = $2)
-          AND ($3::text IS NULL OR p.action = $3)
-          AND ($4::text IS NULL OR p.entity_type = $4)
-          AND ($5::text IS NULL OR p.entity_id = $5)
-          AND ($6::date IS NULL OR e.created_at::date >= $6::date)
-          AND ($7::date IS NULL OR e.created_at::date <= $7::date)
-          AND (
-            $8::text IS NULL OR (
-              (p.entity_type = 'campaign' AND p.entity_id = $8)
-              OR (p.entity_type = 'adset' AND EXISTS (
-                SELECT 1 FROM adsets a2 WHERE a2.adset_id = p.entity_id AND a2.campaign_id = $8
-              ))
-              OR (p.entity_type = 'creative' AND EXISTS (
-                SELECT 1 FROM ad_creative_metrics m WHERE m.creative_snapshot_id = p.entity_id AND m.campaign_id = $8
-              ))
-            )
-          )
-        `;
-
-        const countResult = await pool.query(
-          `SELECT COUNT(*)::int AS total
-           FROM action_executions e
-           JOIN action_proposals p ON p.id = e.proposal_id
-           WHERE ${whereClause}`,
-          params
-        );
-
-        const result = await pool.query(
-          `SELECT
-            e.id as execution_id,
-            e.status as execution_status,
-            e.attempts,
-            e.dry_run,
-            e.request_payload,
-            e.meta_response,
-            e.error_message,
-            e.error_stack,
-            e.started_at,
-            e.completed_at,
-            e.executed_by_type,
-            e.executed_by_user_id,
-            e.created_at as execution_created_at,
-            e.updated_at as execution_updated_at,
-            p.id as proposal_id,
-            p.client_id,
-            p.action,
-            p.title,
-            p.description,
-            p.category,
-            p.severity,
-            p.entity_type,
-            p.entity_id,
-            p.source,
-            p.created_at as proposal_created_at,
-            p.updated_at as proposal_updated_at,
-            c.name as campaign_name,
-            a.adset_name as adset_name,
-            s.headline as creative_headline,
-            s.primary_text as creative_primary_text
-          FROM action_executions e
-          JOIN action_proposals p ON p.id = e.proposal_id
-          LEFT JOIN campaigns c
-            ON p.entity_type = 'campaign'
-           AND (c.id = p.entity_id OR c."externalId" = p.entity_id)
-          LEFT JOIN adsets a
-            ON p.entity_type = 'adset'
-           AND a.adset_id = p.entity_id
-          LEFT JOIN ad_creative_snapshots s
-            ON p.entity_type = 'creative'
-           AND s.id = p.entity_id
-          WHERE ${whereClause}
-          ORDER BY e.created_at DESC
-          LIMIT $9 OFFSET $10`,
-          [...params, limit, offset]
-        );
-
-        const total = Number(countResult.rows?.[0]?.total ?? 0);
-        const history = result.rows.map(mapHistoryRow);
+          limit,
+          offset,
+        });
         return { clientId, total, history };
       } catch (error) {
         reply.status(500);
@@ -662,58 +111,14 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
       try {
         const { id } = request.params;
 
-        const proposalResult = await pool.query(
-          `SELECT
-            p.*,
-            a.decision AS last_decision,
-            a.reason AS last_decision_reason,
-            a.decided_by_user_id AS last_decided_by_user_id,
-            a.decided_at AS last_decided_at
-          FROM action_proposals p
-          LEFT JOIN LATERAL (
-            SELECT decision, reason, decided_by_user_id, decided_at
-            FROM action_approvals
-            WHERE proposal_id = p.id
-            ORDER BY decided_at DESC
-            LIMIT 1
-          ) a ON TRUE
-          WHERE p.id = $1
-          LIMIT 1`,
-          [id]
-        );
+        const detail = await getActionProposalDetail(pool, id);
 
-        if (proposalResult.rows.length === 0) {
+        if (!detail) {
           reply.status(404);
           return { error: 'Action proposal not found' };
         }
 
-        const approvalsResult = await pool.query(
-          `SELECT
-            id, proposal_id, decision, reason, decided_by_user_id, decided_at, created_at
-          FROM action_approvals
-          WHERE proposal_id = $1
-          ORDER BY decided_at DESC`,
-          [id]
-        );
-
-        const executionsResult = await pool.query(
-          `SELECT
-            id, proposal_id, status, attempts, idempotency_key, dry_run,
-            request_payload, meta_response, error_message, error_stack,
-            started_at, completed_at,
-            executed_by_type, executed_by_user_id,
-            created_at, updated_at
-          FROM action_executions
-          WHERE proposal_id = $1
-          ORDER BY created_at DESC`,
-          [id]
-        );
-
-        return {
-          proposal: mapProposalRow(proposalResult.rows[0]),
-          approvals: approvalsResult.rows.map(mapApprovalRow),
-          executions: executionsResult.rows.map(mapExecutionRow),
-        };
+        return detail;
       } catch (error) {
         reply.status(500);
         return {
@@ -882,6 +287,10 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = request.params;
       const userId = (request as any)?.user?.id || null;
+      if (!fastify.services.queue?.available) {
+        reply.status(503);
+        return { error: 'Queue service not available (BullMQ disabled)' };
+      }
 
       const writebackEnabled = String(process.env.META_WRITEBACK_ENABLED || '').trim().toLowerCase() === 'true';
       const requestedDryRun = typeof request.body?.dryRun === 'boolean' ? request.body.dryRun : true;
@@ -929,7 +338,6 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
           if (executionStatus === 'queued') {
             await client.query('COMMIT');
             reply.status(202);
-            void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
             return { success: true, queued: true, dryRun, alreadyQueued: true, executionId };
           }
 
@@ -958,9 +366,26 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
             );
 
             await client.query('COMMIT');
-            reply.status(202);
-            void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
-            return { success: true, queued: true, dryRun, retried: true, executionId };
+            try {
+              await enqueueExecutionJob(executionId);
+              reply.status(202);
+              return { success: true, queued: true, dryRun, retried: true, executionId };
+            } catch (enqueueError) {
+              await pool.query(
+                `UPDATE action_executions
+                 SET status = 'failed',
+                     error_message = $2,
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [executionId, enqueueError instanceof Error ? enqueueError.message : 'Failed to enqueue action execution']
+              );
+              reply.status(503);
+              return {
+                error: 'Failed to enqueue action execution',
+                message: enqueueError instanceof Error ? enqueueError.message : 'Unknown queue error',
+                executionId,
+              };
+            }
           }
         }
 
@@ -973,10 +398,26 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         );
 
         await client.query('COMMIT');
-
-        reply.status(202);
-        void fastify.services.queue.addActionExecutionJob(executionId).catch(() => runExecutionAsync(executionId));
-        return { success: true, queued: true, dryRun, executionId };
+        try {
+          await enqueueExecutionJob(executionId);
+          reply.status(202);
+          return { success: true, queued: true, dryRun, executionId };
+        } catch (enqueueError) {
+          await pool.query(
+            `UPDATE action_executions
+             SET status = 'failed',
+                 error_message = $2,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [executionId, enqueueError instanceof Error ? enqueueError.message : 'Failed to enqueue action execution']
+          );
+          reply.status(503);
+          return {
+            error: 'Failed to enqueue action execution',
+            message: enqueueError instanceof Error ? enqueueError.message : 'Unknown queue error',
+            executionId,
+          };
+        }
       } catch (error) {
         await client.query('ROLLBACK');
         reply.status(500);
@@ -996,23 +437,12 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       try {
         const { id } = request.params;
-        const executionsResult = await pool.query(
-          `SELECT
-            id, proposal_id, status, attempts, idempotency_key, dry_run,
-            request_payload, meta_response, error_message, error_stack,
-            started_at, completed_at,
-            executed_by_type, executed_by_user_id,
-            created_at, updated_at
-          FROM action_executions
-          WHERE proposal_id = $1
-          ORDER BY created_at DESC`,
-          [id]
-        );
+        const executions = await listActionExecutions(pool, id);
 
         return {
           proposalId: id,
-          total: executionsResult.rows.length,
-          executions: executionsResult.rows.map(mapExecutionRow),
+          total: executions.length,
+          executions,
         };
       } catch (error) {
         reply.status(500);
@@ -1048,9 +478,10 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const accountId =
           typeof accountIdRaw === 'string' && accountIdRaw.trim() ? accountIdRaw.trim().replace(/^act_/i, '') : null;
 
-        const { analytics } = fastify.services;
+        const { analytics, ruleProfiles } = fastify.services;
         const optimization = await buildOptimizationCenter({
           analytics,
+          ruleProfiles,
           clientId,
           query: {
             ...(period ? { period } : {}),

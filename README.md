@@ -9,6 +9,8 @@
 
 Plataforma de automacao para operacoes de marketing e vendas B2B com foco em performance, governanca e operacao orientada a dados. O sistema integra coleta de metricas, playbooks de otimizacao, monitoramento e geracao de relatorios com backend robusto e frontend moderno.
 
+Hoje o produto e mais forte em `Clientes`, `Comercial`, `Performance`, `Otimizacao`, `Relatorios` e `Processos`. A evolucao planejada para virar um sistema completo de agencia inclui `Financeiro`, `Gestao de Entregas/Projetos` e `CS/Onboarding/Retencao`.
+
 ## Visao geral
 - **Backend**: API Fastify com servicos de negocio, processamento de tarefas e integracao com Meta Ads.
 - **Frontend**: App Next.js (submodulo) para dashboards, performance e operacoes.
@@ -21,6 +23,12 @@ Plataforma de automacao para operacoes de marketing e vendas B2B com foco em per
 - Relatorios semanais e mensais com resumo IA
 - Detecao de anomalias e alertas
 - Sincronizacao com Meta Ads (campanhas, adsets, ads, metrics)
+- Pipeline comercial e operacao de leads
+- Gestao de clientes, contas e processos operacionais
+
+## Mapa do produto
+- Estado atual do produto: `docs/product-relevance-map.md`
+- Blueprint BPMN e arquitetura operacional: `docs/architecture.md`
 
 ## Estrutura do repositorio
 ```
@@ -83,6 +91,7 @@ git commit -m "chore: update frontend submodule"
 - Playbook: `docs/playbook.md`
 - Testes: `docs/testing.md`
 - Prompts IA: `docs/ai-prompts.md`
+- Relevancia e evolucao do produto: `docs/product-relevance-map.md`
 
 ## Comandos comuns
 Backend:

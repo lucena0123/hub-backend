@@ -58,6 +58,9 @@ export type OptimizationRuleContext = {
   clientTargetOverrides?: Partial<OptimizationThemeTargets> | null;
   adsetRows?: any[];
   adsetsByCampaign?: Map<string, any[]>;
+  primaryObjectiveKey?: string | null;
+  primaryChannelKey?: string | null;
+  classificationWarnings?: string[];
 };
 
 export type OptimizationRuleModule = {

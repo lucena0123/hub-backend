@@ -3,58 +3,16 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { requireRoles } from '../middleware/rbac';
 import Ajv from 'ajv';
-import { createAuditLog } from '../middleware/audit';
+import { listOptimizationAuditEvents, summarizeOptimizationAudit } from './optimization/audit-repository';
+import { ensureClientExists, logOptimizationAudit, sendApiError } from './optimization/helpers';
+import {
+    isSystemOptimizationRule,
+    listOptimizationRules,
+    mapCustomOptimizationRule,
+} from './optimization/rules-repository';
 
 export default async function optimizationRoutes(fastify: FastifyInstance) {
     const ajv = new Ajv({ allErrors: true, strict: false });
-
-    const sendApiError = (
-        reply: { status: (statusCode: number) => { send: (payload: unknown) => unknown } },
-        statusCode: number,
-        code: string,
-        error: string,
-        details?: unknown
-    ) => {
-        return reply.status(statusCode).send({
-            success: false,
-            code,
-            error,
-            ...(details ? { details } : {}),
-        });
-    };
-
-    const logOptimizationAudit = async (params: {
-        userId?: string;
-        userRole?: string;
-        clientId?: string;
-        processId?: string;
-        action: 'create' | 'update' | 'delete' | 'read';
-        entityType: 'task' | 'campaign' | 'client' | 'process' | 'user';
-        entityId: string;
-        changes?: unknown;
-        metadata?: unknown;
-    }) => {
-        await createAuditLog(fastify.pool, {
-            userId: params.userId,
-            userRole: params.userRole,
-            clientId: params.clientId,
-            processId: params.processId,
-            action: params.action,
-            entityType: params.entityType,
-            entityId: params.entityId,
-            changes: params.changes,
-            metadata: params.metadata,
-        });
-    };
-
-    const ensureClientExists = async (clientId: string) => {
-        const client = await fastify.prisma.client.findUnique({
-            where: { id: clientId },
-            select: { id: true },
-        });
-
-        return !!client;
-    };
 
     fastify.addHook('preHandler', authenticate);
     // GET /api/optimization/audit
@@ -73,46 +31,12 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
         }
 
-        const { clientId, action, eventType, sinceHours, limit } = queryResult.data;
-        const values: unknown[] = [];
-        const where: string[] = [];
-
-        if (clientId) {
-            values.push(clientId);
-            where.push(`"clientId" = $${values.length}`);
-        }
-
-        if (action) {
-            values.push(action);
-            where.push(`action = $${values.length}`);
-        }
-
-        if (eventType) {
-            values.push(eventType);
-            where.push(`"eventType" = $${values.length}`);
-        }
-
-        if (sinceHours) {
-            values.push(sinceHours);
-            where.push(`timestamp >= NOW() - ($${values.length} * INTERVAL '1 hour')`);
-        }
-
-        values.push(limit);
-        const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
-
-        const result = await fastify.pool.query(
-            `SELECT id, action, "eventType", "clientId", "processId", "userId", "userRole", resource, changes, metadata, timestamp
-             FROM audit_events
-             ${whereClause}
-             ORDER BY timestamp DESC
-             LIMIT $${values.length}`,
-            values
-        );
+        const { total, events } = await listOptimizationAuditEvents(fastify.pool, queryResult.data);
 
         return {
             success: true,
-            total: result.rowCount,
-            events: result.rows,
+            total,
+            events,
         };
     });
 
@@ -129,44 +53,12 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             return sendApiError(reply, 400, 'VALIDATION_ERROR', 'Invalid query params', queryResult.error.issues);
         }
 
-        const { clientId, sinceHours } = queryResult.data;
-        const values: unknown[] = [];
-        const where: string[] = [];
-
-        if (clientId) {
-            values.push(clientId);
-            where.push(`"clientId" = $${values.length}`);
-        }
-
-        if (sinceHours) {
-            values.push(sinceHours);
-            where.push(`timestamp >= NOW() - ($${values.length} * INTERVAL '1 hour')`);
-        }
-
-        const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
-
-        const actionsResult = await fastify.pool.query(
-            `SELECT action, COUNT(*)::int AS total
-             FROM audit_events
-             ${whereClause}
-             GROUP BY action`,
-            values
-        );
-
-        const eventTypesResult = await fastify.pool.query(
-            `SELECT "eventType", COUNT(*)::int AS total
-             FROM audit_events
-             ${whereClause}
-             GROUP BY "eventType"
-             ORDER BY total DESC
-             LIMIT 20`,
-            values
-        );
+        const summary = await summarizeOptimizationAudit(fastify.pool, queryResult.data);
 
         return {
             success: true,
-            actions: actionsResult.rows,
-            eventTypes: eventTypesResult.rows,
+            actions: summary.actions,
+            eventTypes: summary.eventTypes,
         };
     });
 
@@ -305,7 +197,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             }
         });
 
-        await logOptimizationAudit({
+        await logOptimizationAudit(fastify, {
             userId: request.user?.id,
             userRole: request.user?.role,
             clientId: task.processInstance?.clientId,
@@ -350,7 +242,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         const { clientId, ruleId, entityId, campaignId, dryRun } = bodyResult.data;
 
-        const clientExists = await ensureClientExists(clientId);
+        const clientExists = await ensureClientExists(fastify, clientId);
         if (!clientExists) {
             return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
         }
@@ -374,7 +266,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             executedAt: new Date().toISOString(),
         };
 
-        await logOptimizationAudit({
+        await logOptimizationAudit(fastify, {
             userId: request.user?.id,
             userRole: request.user?.role,
             clientId,
@@ -410,78 +302,11 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
     // GET /api/optimization/rules
     // List available rules with client configuration
     fastify.get('/api/optimization/rules', async (request) => {
-        const { getOptimizationCenterRuleMetas } = require('../services/optimization-playbook/optimization-center/engine/registry');
-        const systemRules = (getOptimizationCenterRuleMetas() as any[]).map((rule) => ({
-            ...rule,
-            source: 'system',
-        }));
-
-        let customRules: Array<{
-            id: string;
-            title: string;
-            description: string;
-            condition: string;
-            level: string;
-            severity: string;
-            category: string;
-            action: string;
-            parametersSchema: any | null;
-            parametersTemplate: any | null;
-        }> = [];
-
-        try {
-            customRules = await fastify.prisma.optimizationPlaybookRule.findMany({
-                orderBy: { createdAt: 'asc' },
-            });
-        } catch (error) {
-            request.log.warn({ err: error }, 'Optimization playbook rules table not available yet.');
-        }
-
-        const customRuleMetas = customRules.map((rule) => ({
-            id: rule.id,
-            level: rule.level,
-            severity: rule.severity,
-            category: rule.category,
-            action: rule.action,
-            title: rule.title,
-            description: rule.description,
-            condition: rule.condition,
-            parametersSchema: rule.parametersSchema ?? undefined,
-            parametersTemplate: rule.parametersTemplate ?? undefined,
-            source: 'custom',
-        }));
-
-        const mergedById = new Map<string, any>();
-        for (const rule of systemRules) mergedById.set(rule.id, rule);
-        for (const rule of customRuleMetas) {
-            if (!mergedById.has(rule.id)) mergedById.set(rule.id, rule);
-        }
-
-        const rules = Array.from(mergedById.values());
-
         // Get clientId from query or auth context (mocking for now as we might accept ?clientId=...)
         // In a real scenario, we'd use request.user.clientId or similar.
         // Let's support ?clientId=query param for the board.
         const { clientId } = request.query as { clientId?: string };
-
-        if (!clientId) {
-            return rules.map((r: any) => ({ ...r, enabled: true, parameters: r.parametersTemplate ?? {} }));
-        }
-
-        const configs = await fastify.prisma.clientRuleConfig.findMany({
-            where: { clientId }
-        });
-
-        const mergedRules = rules.map((rule: any) => {
-            const config = configs.find(c => c.ruleId === rule.id);
-            return {
-                ...rule,
-                enabled: config ? config.enabled : true, // Default to true if not set
-                parameters: config ? (config.parameters ?? {}) : (rule.parametersTemplate ?? {}),
-            };
-        });
-
-        return mergedRules;
+        return listOptimizationRules(fastify, request.log, clientId);
     });
 
     // POST /api/optimization/rules
@@ -506,10 +331,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
         }
 
         const payload = payloadResult.data;
-        const { getOptimizationCenterRuleMetas } = require('../services/optimization-playbook/optimization-center/engine/registry');
-        const systemRules = getOptimizationCenterRuleMetas() as Array<{ id: string }>;
-
-        if (systemRules.some((rule) => rule.id === payload.id)) {
+        if (isSystemOptimizationRule(payload.id)) {
             return sendApiError(reply, 409, 'RULE_ID_CONFLICT', 'Rule ID already exists in system rules.');
         }
 
@@ -547,19 +369,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             },
         });
 
-        return {
-            id: created.id,
-            level: created.level,
-            severity: created.severity,
-            category: created.category,
-            action: created.action,
-            title: created.title,
-            description: created.description,
-            condition: created.condition,
-            parametersSchema: created.parametersSchema ?? undefined,
-            parametersTemplate: created.parametersTemplate ?? undefined,
-            source: 'custom',
-        };
+        return mapCustomOptimizationRule(created);
     });
 
     // PATCH /api/optimization/rules/:ruleId
@@ -621,19 +431,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             data,
         });
 
-        return {
-            id: updated.id,
-            level: updated.level,
-            severity: updated.severity,
-            category: updated.category,
-            action: updated.action,
-            title: updated.title,
-            description: updated.description,
-            condition: updated.condition,
-            parametersSchema: updated.parametersSchema ?? undefined,
-            parametersTemplate: updated.parametersTemplate ?? undefined,
-            source: 'custom',
-        };
+        return mapCustomOptimizationRule(updated);
     });
 
     // DELETE /api/optimization/rules/:ruleId
@@ -671,24 +469,37 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         const { clientId, enabled } = bodyResult.data;
 
-        const clientExists = await ensureClientExists(clientId);
+        const clientExists = await ensureClientExists(fastify, clientId);
         if (!clientExists) {
             return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
         }
 
-        const config = await fastify.prisma.clientRuleConfig.upsert({
+        const existingConfig = await fastify.prisma.clientRuleConfig.findFirst({
             where: {
-                clientId_ruleId: { clientId, ruleId }
-            },
-            update: { enabled },
-            create: {
                 clientId,
                 ruleId,
-                enabled
-            }
+                ruleProfileId: null,
+                campaignId: null,
+            },
+            select: { id: true },
         });
 
-        await logOptimizationAudit({
+        const config = existingConfig
+            ? await fastify.prisma.clientRuleConfig.update({
+                where: { id: existingConfig.id },
+                data: { enabled },
+            })
+            : await fastify.prisma.clientRuleConfig.create({
+                data: {
+                    clientId,
+                    ruleId,
+                    enabled,
+                    ruleProfileId: null,
+                    campaignId: null,
+                },
+            });
+
+        await logOptimizationAudit(fastify, {
             userId: request.user?.id,
             userRole: request.user?.role,
             clientId,
@@ -725,7 +536,7 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
 
         const { clientId, parameters } = bodyResult.data;
 
-        const clientExists = await ensureClientExists(clientId);
+        const clientExists = await ensureClientExists(fastify, clientId);
         if (!clientExists) {
             return sendApiError(reply, 404, 'CLIENT_NOT_FOUND', 'Client not found');
         }
@@ -747,19 +558,32 @@ export default async function optimizationRoutes(fastify: FastifyInstance) {
             }
         }
 
-        const config = await fastify.prisma.clientRuleConfig.upsert({
+        const existingConfig = await fastify.prisma.clientRuleConfig.findFirst({
             where: {
-                clientId_ruleId: { clientId, ruleId }
-            },
-            update: { parameters },
-            create: {
                 clientId,
                 ruleId,
-                parameters
-            }
+                ruleProfileId: null,
+                campaignId: null,
+            },
+            select: { id: true },
         });
 
-        await logOptimizationAudit({
+        const config = existingConfig
+            ? await fastify.prisma.clientRuleConfig.update({
+                where: { id: existingConfig.id },
+                data: { parameters },
+            })
+            : await fastify.prisma.clientRuleConfig.create({
+                data: {
+                    clientId,
+                    ruleId,
+                    parameters,
+                    ruleProfileId: null,
+                    campaignId: null,
+                },
+            });
+
+        await logOptimizationAudit(fastify, {
             userId: request.user?.id,
             userRole: request.user?.role,
             clientId,

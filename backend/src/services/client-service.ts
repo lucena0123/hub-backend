@@ -4,69 +4,188 @@ import { ClientAudit } from '../middleware/audit';
 import { prepareClientData } from '../validators/client';
 import { v4 as uuidv4 } from 'uuid';
 
+const clientListLegacySelect = {
+    id: true,
+    name: true,
+    email: true,
+    tier: true,
+    status: true,
+    budget: true,
+    contractStart: true,
+    contractEnd: true,
+    metaAdAccountId: true,
+    createdAt: true,
+    updatedAt: true,
+} as const satisfies Prisma.ClientSelect;
+
+const clientListSelect = {
+    ...clientListLegacySelect,
+    businessNicheKey: true,
+    defaultChannelKey: true,
+} as const satisfies Prisma.ClientSelect;
+
+const clientCampaignLegacySelect = {
+    id: true,
+    name: true,
+    status: true,
+    platform: true,
+    budget: true,
+    spent: true,
+    externalId: true,
+    optimizationThemeKey: true,
+    optimizationSubthemeKey: true,
+} as const satisfies Prisma.CampaignSelect;
+
+const clientCampaignSelect = {
+    ...clientCampaignLegacySelect,
+    objectiveClassKey: true,
+    channelClassKey: true,
+    ruleProfileId: true,
+} as const satisfies Prisma.CampaignSelect;
+
+const clientProcessSelect = {
+    id: true,
+    processId: true,
+    status: true,
+    priority: true,
+    startedAt: true,
+    completedAt: true,
+    currentPhase: true,
+    currentTask: true,
+} as const;
+
+const clientCountSelect = {
+    processes: true,
+    campaigns: true,
+    metrics: true,
+} as const;
+
+const clientByIdLegacySelect = {
+    id: true,
+    name: true,
+    email: true,
+    tier: true,
+    status: true,
+    budget: true,
+    contractStart: true,
+    contractEnd: true,
+    metaAdAccountId: true,
+    createdAt: true,
+    updatedAt: true,
+    campaigns: { select: clientCampaignLegacySelect },
+    processes: { select: clientProcessSelect },
+    _count: { select: clientCountSelect },
+} as const satisfies Prisma.ClientSelect;
+
+const clientByIdSelect = {
+    ...clientByIdLegacySelect,
+    businessNicheKey: true,
+    defaultChannelKey: true,
+    campaigns: { select: clientCampaignSelect },
+} as const satisfies Prisma.ClientSelect;
+
 export class ClientService {
     constructor(
         private prisma: PrismaClient,
         private clientAudit: ClientAudit
     ) { }
 
-    async listClients() {
-        return this.prisma.client.findMany({
-            orderBy: { createdAt: 'desc' },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                tier: true,
-                status: true,
-                budget: true,
-                contractStart: true,
-                contractEnd: true,
-                metaAdAccountId: true,
-                createdAt: true,
-                updatedAt: true,
+    private isMissingColumnError(error: unknown, columns: string[]) {
+        const normalizedColumns = columns.map((column) => column.toLowerCase());
+
+        const prismaKnown =
+            error instanceof Prisma.PrismaClientKnownRequestError
+                ? error
+                : null;
+
+        const code =
+            prismaKnown?.code ||
+            (typeof (error as { code?: unknown })?.code === 'string'
+                ? String((error as { code?: unknown }).code)
+                : '');
+
+        if (code !== 'P2022') {
+            return false;
+        }
+
+        const metaColumn = (() => {
+            if (prismaKnown && typeof prismaKnown.meta?.column === 'string') {
+                return prismaKnown.meta.column.toLowerCase();
             }
-        });
+            const genericMeta = (error as { meta?: { column?: unknown } })?.meta;
+            return typeof genericMeta?.column === 'string' ? genericMeta.column.toLowerCase() : '';
+        })();
+
+        const message = (() => {
+            if (prismaKnown) return prismaKnown.message.toLowerCase();
+            if (error instanceof Error) return error.message.toLowerCase();
+            return String(error || '').toLowerCase();
+        })();
+
+        return normalizedColumns.some((column) => metaColumn.includes(column) || message.includes(column));
+    }
+
+    async listClients() {
+        try {
+            return await this.prisma.client.findMany({
+                orderBy: { createdAt: 'desc' },
+                select: clientListSelect,
+            });
+        } catch (error) {
+            if (!this.isMissingColumnError(error, ['clients.business_niche_key', 'clients.default_channel_key'])) {
+                throw error;
+            }
+
+            const legacyClients = await this.prisma.client.findMany({
+                orderBy: { createdAt: 'desc' },
+                select: clientListLegacySelect,
+            });
+            return legacyClients.map((client) => ({
+                ...client,
+                businessNicheKey: null,
+                defaultChannelKey: null,
+            }));
+        }
     }
 
     async getClientById(id: string) {
-        return this.prisma.client.findUnique({
-            where: { id },
-            include: {
-                campaigns: {
-                    select: {
-                        id: true,
-                        name: true,
-                        status: true,
-                        platform: true,
-                        budget: true,
-                        spent: true,
-                        externalId: true,
-                        optimizationThemeKey: true,
-                        optimizationSubthemeKey: true,
-                    },
-                },
-                processes: {
-                    select: {
-                        id: true,
-                        processId: true,
-                        status: true,
-                        priority: true,
-                        startedAt: true,
-                        completedAt: true,
-                        currentPhase: true,
-                        currentTask: true,
-                    },
-                },
-                _count: {
-                    select: {
-                        processes: true,
-                        campaigns: true,
-                        metrics: true,
-                    },
-                },
-            },
-        });
+        try {
+            return await this.prisma.client.findUnique({
+                where: { id },
+                select: clientByIdSelect,
+            });
+        } catch (error) {
+            if (!this.isMissingColumnError(error, [
+                'clients.business_niche_key',
+                'clients.default_channel_key',
+                'campaigns.objective_class_key',
+                'campaigns.channel_class_key',
+                'campaigns.rule_profile_id',
+            ])) {
+                throw error;
+            }
+
+            const legacyClient = await this.prisma.client.findUnique({
+                where: { id },
+                select: clientByIdLegacySelect,
+            });
+
+            if (!legacyClient) {
+                return null;
+            }
+
+            return {
+                ...legacyClient,
+                businessNicheKey: null,
+                defaultChannelKey: null,
+                campaigns: legacyClient.campaigns.map((campaign) => ({
+                    ...campaign,
+                    objectiveClassKey: null,
+                    channelClassKey: null,
+                    ruleProfileId: null,
+                })),
+            };
+        }
     }
 
     async getClientByEmail(email: string) {
@@ -95,6 +214,8 @@ export class ClientService {
                 tier: clientData.tier,
                 status: clientData.status,
                 budget: clientData.budget,
+                businessNicheKey: clientData.businessNicheKey,
+                defaultChannelKey: clientData.defaultChannelKey,
                 contractStart: new Date(clientData.contractStart),
                 contractEnd: clientData.contractEnd ? new Date(clientData.contractEnd) : null,
                 metaAdAccountId: clientData.metaAdAccountId,
@@ -133,6 +254,8 @@ export class ClientService {
         if (tier !== undefined) updateInput.tier = tier;
         if (data.status !== undefined) updateInput.status = data.status;
         if (data.budget !== undefined) updateInput.budget = data.budget;
+        if (data.businessNicheKey !== undefined) updateInput.businessNicheKey = data.businessNicheKey.trim().toLowerCase();
+        if (data.defaultChannelKey !== undefined) updateInput.defaultChannelKey = data.defaultChannelKey.trim().toLowerCase();
         if (data.contractStart !== undefined) updateInput.contractStart = new Date(data.contractStart);
         if (data.contractEnd !== undefined) {
             updateInput.contractEnd = data.contractEnd ? new Date(data.contractEnd) : null;
@@ -172,6 +295,11 @@ export class ClientService {
             // Delete dependent records then the client in a transaction.
             // Note: not all FKs are ON DELETE CASCADE (e.g. metrics.clientId, metrics.campaignId), so we cleanup explicitly.
             await this.prisma.$transaction(async (tx) => {
+                const campaignIds = (await tx.campaign.findMany({
+                    where: { clientId: id },
+                    select: { id: true },
+                })).map((campaign) => campaign.id);
+
                 // Simple metrics (table: metrics) references both clientId and campaignId (no cascade) → delete first.
                 await tx.metrics.deleteMany({ where: { clientId: id } });
 
@@ -180,6 +308,15 @@ export class ClientService {
                 await tx.weekly_summaries.deleteMany({ where: { client_id: id } });
                 await tx.ai_copy_suggestions.deleteMany({ where: { client_id: id } });
                 await tx.clientRuleConfig.deleteMany({ where: { clientId: id } });
+                await tx.clientRuleProfileBinding.deleteMany({ where: { clientId: id } });
+                await tx.ruleClassificationReview.deleteMany({
+                    where: {
+                        OR: [
+                            { entityType: 'client', entityId: id },
+                            { entityType: 'campaign', entityId: { in: campaignIds } },
+                        ],
+                    },
+                });
 
                 // Process instances → delete tasks first (FK doesn't cascade).
                 await tx.task.deleteMany({ where: { processInstance: { clientId: id } } });

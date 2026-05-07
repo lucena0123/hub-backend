@@ -15,6 +15,7 @@ import { AnalyticsService } from '../services/analytics/analytics-service';
 import { OptimizationTaskGenerator } from '../services/optimization-playbook/optimization-task-generator';
 import type { OptimizationItem } from '../services/optimization-playbook/optimization-center/engine/types';
 import { prisma } from '../config/prisma';
+import { RuleProfileService } from '../services/rule-profile-service';
 
 type OptimizationJobData = { clientId: string };
 
@@ -25,6 +26,7 @@ const toNullableString = (value: unknown) => {
 };
 
 export function createOptimizationWorker(pool: Pool, connection: IORedis, analytics: AnalyticsService) {
+  const ruleProfiles = new RuleProfileService(prisma);
   return new Worker<OptimizationJobData>(
     QUEUE_NAMES.OPTIMIZATION,
     async (job: Job<OptimizationJobData>) => {
@@ -49,6 +51,7 @@ export function createOptimizationWorker(pool: Pool, connection: IORedis, analyt
       // Build optimization center analysis
       const optimization = await buildOptimizationCenter({
         analytics,
+        ruleProfiles,
         clientId,
         query: { period: '7d' },
       });

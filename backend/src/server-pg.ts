@@ -2,23 +2,18 @@ import { buildApp } from './app';
 import { PORT, HOST } from './config/env';
 import { startWorkers, stopWorkers } from './workers';
 import { redis } from './config/redis';
-import { optimizationActionRoutes } from './routes/optimization-actions.routes';
-import creativeLinterRoutes from './routes/creative-linter.routes';
-import executiveDashboardRoutes from './routes/analytics/executive-dashboard.routes';
-import queueRoutes from './routes/queue.routes';
+import { startCommercialJobRunner } from './runtime/commercial-job-runner';
 
 const fastify = buildApp();
-fastify.register(optimizationActionRoutes, { prefix: '/api/optimization' });
-fastify.register(creativeLinterRoutes);
-fastify.register(executiveDashboardRoutes);
-fastify.register(queueRoutes);
 let workers: ReturnType<typeof startWorkers> = [];
+let commercialJobRunner = startCommercialJobRunner({ enabled: false, commercialLeads: null, logger: fastify.log });
 
 // Graceful shutdown
 const closeGracefully = async (signal: string) => {
   console.log(`\nReceived signal to terminate: ${signal}`);
   try {
     await stopWorkers(workers);
+    commercialJobRunner.stop();
     await fastify.close();
     console.log('Server closed');
     process.exit(0);
@@ -50,6 +45,12 @@ const start = async () => {
     } else {
       fastify.log.warn('Workers: skipped (BullMQ requires Redis >= 5.0)');
     }
+
+    commercialJobRunner = startCommercialJobRunner({
+      enabled: process.env.COMMERCIAL_RUNTIME_JOBS_ENABLED === 'true',
+      commercialLeads: services?.commercialLeads ?? null,
+      logger: fastify.log,
+    });
 
     fastify.log.info(`Hub API running — http://localhost:${PORT} | workers: ${workers.length} | env: ${process.env.NODE_ENV || 'development'}`);
   } catch (err) {

@@ -16,6 +16,8 @@ model Client {
   contractStart                  DateTime                @db.Timestamp(6)
   contractEnd                    DateTime?               @db.Timestamp(6)
   budget                         Float
+  businessNicheKey               String?                 @map("business_niche_key")
+  defaultChannelKey              String?                 @map("default_channel_key")
   createdAt                      DateTime                @default(now()) @db.Timestamp(6)
   updatedAt                      DateTime                @updatedAt @db.Timestamp(6)
   avg_client_lifetime_months     Decimal?                @db.Decimal(6, 1)
@@ -34,7 +36,17 @@ model Client {
   ai_copy_suggestions            ai_copy_suggestions[]
   auto_approval_history          auto_approval_history[]
   client_rule_configs            ClientRuleConfig[]
-
+  client_rule_profile_bindings   ClientRuleProfileBinding[]
+  contracts                      Contract[]
+  receivables                    Receivable[]
+  renewalOpportunities           RenewalOpportunity[]
+  projects                       Project[]
+  onboardingPlans                OnboardingPlan[]
+  healthSnapshots                HealthSnapshot[]
+  accountReviews                 AccountReview[]
+  expansionOpportunities         ExpansionOpportunity[]
+  metaGovernanceIssues           MetaGovernanceIssue[]
+  metaNamingOverrides            MetaNamingOverride[]
   @@map("clients")
 }
 
@@ -97,6 +109,9 @@ model Campaign {
   updatedAt              DateTime                 @updatedAt @db.Timestamp(6)
   createdTime            DateTime?                @map("created_time") @db.Timestamp(6)
   objective              String?
+  objectiveClassKey      String?                  @map("objective_class_key")
+  channelClassKey        String?                  @map("channel_class_key")
+  ruleProfileId          String?                  @map("rule_profile_id")
   optimizationThemeKey   String?                  @map("optimization_theme_key")
   optimizationSubthemeKey String?                 @map("optimization_subtheme_key")
   ad_creative_metrics    AdMetric[]
@@ -109,9 +124,15 @@ model Campaign {
   simple_metrics         metrics[]
   breakdowns             MetricsBreakdown[]
   adsetBudgetHistory     AdSetBudgetHistory[]
-
+  campaignRuleContext    CampaignRuleContext?
+  client_rule_configs    ClientRuleConfig[]
+  ruleProfile            RuleProfile?             @relation("CampaignRuleProfile", fields: [ruleProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  metaGovernanceIssues    MetaGovernanceIssue[]
   @@index([clientId])
   @@index([platform])
+  @@index([objectiveClassKey])
+  @@index([channelClassKey])
+  @@index([ruleProfileId])
   @@map("campaigns")
 }
 
@@ -498,12 +519,70 @@ model SyncHistory {
   triggeredBy       String?   @map("triggered_by")
   metadata          Json?
   created_at        DateTime? @default(now()) @db.Timestamp(6)
-
+  metaGovernanceIssues MetaGovernanceIssue[]
   @@index([accountId, startedAt(sort: Desc)], map: "idx_sync_history_account")
   @@index([platform], map: "idx_sync_history_platform")
   @@index([startedAt(sort: Desc)], map: "idx_sync_history_started_at")
   @@index([status], map: "idx_sync_history_status")
   @@map("sync_history")
+}
+
+model MetaGovernanceIssue {
+  id                  String      @id @default(uuid())
+  issueKey            String      @unique @map("issue_key")
+  syncId              String      @map("sync_id")
+  clientId            String      @map("client_id")
+  accountId           String?     @map("account_id")
+  entityType          String      @map("entity_type")
+  entityExternalId    String      @map("entity_external_id")
+  campaignId          String?     @map("campaign_id")
+  issueType           String      @map("issue_type")
+  status              String
+  currentName         String?     @map("current_name")
+  expectedName        String?     @map("expected_name")
+  currentCreatedTime  DateTime?   @map("current_created_time") @db.Timestamp(6)
+  expectedCreatedTime DateTime?   @map("expected_created_time") @db.Timestamp(6)
+  beforePayload       Json?       @map("before_payload")
+  afterPayload        Json?       @map("after_payload")
+  metaError           String?     @map("meta_error")
+  dbError             String?     @map("db_error")
+  details             Json?
+  firstSeenAt         DateTime    @default(now()) @map("first_seen_at") @db.Timestamp(6)
+  lastSeenAt          DateTime    @default(now()) @map("last_seen_at") @db.Timestamp(6)
+  resolvedAt          DateTime?   @map("resolved_at") @db.Timestamp(6)
+  autoFixed           Boolean     @default(false) @map("auto_fixed")
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamp(6)
+  syncHistory         SyncHistory @relation(fields: [syncId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign            Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([clientId, status], map: "idx_meta_governance_issues_client_status")
+  @@index([syncId], map: "idx_meta_governance_issues_sync")
+  @@index([entityType, entityExternalId], map: "idx_meta_governance_issues_entity")
+  @@index([issueType, status], map: "idx_meta_governance_issues_type_status")
+  @@index([lastSeenAt(sort: Desc)], map: "idx_meta_governance_issues_last_seen")
+  @@map("meta_governance_issues")
+}
+
+model MetaNamingOverride {
+  id               String   @id @default(uuid())
+  clientId         String   @map("client_id")
+  entityType       String   @map("entity_type")
+  entityExternalId String?  @map("entity_external_id")
+  productKey       String?  @map("product_key")
+  themeKey         String?  @map("theme_key")
+  audienceKey      String?  @map("audience_key")
+  overridePayload  Json     @map("override_payload")
+  priority         Int      @default(100)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([clientId, entityType, active, priority], map: "idx_meta_naming_overrides_client_type_active_priority")
+  @@index([entityExternalId], map: "idx_meta_naming_overrides_entity_external")
+  @@map("meta_naming_overrides")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -788,20 +867,415 @@ model auto_approval_history {
 }
 
 model ClientRuleConfig {
-  id       String @id @default(uuid())
-  clientId String @map("client_id")
-  client   Client @relation(fields: [clientId], references: [id])
+  id            String      @id @default(uuid())
+  clientId      String      @map("client_id")
+  client        Client      @relation(fields: [clientId], references: [id])
+  campaignId    String?     @map("campaign_id")
+  campaign      Campaign?   @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ruleProfileId String?     @map("rule_profile_id")
+  ruleProfile   RuleProfile? @relation(fields: [ruleProfileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ruleId        String      @map("rule_id")
+  enabled       Boolean     @default(true)
+  parameters    Json?
+  updatedBy     String?     @map("updated_by")
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at")
 
-  ruleId  String  @map("rule_id")
-  enabled Boolean @default(true)
-
-  parameters Json?
-
-  updatedBy String?  @map("updated_by")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
-
-  @@unique([clientId, ruleId])
+  @@unique([clientId, ruleId, ruleProfileId, campaignId], map: "client_rule_configs_client_rule_scope_key")
+  @@index([clientId, ruleId], map: "idx_client_rule_configs_client_rule")
+  @@index([campaignId], map: "idx_client_rule_configs_campaign")
+  @@index([ruleProfileId], map: "idx_client_rule_configs_profile")
   @@map("client_rule_configs")
+}
+
+model RuleProfile {
+  id                         String                    @id @default(uuid())
+  name                       String
+  nicheKey                   String                    @map("niche_key")
+  objectiveKey               String                    @map("objective_key")
+  channelKey                 String                    @map("channel_key")
+  isActive                   Boolean                   @default(true) @map("is_active")
+  targets                    Json?                     @map("targets_json")
+  copyPolicy                 Json?                     @map("copy_policy_json")
+  version                    Int                       @default(1)
+  createdAt                  DateTime                  @default(now()) @map("created_at")
+  updatedAt                  DateTime                  @updatedAt @map("updated_at")
+  client_rule_profile_bindings ClientRuleProfileBinding[]
+  campaign_rule_contexts     CampaignRuleContext[]
+  client_rule_configs        ClientRuleConfig[]
+  campaigns                  Campaign[]                @relation("CampaignRuleProfile")
+  rule_classification_reviews RuleClassificationReview[]
+
+  @@index([nicheKey, objectiveKey, channelKey], map: "idx_rule_profiles_profile_key")
+  @@index([isActive], map: "idx_rule_profiles_active")
+  @@map("rule_profiles")
+}
+
+model ClientRuleProfileBinding {
+  id                String      @id @default(uuid())
+  clientId          String      @map("client_id")
+  ruleProfileId     String      @map("rule_profile_id")
+  isDefault         Boolean     @default(false) @map("is_default")
+  priority          Int         @default(100)
+  overrideTargets   Json?       @map("override_targets_json")
+  overrideCopyPolicy Json?      @map("override_copy_policy_json")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  client            Client      @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ruleProfile       RuleProfile @relation(fields: [ruleProfileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([clientId, ruleProfileId], map: "client_rule_profile_bindings_client_profile_key")
+  @@index([clientId, isDefault], map: "idx_client_rule_profile_bindings_client_default")
+  @@index([clientId, priority], map: "idx_client_rule_profile_bindings_client_priority")
+  @@map("client_rule_profile_bindings")
+}
+
+model CampaignRuleContext {
+  campaignId               String      @id @map("campaign_id")
+  objectiveKey             String?     @map("objective_key")
+  channelKey               String?     @map("channel_key")
+  ruleProfileId            String?     @map("rule_profile_id")
+  classificationSource     String      @default("manual") @map("classification_source")
+  classificationConfidence Int?        @default(100) @map("classification_confidence")
+  needsReview              Boolean     @default(false) @map("needs_review")
+  createdAt                DateTime    @default(now()) @map("created_at")
+  updatedAt                DateTime    @updatedAt @map("updated_at")
+  campaign                 Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ruleProfile              RuleProfile? @relation(fields: [ruleProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([objectiveKey, channelKey], map: "idx_campaign_rule_contexts_objective_channel")
+  @@index([ruleProfileId], map: "idx_campaign_rule_contexts_profile")
+  @@index([needsReview], map: "idx_campaign_rule_contexts_needs_review")
+  @@map("campaign_rule_contexts")
+}
+
+model RuleClassificationReview {
+  id                 String      @id @default(uuid())
+  entityType         String      @map("entity_type")
+  entityId           String      @map("entity_id")
+  reasonCode         String      @map("reason_code")
+  suggestedProfileId String?     @map("suggested_profile_id")
+  status             String      @default("pending")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  resolvedAt         DateTime?   @map("resolved_at")
+  resolvedBy         String?     @map("resolved_by")
+  suggestedProfile   RuleProfile? @relation(fields: [suggestedProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([entityType, entityId], map: "idx_rule_classification_reviews_entity")
+  @@index([status, createdAt], map: "idx_rule_classification_reviews_status_created")
+  @@map("rule_classification_reviews")
+}
+
+model Contract {
+  id                   String               @id @default(uuid())
+  clientId             String               @map("client_id")
+  sourceLeadId         String?              @map("source_lead_id")
+  status               String               @default("draft")
+  serviceType          String               @default("marketing_retainer") @map("service_type")
+  title                String
+  startDate            DateTime             @map("start_date") @db.Date
+  endDate              DateTime?            @map("end_date") @db.Date
+  billingCycle         String               @default("monthly") @map("billing_cycle")
+  currency             String               @default("BRL")
+  amount               Decimal?             @db.Decimal(12, 2)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  client               Client               @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  terms                ContractTerm[]
+  receivables          Receivable[]
+  renewalOpportunities RenewalOpportunity[]
+  projects             Project[]
+  onboardingPlans      OnboardingPlan[]
+  healthSnapshots      HealthSnapshot[]
+  accountReviews       AccountReview[]
+  expansionOpportunities ExpansionOpportunity[]
+
+  @@index([clientId, status], map: "idx_contracts_client_status")
+  @@index([status, endDate], map: "idx_contracts_status_end_date")
+  @@map("contracts")
+}
+
+model ContractTerm {
+  id           String    @id @default(uuid())
+  contractId   String    @map("contract_id")
+  version      Int       @default(1)
+  status       String    @default("draft")
+  startDate    DateTime  @map("start_date") @db.Date
+  endDate      DateTime? @map("end_date") @db.Date
+  amount       Decimal?  @db.Decimal(12, 2)
+  scopeSummary String?   @map("scope_summary")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([contractId, version], map: "contract_terms_contract_version_key")
+  @@index([contractId, status], map: "idx_contract_terms_contract_status")
+  @@map("contract_terms")
+}
+
+model Receivable {
+  id                String             @id @default(uuid())
+  clientId          String             @map("client_id")
+  contractId        String             @map("contract_id")
+  referenceLabel    String             @map("reference_label")
+  dueDate           DateTime           @map("due_date") @db.Date
+  amount            Decimal            @db.Decimal(12, 2)
+  status            String             @default("scheduled")
+  issuedAt          DateTime?          @map("issued_at") @db.Timestamp(6)
+  paidAt            DateTime?          @map("paid_at") @db.Timestamp(6)
+  suspendedAt       DateTime?          @map("suspended_at") @db.Timestamp(6)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  client            Client             @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract          Contract           @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  payments          PaymentRecord[]
+  collectionActions CollectionAction[]
+
+  @@index([clientId, status], map: "idx_receivables_client_status")
+  @@index([contractId, dueDate], map: "idx_receivables_contract_due_date")
+  @@index([status, dueDate], map: "idx_receivables_status_due_date")
+  @@map("receivables")
+}
+
+model PaymentRecord {
+  id            String     @id @default(uuid())
+  receivableId  String     @map("receivable_id")
+  amount        Decimal    @db.Decimal(12, 2)
+  paidAt        DateTime   @map("paid_at") @db.Timestamp(6)
+  paymentMethod String?    @map("payment_method")
+  reference     String?
+  notes         String?
+  createdAt     DateTime   @default(now()) @map("created_at")
+  receivable    Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([receivableId, paidAt], map: "idx_payment_records_receivable_paid_at")
+  @@map("payment_records")
+}
+
+model CollectionAction {
+  id           String     @id @default(uuid())
+  receivableId String     @map("receivable_id")
+  actionType   String     @map("action_type")
+  status       String     @default("scheduled")
+  note         String?
+  actionAt     DateTime   @default(now()) @map("action_at") @db.Timestamp(6)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  receivable   Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([receivableId, actionAt], map: "idx_collection_actions_receivable_action_at")
+  @@map("collection_actions")
+}
+
+model RenewalOpportunity {
+  id          String     @id @default(uuid())
+  clientId    String     @map("client_id")
+  contractId  String     @map("contract_id")
+  status      String     @default("open")
+  dueDate     DateTime   @map("due_date") @db.Date
+  healthStatus String?   @map("health_status")
+  notes       String?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract    Contract   @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([contractId, dueDate], map: "renewal_opportunities_contract_due_date_key")
+  @@index([clientId, status], map: "idx_renewal_opportunities_client_status")
+  @@map("renewal_opportunities")
+}
+
+model ProjectTemplate {
+  id           String   @id @default(uuid())
+  name         String
+  serviceType  String   @map("service_type")
+  isDefault    Boolean  @default(false) @map("is_default")
+  templateData Json     @map("template_data")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([serviceType, isDefault], map: "idx_project_templates_service_default")
+  @@map("project_templates")
+}
+
+model Project {
+  id          String       @id @default(uuid())
+  clientId    String       @map("client_id")
+  contractId  String?      @map("contract_id")
+  name        String
+  serviceType String       @default("marketing_retainer") @map("service_type")
+  status      String       @default("planned")
+  ownerUserId String?      @map("owner_user_id")
+  startDate   DateTime     @map("start_date") @db.Date
+  dueDate     DateTime?    @map("due_date") @db.Date
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract    Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  milestones  Milestone[]
+  deliverables Deliverable[]
+  workItems   WorkItem[]
+
+  @@index([clientId, status], map: "idx_projects_client_status")
+  @@index([contractId], map: "idx_projects_contract")
+  @@map("projects")
+}
+
+model Milestone {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  name       String
+  status     String    @default("planned")
+  orderIndex Int       @default(0) @map("order_index")
+  dueDate    DateTime? @map("due_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deliverables Deliverable[]
+
+  @@index([projectId, status], map: "idx_milestones_project_status")
+  @@map("milestones")
+}
+
+model Deliverable {
+  id            String     @id @default(uuid())
+  projectId     String     @map("project_id")
+  milestoneId   String?    @map("milestone_id")
+  name          String
+  description   String?
+  status        String     @default("planned")
+  blockedReason String?    @map("blocked_reason")
+  dueDate       DateTime?  @map("due_date") @db.Date
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  milestone     Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  workItems     WorkItem[]
+
+  @@index([projectId, status], map: "idx_deliverables_project_status")
+  @@index([milestoneId], map: "idx_deliverables_milestone")
+  @@map("deliverables")
+}
+
+model WorkItem {
+  id            String       @id @default(uuid())
+  projectId      String      @map("project_id")
+  deliverableId  String?     @map("deliverable_id")
+  title          String
+  status         String      @default("planned")
+  assignee       String?
+  priority       String      @default("normal")
+  dueDate        DateTime?   @map("due_date") @db.Date
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deliverable    Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([projectId, status], map: "idx_work_items_project_status")
+  @@index([deliverableId], map: "idx_work_items_deliverable")
+  @@map("work_items")
+}
+
+model OnboardingPlan {
+  id           String           @id @default(uuid())
+  clientId     String           @map("client_id")
+  contractId   String           @map("contract_id")
+  status       String           @default("onboarding")
+  startedAt    DateTime         @default(now()) @map("started_at") @db.Timestamp(6)
+  targetDate   DateTime?        @map("target_date") @db.Date
+  completedAt  DateTime?        @map("completed_at") @db.Timestamp(6)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  client       Client           @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract     Contract         @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tasks        OnboardingTask[]
+
+  @@unique([contractId], map: "onboarding_plans_contract_key")
+  @@index([clientId, status], map: "idx_onboarding_plans_client_status")
+  @@map("onboarding_plans")
+}
+
+model OnboardingTask {
+  id           String         @id @default(uuid())
+  planId        String        @map("plan_id")
+  taskKey       String        @map("task_key")
+  title         String
+  status        String        @default("pending")
+  dueDate       DateTime?     @map("due_date") @db.Date
+  completedAt   DateTime?     @map("completed_at") @db.Timestamp(6)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  plan          OnboardingPlan @relation(fields: [planId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([planId, taskKey], map: "onboarding_tasks_plan_task_key_key")
+  @@index([planId, status], map: "idx_onboarding_tasks_plan_status")
+  @@map("onboarding_tasks")
+}
+
+model HealthSnapshot {
+  id           String        @id @default(uuid())
+  clientId     String        @map("client_id")
+  contractId   String?       @map("contract_id")
+  snapshotDate DateTime      @map("snapshot_date") @db.Date
+  status       String
+  score        Int
+  summary      Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract     Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  signals      HealthSignal[]
+
+  @@unique([clientId, contractId, snapshotDate], map: "health_snapshots_client_contract_date_key")
+  @@index([status, snapshotDate], map: "idx_health_snapshots_status_date")
+  @@map("health_snapshots")
+}
+
+model HealthSignal {
+  id         String         @id @default(uuid())
+  snapshotId String         @map("snapshot_id")
+  signalType String         @map("signal_type")
+  severity   String
+  source     String
+  message    String
+  metadata   Json?
+  createdAt  DateTime       @default(now()) @map("created_at")
+  snapshot   HealthSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([snapshotId], map: "idx_health_signals_snapshot")
+  @@map("health_signals")
+}
+
+model AccountReview {
+  id          String    @id @default(uuid())
+  clientId     String   @map("client_id")
+  contractId   String?  @map("contract_id")
+  reviewDate   DateTime @map("review_date") @db.Date
+  reviewType   String   @map("review_type")
+  notes        String?
+  ownerUserId  String?  @map("owner_user_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract     Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([clientId, reviewDate], map: "idx_account_reviews_client_review_date")
+  @@map("account_reviews")
+}
+
+model ExpansionOpportunity {
+  id            String    @id @default(uuid())
+  clientId       String   @map("client_id")
+  contractId     String?  @map("contract_id")
+  status         String   @default("open")
+  title          String
+  notes          String?
+  estimatedMrr   Decimal? @map("estimated_mrr") @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contract       Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([clientId, status], map: "idx_expansion_opportunities_client_status")
+  @@map("expansion_opportunities")
 }
 
 model OptimizationPlaybookRule {

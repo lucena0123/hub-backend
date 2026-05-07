@@ -10,6 +10,13 @@ const prismaMock = {
         update: vi.fn(),
         delete: vi.fn(),
     },
+    campaignRuleContext: {
+        upsert: vi.fn(),
+        update: vi.fn(),
+    },
+    ruleProfile: {
+        findUnique: vi.fn(),
+    },
     client: {
         findUnique: vi.fn(),
     },
@@ -17,10 +24,17 @@ const prismaMock = {
 
 describe('CampaignService', () => {
     let campaignService: CampaignService;
+    const ruleProfilesMock = {
+        resolveCampaignProfile: vi.fn().mockResolvedValue({
+            profile: null,
+            classification: { objectiveKey: 'messages', channelKey: 'meta' },
+            warnings: [],
+        }),
+    };
 
     beforeEach(() => {
         vi.clearAllMocks();
-        campaignService = new CampaignService(prismaMock);
+        campaignService = new CampaignService(prismaMock, ruleProfilesMock as any);
     });
 
     describe('findAll', () => {
@@ -48,11 +62,14 @@ describe('CampaignService', () => {
                 platform: 'meta',
                 clientId: 'client-1',
                 budget: 1000,
-                status: 'active'
+                status: 'draft',
+                objectiveClassKey: 'messages',
+                channelClassKey: 'meta',
             };
 
-            vi.spyOn(prismaMock.client, 'findUnique').mockResolvedValue({ id: 'client-1' } as any);
+            vi.spyOn(prismaMock.client, 'findUnique').mockResolvedValue({ id: 'client-1', defaultChannelKey: 'meta' } as any);
             vi.spyOn(prismaMock.campaign, 'create').mockResolvedValue({ id: '1', ...input } as any);
+            vi.spyOn(prismaMock.campaignRuleContext, 'upsert').mockResolvedValue({} as any);
 
             const result = await campaignService.create(input as any);
             expect(result.name).toBe('New C');

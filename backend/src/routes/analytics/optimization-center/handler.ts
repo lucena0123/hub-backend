@@ -11,6 +11,7 @@ import { scoreCreatives } from './creative-scoring';
 import { evaluateOptimizationCenterRules } from '../../../services/optimization-playbook/optimization-center/engine/registry';
 import { evaluateCustomPlaybookRules, type CustomPlaybookRule } from '../../../services/optimization-playbook/optimization-center/engine/custom-rules';
 import type { OptimizationSeverity } from './types';
+import { RuleProfileService, isRuleProfileEngineEnabled } from '../../../services/rule-profile-service';
 
 export type OptimizationCenterQuery = {
   period?: string;
@@ -21,10 +22,11 @@ export type OptimizationCenterQuery = {
 
 export const buildOptimizationCenter = async (params: {
   analytics: AnalyticsService;
+  ruleProfiles: RuleProfileService;
   clientId: string;
   query: OptimizationCenterQuery;
 }) => {
-  const { analytics, clientId, query } = params;
+  const { analytics, ruleProfiles, clientId, query } = params;
   const { period = '30d', startDate, endDate, campaignId } = query;
 
   const days = getDaysForPeriod(period);
@@ -77,12 +79,36 @@ export const buildOptimizationCenter = async (params: {
   );
 
   const primaryRow = campaignsRows.length > 0 ? (campaignsRows[0] as any) : null;
+  const primaryCampaignId = campaignId || (primaryRow ? String(primaryRow.campaign_id) : null);
+  let resolvedProfile: Awaited<ReturnType<RuleProfileService['resolveCampaignProfile']>> | null = null;
+  const classificationWarnings: string[] = [];
+
+  if (isRuleProfileEngineEnabled() && primaryCampaignId) {
+    try {
+      resolvedProfile = await ruleProfiles.resolveCampaignProfile(primaryCampaignId);
+      classificationWarnings.push(...resolvedProfile.warnings);
+    } catch (_error) {
+      classificationWarnings.push('failed_to_resolve_campaign_profile');
+    }
+  } else if (!isRuleProfileEngineEnabled()) {
+    classificationWarnings.push('rule_profile_engine_disabled');
+  }
+
+  const profileTargets =
+    resolvedProfile?.profile?.targets && typeof resolvedProfile.profile.targets === 'object'
+      ? (resolvedProfile.profile.targets as Record<string, unknown>)
+      : null;
+
   const primaryTheme = resolveOptimizationTheme({
     campaignName: primaryRow ? String(primaryRow.campaign_name || '') : '',
     themeKey: primaryRow?.optimization_theme_key ?? null,
     subthemeKey: primaryRow?.optimization_subtheme_key ?? null,
   });
-  const targets = getOptimizationTargetsForTheme(primaryTheme.themeKey, clientTargetOverrides);
+  const targets = getOptimizationTargetsForTheme(primaryTheme.themeKey, profileTargets ?? clientTargetOverrides);
+
+  if (!resolvedProfile?.profile && clientTargetOverrides) {
+    classificationWarnings.push('using_legacy_optimization_targets_fallback');
+  }
 
   const adsetBudgetsByCampaign = new Map<string, { dailyBudget: number; lifetimeBudget: number }>();
   try {
@@ -186,7 +212,7 @@ export const buildOptimizationCenter = async (params: {
 
   const creatives = creativeRows.map((row: any) => {
     const totalSpend = safeFloat(row.total_spend);
-    const totalConversations = safeInt(row.total_conversations);
+    const totalConversations = safeInt(row.primary_result_total || row.total_conversations);
     const cpl = totalConversations > 0 ? totalSpend / totalConversations : null;
 
     const hookRateRaw = safeFloat(row.hook_rate_avg);
@@ -262,6 +288,14 @@ export const buildOptimizationCenter = async (params: {
 
   const { enrichedCreatives, winners } = scoreCreatives(creatives, targets);
 
+  const copyPolicy = resolvedProfile?.profile?.copyPolicy ?? null;
+  const preferredCtaTypes = Array.isArray((copyPolicy as any)?.preferredCtaTypes)
+    ? (copyPolicy as any).preferredCtaTypes.filter((value: unknown) => typeof value === 'string')
+    : OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'];
+  const prohibitedPhrases = Array.isArray((copyPolicy as any)?.prohibitedPhrases)
+    ? (copyPolicy as any).prohibitedPhrases.filter((value: unknown) => typeof value === 'string')
+    : OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [];
+
   // Load adset-level stats for adset rules
   let adsetRows: any[] = [];
   const adsetsByCampaign = new Map<string, any[]>();
@@ -291,12 +325,15 @@ export const buildOptimizationCenter = async (params: {
       winners,
       targets,
       playbookCopy: {
-        preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
-        prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+        preferredCtaTypes,
+        prohibitedPhrases,
       },
       clientTargetOverrides,
       adsetRows,
       adsetsByCampaign,
+      primaryObjectiveKey: resolvedProfile?.classification.objectiveKey ?? primaryRow?.objective_class_key ?? null,
+      primaryChannelKey: resolvedProfile?.classification.channelKey ?? primaryRow?.channel_class_key ?? null,
+      classificationWarnings,
     },
     { ruleConfigById }
   );
@@ -313,12 +350,15 @@ export const buildOptimizationCenter = async (params: {
       winners,
       targets,
       playbookCopy: {
-        preferredCtaTypes: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.preferredCtaTypes ?? ['WHATSAPP_MESSAGE', 'SEND_MESSAGE'],
-        prohibitedPhrases: OPTIMIZATION_CENTER_PLAYBOOK_V1.copy?.prohibitedPhrases ?? [],
+        preferredCtaTypes,
+        prohibitedPhrases,
       },
       clientTargetOverrides,
       adsetRows,
       adsetsByCampaign,
+      primaryObjectiveKey: resolvedProfile?.classification.objectiveKey ?? primaryRow?.objective_class_key ?? null,
+      primaryChannelKey: resolvedProfile?.classification.channelKey ?? primaryRow?.channel_class_key ?? null,
+      classificationWarnings,
     },
     customRules,
     { ruleConfigById }
@@ -389,6 +429,8 @@ export const buildOptimizationCenter = async (params: {
     scope: campaignId ? { campaignId } : { clientId },
     generatedAt: new Date().toISOString(),
     playbookVersion: OPTIMIZATION_CENTER_PLAYBOOK_V1.version,
+    resolvedProfile,
+    classificationWarnings,
     theme: {
       ...primaryTheme,
       targets,

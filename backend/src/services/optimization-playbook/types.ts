@@ -70,6 +70,8 @@ export type OptimizationCenterRule = {
   description: string;
   // Human-readable condition (for the dashboard)
   condition: string;
+  appliesToObjectives?: Array<'messages' | 'lead' | 'conversion' | 'traffic' | 'awareness'>;
+  appliesToChannels?: string[];
 };
 
 export type OptimizationCenterPlaybook = {

@@ -1,0 +1,413 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic:
+      - iframe
+    - generic:
+      - iframe
+    - generic:
+      - iframe
+    - generic:
+      - iframe
+    - generic [ref=e3]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - progressbar [ref=e12]
+          - generic [ref=e13]:
+            - progressbar [ref=e14]
+            - progressbar [ref=e15]
+            - progressbar [ref=e16]
+            - progressbar [ref=e17]
+            - progressbar [ref=e18]
+        - generic [ref=e19]:
+          - progressbar [ref=e20]
+          - progressbar [ref=e21]
+          - progressbar [ref=e22]
+      - generic [ref=e24]:
+        - generic [ref=e28]: Explorador da Graph API
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]:
+              - button "Favorites" [ref=e35] [cursor=pointer]:
+                - generic [ref=e38]: Favorites
+              - generic [ref=e39]:
+                - button "GET" [ref=e41] [cursor=pointer]:
+                  - generic [ref=e45]: GET
+                - generic [ref=e48]:
+                  - link "← graph." [ref=e49] [cursor=pointer]:
+                    - /url: "#"
+                  - button ".facebook.com/" [ref=e51] [cursor=pointer]:
+                    - generic [ref=e55]: .facebook.com/
+                - button "v24.0" [ref=e58] [cursor=pointer]:
+                  - generic [ref=e62]: v24.0
+                - generic [ref=e64]: /
+                - generic [ref=e65]:
+                  - combobox [ref=e68]: me?fields=id,name
+                  - button "Remover" [ref=e69] [cursor=pointer]
+            - button "Enviar" [ref=e73] [cursor=pointer]:
+              - generic [ref=e75]: Enviar
+          - generic [ref=e77]:
+            - generic [ref=e81]:
+              - generic:
+                - generic:
+                  - list
+            - generic [ref=e82]:
+              - generic [ref=e87]:
+                - generic:
+                  - generic:
+                    - button "Conheça este novo recurso" [ref=e88] [cursor=pointer]
+                    - button "Fechar pop-up e voltar" [ref=e90] [cursor=pointer]
+                - generic [ref=e97]:
+                  - button "Copiar informações de depuração" [ref=e98]:
+                    - button "Copiar informações de depuração" [disabled] [ref=e100]:
+                      - generic [ref=e102]: Copiar informações de depuração
+                  - button "Receber código" [disabled] [ref=e103]:
+                    - generic [ref=e106]: Receber código
+                  - button "Salvar sessão" [disabled] [ref=e107]:
+                    - generic [ref=e109]: Salvar sessão
+              - generic [ref=e115]:
+                - heading "Token de acesso" [level=4] [ref=e116]
+                - generic [ref=e118]:
+                  - generic [ref=e119]:
+                    - textbox [ref=e122]:
+                      - /placeholder: Token de acesso
+                      - text: EAAK3FmdyNkgBRPkh6JGNgiAK4P5KcZBQgDr3IZC4wbMmwhGAwB9TKZCsqozq9VGrOLbeb0TP2OfbRQmEdT8ALLknKNv8dF1RW9fz0me71mdEv69kzmITPtZBRS4i9eGZC51kKBY7fyglMumYdw5NtL7RnU0XBR396OkP97nf0IepeBgNs1eKSzdTYL1ftOtXtOOYrO5oPD3myzyGsdZBBowYFLZAGqwZAZAaUoxmh7HOXqMWGTIQnogZDZD
+                    - button "Copy Token" [ref=e125] [cursor=pointer]:
+                      - generic [ref=e128]: Copy Token
+                  - button "Generate Access Token" [ref=e130] [cursor=pointer]:
+                    - generic [ref=e132]: Generate Access Token
+                - generic [ref=e133]: App da Meta
+                - generic:
+                  - generic:
+                    - button "Conheça este novo recurso" [ref=e134] [cursor=pointer]
+                    - button "Fechar pop-up e voltar" [ref=e136] [cursor=pointer]
+                - button "Analista" [ref=e139] [cursor=pointer]:
+                  - generic [ref=e145]: Analista
+                - generic [ref=e147]: Usuário ou Página
+                - generic [ref=e148]:
+                  - generic:
+                    - generic:
+                      - button "Conheça este novo recurso" [ref=e149] [cursor=pointer]
+                      - button "Fechar pop-up e voltar" [ref=e151] [cursor=pointer]
+                  - button "Token do usuário" [ref=e153] [cursor=pointer]:
+                    - generic [ref=e157]: Token do usuário
+                - generic [ref=e162]:
+                  - radio "Permissions" [checked] [disabled] [ref=e163]:
+                    - generic [ref=e165]: Permissions
+                  - radio "Configurations" [disabled] [ref=e166]:
+                    - generic [ref=e168]: Configurations
+                - generic [ref=e170]:
+                  - heading "Permissões Reset Clear" [level=4] [ref=e171]:
+                    - text: Permissões
+                    - link "Reset Clear" [ref=e172] [cursor=pointer]:
+                      - /url: /docs/facebook-login/permissions/
+                      - generic [ref=e175]:
+                        - button "Reset" [ref=e176]:
+                          - generic [ref=e179]: Reset
+                        - button "Clear" [ref=e180]:
+                          - generic [ref=e183]: Clear
+                  - list [ref=e185]:
+                    - listitem [ref=e186]:
+                      - generic [ref=e188]:
+                        - button [ref=e189] [cursor=pointer]
+                        - text: email
+                    - listitem [ref=e191]:
+                      - generic [ref=e193]:
+                        - button [ref=e194] [cursor=pointer]
+                        - text: manage_fundraisers
+                    - listitem [ref=e196]:
+                      - generic [ref=e198]:
+                        - button [ref=e199] [cursor=pointer]
+                        - text: read_insights
+                    - listitem [ref=e201]:
+                      - generic [ref=e203]:
+                        - button [ref=e204] [cursor=pointer]
+                        - text: publish_video
+                    - listitem [ref=e206]:
+                      - generic [ref=e208]:
+                        - button [ref=e209] [cursor=pointer]
+                        - text: catalog_management
+                    - listitem [ref=e211]:
+                      - generic [ref=e213]:
+                        - button [ref=e214] [cursor=pointer]
+                        - text: private_computation_access
+                    - listitem [ref=e216]:
+                      - generic [ref=e218]:
+                        - button [ref=e219] [cursor=pointer]
+                        - text: threads_business_basic
+                    - listitem [ref=e221]:
+                      - generic [ref=e223]:
+                        - button [ref=e224] [cursor=pointer]
+                        - text: pages_manage_cta
+                    - listitem [ref=e226]:
+                      - generic [ref=e228]:
+                        - button [ref=e229] [cursor=pointer]
+                        - text: pages_manage_instant_articles
+                    - listitem [ref=e231]:
+                      - generic [ref=e233]:
+                        - button [ref=e234] [cursor=pointer]
+                        - text: pages_show_list
+                    - listitem [ref=e236]:
+                      - generic [ref=e238]:
+                        - button [ref=e239] [cursor=pointer]
+                        - text: read_page_mailboxes
+                    - listitem [ref=e241]:
+                      - generic [ref=e243]:
+                        - button [ref=e244] [cursor=pointer]
+                        - text: ads_management
+                    - listitem [ref=e246]:
+                      - generic [ref=e248]:
+                        - button [ref=e249] [cursor=pointer]
+                        - text: ads_read
+                    - listitem [ref=e251]:
+                      - generic [ref=e253]:
+                        - button [ref=e254] [cursor=pointer]
+                        - text: business_management
+                    - listitem [ref=e256]:
+                      - generic [ref=e258]:
+                        - button [ref=e259] [cursor=pointer]
+                        - text: pages_messaging
+                    - listitem [ref=e261]:
+                      - generic [ref=e263]:
+                        - button [ref=e264] [cursor=pointer]
+                        - text: pages_messaging_phone_number
+                    - listitem [ref=e266]:
+                      - generic [ref=e268]:
+                        - button [ref=e269] [cursor=pointer]
+                        - text: pages_messaging_subscriptions
+                    - listitem [ref=e271]:
+                      - generic [ref=e273]:
+                        - button [ref=e274] [cursor=pointer]
+                        - text: instagram_basic
+                    - listitem [ref=e276]:
+                      - generic [ref=e278]:
+                        - button [ref=e279] [cursor=pointer]
+                        - text: instagram_manage_comments
+                    - listitem [ref=e281]:
+                      - generic [ref=e283]:
+                        - button [ref=e284] [cursor=pointer]
+                        - text: instagram_manage_insights
+                    - listitem [ref=e286]:
+                      - generic [ref=e288]:
+                        - button [ref=e289] [cursor=pointer]
+                        - text: instagram_content_publish
+                    - listitem [ref=e291]:
+                      - generic [ref=e293]:
+                        - button [ref=e294] [cursor=pointer]
+                        - text: leads_retrieval
+                    - listitem [ref=e296]:
+                      - generic [ref=e298]:
+                        - button [ref=e299] [cursor=pointer]
+                        - text: whatsapp_business_management
+                    - listitem [ref=e301]:
+                      - generic [ref=e303]:
+                        - button [ref=e304] [cursor=pointer]
+                        - text: instagram_manage_messages
+                    - listitem [ref=e306]:
+                      - generic [ref=e308]:
+                        - button [ref=e309] [cursor=pointer]
+                        - text: attribution_read
+                    - listitem [ref=e311]:
+                      - generic [ref=e313]:
+                        - button [ref=e314] [cursor=pointer]
+                        - text: page_events
+                    - listitem [ref=e316]:
+                      - generic [ref=e318]:
+                        - button [ref=e319] [cursor=pointer]
+                        - text: commerce_account_read_settings
+                    - listitem [ref=e321]:
+                      - generic [ref=e323]:
+                        - button [ref=e324] [cursor=pointer]
+                        - text: commerce_account_manage_orders
+                    - listitem [ref=e326]:
+                      - generic [ref=e328]:
+                        - button [ref=e329] [cursor=pointer]
+                        - text: commerce_account_read_orders
+                    - listitem [ref=e331]:
+                      - generic [ref=e333]:
+                        - button [ref=e334] [cursor=pointer]
+                        - text: commerce_account_read_reports
+                    - listitem [ref=e336]:
+                      - generic [ref=e338]:
+                        - button [ref=e339] [cursor=pointer]
+                        - text: pages_read_engagement
+                    - listitem [ref=e341]:
+                      - generic [ref=e343]:
+                        - button [ref=e344] [cursor=pointer]
+                        - text: pages_manage_metadata
+                    - listitem [ref=e346]:
+                      - generic [ref=e348]:
+                        - button [ref=e349] [cursor=pointer]
+                        - text: pages_read_user_content
+                    - listitem [ref=e351]:
+                      - generic [ref=e353]:
+                        - button [ref=e354] [cursor=pointer]
+                        - text: pages_manage_ads
+                    - listitem [ref=e356]:
+                      - generic [ref=e358]:
+                        - button [ref=e359] [cursor=pointer]
+                        - text: pages_manage_posts
+                    - listitem [ref=e361]:
+                      - generic [ref=e363]:
+                        - button [ref=e364] [cursor=pointer]
+                        - text: pages_manage_engagement
+                    - listitem [ref=e366]:
+                      - generic [ref=e368]:
+                        - button [ref=e369] [cursor=pointer]
+                        - text: whatsapp_business_messaging
+                    - listitem [ref=e371]:
+                      - generic [ref=e373]:
+                        - button [ref=e374] [cursor=pointer]
+                        - text: instagram_shopping_tag_products
+                    - listitem [ref=e376]:
+                      - generic [ref=e378]:
+                        - button [ref=e379] [cursor=pointer]
+                        - text: instagram_branded_content_brand
+                    - listitem [ref=e381]:
+                      - generic [ref=e383]:
+                        - button [ref=e384] [cursor=pointer]
+                        - text: instagram_branded_content_creator
+                    - listitem [ref=e386]:
+                      - generic [ref=e388]:
+                        - button [ref=e389] [cursor=pointer]
+                        - text: instagram_branded_content_ads_brand
+                    - listitem [ref=e391]:
+                      - generic [ref=e393]:
+                        - button [ref=e394] [cursor=pointer]
+                        - text: instagram_manage_events
+                    - listitem [ref=e396]:
+                      - generic [ref=e398]:
+                        - button [ref=e399] [cursor=pointer]
+                        - text: instagram_manage_upcoming_events
+                    - listitem [ref=e401]:
+                      - generic [ref=e403]:
+                        - button [ref=e404] [cursor=pointer]
+                        - text: manage_app_solution
+                    - listitem [ref=e406]:
+                      - generic [ref=e408]:
+                        - button [ref=e409] [cursor=pointer]
+                        - text: pages_utility_messaging
+                    - listitem [ref=e411]:
+                      - generic [ref=e413]:
+                        - button [ref=e414] [cursor=pointer]
+                        - text: paid_marketing_messages
+                    - listitem [ref=e416]:
+                      - generic [ref=e418]:
+                        - button [ref=e419] [cursor=pointer]
+                        - text: whatsapp_business_manage_events
+                  - button "Fechar pop-up e voltar" [ref=e421] [cursor=pointer]
+                  - combobox [ref=e425]
+                  - button "47 opções selecionadas" [ref=e427] [cursor=pointer]:
+                    - generic [ref=e431]: 47 opções selecionadas
+      - contentinfo [ref=e436]:
+        - generic [ref=e437]:
+          - separator [ref=e438]
+          - generic [ref=e440]:
+            - generic [ref=e442]:
+              - generic [ref=e444]:
+                - img "Meta" [ref=e446]
+                - list [ref=e448]:
+                  - listitem [ref=e449]:
+                    - link "Facebook" [ref=e450] [cursor=pointer]:
+                      - /url: https://www.facebook.com/MetaforDevelopers
+                      - img "Facebook" [ref=e451]
+                  - listitem [ref=e452]:
+                    - link "Instagram" [ref=e453] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.instagram.com%2Fmetafordevelopers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7hvsxBmeP3r7OSSNy4L4ixmGhAnUd7TZP2wUM5ItxFwuZD-YnwrO688H8olg_aem_he-32LgClbCIAUzEX8kDRg&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                      - img "Instagram" [ref=e454]
+                  - listitem [ref=e455]:
+                    - link "X" [ref=e456] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Ftwitter.com%2Fmetafordevs%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4DelEMchix_m9PIe2QMO7fa71_faj8ZQp-UlWgpRRujHQtloR6_jHJ0QUSIg_aem_e86a_EqvLkCy2Z-XYAT0Qw&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                      - img "X" [ref=e457]
+                  - listitem [ref=e458]:
+                    - link "LinkedIn" [ref=e459] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.linkedin.com%2Fshowcase%2Fmeta-for-developers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR5LFMwnL6WU3yla75IfzukzM3Cngl2qy-XtZzMpClOTZXsMwilaHf1PlZvxgQ_aem_bnpLhelmrYHVasmfGBe8QQ&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                      - img "LinkedIn" [ref=e460]
+                  - listitem [ref=e461]:
+                    - link "YouTube" [ref=e462] [cursor=pointer]:
+                      - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.youtube.com%2FMetaDevelopers%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4DelEMchix_m9PIe2QMO7fa71_faj8ZQp-UlWgpRRujHQtloR6_jHJ0QUSIg_aem_e86a_EqvLkCy2Z-XYAT0Qw&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                      - img "YouTube" [ref=e463]
+              - generic [ref=e465]:
+                - generic [ref=e468]:
+                  - heading "Desenvolva com a Meta" [level=2] [ref=e469]:
+                    - generic [ref=e470]: Desenvolva com a Meta
+                  - list [ref=e471]:
+                    - listitem [ref=e472]:
+                      - link "IA" [ref=e474] [cursor=pointer]:
+                        - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fai%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR7Qd9yRRdBbKGncN4YtEzPHxcFbb1LiQ2fOECJCdo8Gb-tIR6fIg7j5ZEP6Pg_aem_dqZhKGcNJZOaSLAkGadu1A&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                    - listitem [ref=e475]:
+                      - link "Meta Horizon" [ref=e477] [cursor=pointer]:
+                        - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fhorizon%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4DelEMchix_m9PIe2QMO7fa71_faj8ZQp-UlWgpRRujHQtloR6_jHJ0QUSIg_aem_e86a_EqvLkCy2Z-XYAT0Qw&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                    - listitem [ref=e478]:
+                      - link "Tecnologias sociais" [ref=e480] [cursor=pointer]:
+                        - /url: /social-technologies/
+                - generic [ref=e483]:
+                  - heading "Notícias" [level=2] [ref=e484]:
+                    - generic [ref=e485]: Notícias
+                  - list [ref=e486]:
+                    - listitem [ref=e487]:
+                      - link "Meta for Developers" [ref=e489] [cursor=pointer]:
+                        - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fdevelopers.meta.com%2Fblog%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4g8CXzwvq5aF-TIUD0fkLJz4uCzsarWwdghrJiwZDRpUvb3d3cEdAhY_MSrQ_aem_VeQR6AFOJAF_Q6I7p6orhQ&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                    - listitem [ref=e490]:
+                      - link "Blog" [ref=e492] [cursor=pointer]:
+                        - /url: /blog/
+                    - listitem [ref=e493]:
+                      - link "Casos de sucesso" [ref=e495] [cursor=pointer]:
+                        - /url: /success-stories/
+                - generic [ref=e498]:
+                  - heading "Suporte" [level=2] [ref=e499]:
+                    - generic [ref=e500]: Suporte
+                  - list [ref=e501]:
+                    - listitem [ref=e502]:
+                      - link "Suporte ao desenvolvedor" [ref=e504] [cursor=pointer]:
+                        - /url: /support/
+                    - listitem [ref=e505]:
+                      - link "Ferramenta de bug" [ref=e507] [cursor=pointer]:
+                        - /url: /support/bugs/
+                    - listitem [ref=e508]:
+                      - link "Status da plataforma" [ref=e510] [cursor=pointer]:
+                        - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fmetastatus.com%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExSDd3OEJpTUtiWmUyMmJQenNydGMGYXBwX2lkATAAAR4g8CXzwvq5aF-TIUD0fkLJz4uCzsarWwdghrJiwZDRpUvb3d3cEdAhY_MSrQ_aem_VeQR6AFOJAF_Q6I7p6orhQ&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                    - listitem [ref=e511]:
+                      - link "Fórum da Comunidade de Desenvolvedores" [ref=e513] [cursor=pointer]:
+                        - /url: https://www.facebook.com/groups/fbdevelopers/
+                    - listitem [ref=e514]:
+                      - link "Relatar um incidente" [ref=e516] [cursor=pointer]:
+                        - /url: /incident/report/
+                - generic [ref=e519]:
+                  - heading "Quem somos" [level=2] [ref=e520]:
+                    - generic [ref=e521]: Quem somos
+                  - list [ref=e522]:
+                    - listitem [ref=e523]:
+                      - link "Sobre" [ref=e525] [cursor=pointer]:
+                        - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fabout.fb.com%2F&h=AT5IHR3wJs6cQkbHWt4cfOb3EjeEnjJHtEOcLOJQViFOrUFazfzaid_32RmePTcQCr1MtbYZev8AICowI9bfQnTGDP5iUjSc6PxrUif9Ih15cV-MRQia8K0fnxEiFaKxMK7I_kJc-7drB6eF1e4
+                    - listitem [ref=e526]:
+                      - link "Carreiras" [ref=e528] [cursor=pointer]:
+                        - /url: https://www.facebook.com/careers
+                - generic [ref=e531]:
+                  - heading "Termos e políticas" [level=2] [ref=e532]:
+                    - generic [ref=e533]: Termos e políticas
+                  - list [ref=e534]:
+                    - listitem [ref=e535]:
+                      - link "Iniciativas de plataforma responsável" [ref=e537] [cursor=pointer]:
+                        - /url: /products/responsible-platform-initiatives/
+                    - listitem [ref=e538]:
+                      - link "Termos da plataforma" [ref=e540] [cursor=pointer]:
+                        - /url: /terms/dfc_platform_terms/
+                    - listitem [ref=e541]:
+                      - link "Políticas do Desenvolvedor" [ref=e543] [cursor=pointer]:
+                        - /url: /devpolicy/
+                    - listitem [ref=e544]:
+                      - link "Política de Privacidade" [ref=e546] [cursor=pointer]:
+                        - /url: https://www.facebook.com/about/privacy
+                    - listitem [ref=e547]:
+                      - link "Cookies" [ref=e549] [cursor=pointer]:
+                        - /url: https://www.facebook.com/help/cookies
+            - button "Alterar idioma" [ref=e554] [cursor=pointer]:
+              - generic [ref=e556]: Português (Brasil)
+  - generic:
+    - region "Conheça este novo recurso"
+  - generic:
+    - region "Conheça este novo recurso"
+  - generic:
+    - region "Conheça este novo recurso"
+  - generic:
+    - region "Conheça este novo recurso"

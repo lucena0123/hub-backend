@@ -11,6 +11,7 @@ const meta: OptimizationCenterRule = {
   title: 'Criativo vencedor',
   description: 'Criativo no topo do período e com CPL dentro do alvo do tema.',
   condition: 'eligible AND rank_in_top_percentile AND cpl <= targetCplGoodMax AND NOT fatigued',
+  appliesToObjectives: ['messages'],
 };
 
 export const creativeWinnerRule: OptimizationRuleModule = {

@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   title: 'Custo por contato subiu',
   description: 'Custo por contato aumentou significativamente vs semana anterior.',
   condition: 'contacts_prev7 >= minContactsForEvaluation AND delta_cpl_pct >= cplRisePctWarning',
+  appliesToObjectives: ['messages'],
 };
 
 export const campaignCplRiseRule: OptimizationRuleModule = {

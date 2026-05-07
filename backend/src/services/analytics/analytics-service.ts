@@ -1,154 +1,26 @@
 import { PrismaClient } from '@prisma/client';
-import { resolvePrimaryResult } from '../metrics/primary-result';
-
-export interface BreakdownSegment {
-    label: string;
-    impressions: number;
-    clicks: number;
-    spend: number;
-    reach: number;
-    conversions: number;
-    ctr: number;
-    cpc: number;
-    cpm: number;
-    conversionRate: number;
-    shareOfSpend: number;
-}
-
-export interface BusinessMetrics {
-    campaignId: string;
-    totalSpend: number;
-    totalConversations: number;
-    totalContracts: number;
-    totalRevenue: number;
-    avgTicket: number;
-    cac: number;
-    costPerLead: number;
-    conversionRate: number;
-    ltv: number;
-    ltvCacRatio: number;
-    ltvCacHealth: 'excellent' | 'good' | 'fair' | 'poor';
-    roi: number;
-    config: {
-        lifetimeMonths: number;
-        monthlyRevenue: number;
-    };
-}
-
-export interface AdSetMetric {
-  adsetId: string;
-  adsetName: string;
-  totalImpressions: number;
-  totalReach: number;
-  totalClicks: number;
-  totalLinkClicks: number;
-  totalLandingPageViews: number;
-  totalSpend: number;
-  totalConversions: number;
-  totalMessagingConversations: number;
-  totalMessagingFirstReply: number;
-  avgCtr: number;
-  avgCpc: number;
-  avgCpm: number;
-  avgFrequency: number;
-  cpl: number;
-  status?: string | null;
-  effectiveStatus?: string | null;
-  configuredStatus?: string | null;
-  dailyBudget?: number | null;
-  lifetimeBudget?: number | null;
-  metadata?: Record<string, unknown> | null;
-}
-
-export interface AdMetric {
-    adId: string;
-    adName: string;
-    adsetId: string;
-    creativeId: string | null;
-    creativeSnapshotId: string | null;
-    creative: any | null; // Typed loosely for now due to complex json structure potential
-    totalImpressions: number;
-    totalReach: number;
-    totalClicks: number;
-    totalLinkClicks: number;
-    totalLandingPageViews: number;
-    totalSpend: number;
-    totalConversions: number;
-    totalLeads?: number;
-    totalPurchases?: number;
-    totalMessagingConversations: number;
-    avgCtr: number;
-    avgCpm: number;
-    cpl: number;
-    videoThruplay: number;
-    video3secViews: number;
-    videoP25: number;
-    videoP50: number;
-    videoP75: number;
-    videoP100: number;
-    hookRate: number;
-    holdRate: number;
-}
-
-export interface TemporalAnalysisConfig {
-    dayOfWeek: number;
-    dayName: string;
-    totalImpressions: number;
-    totalClicks: number;
-    totalSpend: number;
-    totalConversions: number;
-    totalConversations: number;
-    avgCtr: number;
-    avgCpm: number;
-    cpl: number;
-    daysCount: number;
-}
-
-export interface CreativeSnapshot {
-    snapshotId: string;
-    creativeId: string;
-    platform: string;
-    contentHash: string;
-    capturedAt: string;
-    lastSeenAt: string;
-    headline: string | null;
-    primaryText: string | null;
-    description: string | null;
-    ctaType: string | null;
-    destinationUrl: string | null;
-    imageUrl: string | null;
-    thumbnailUrl: string | null;
-    videoId: string | null;
-    format: string | null;
-    isDynamic: boolean;
-    headlines: string[] | null;
-    primaryTexts: string[] | null;
-    descriptions: string[] | null;
-    ctaTypes: string[] | null;
-    destinationUrls: string[] | null;
-    objectStorySpec: any | null;
-    assetFeedSpec: any | null;
-    visualAttributes: any | null;
-}
-
-export interface AdSetNameRow {
-    adset_id: string;
-    adset_name: string | null;
-}
-
-export interface CopyInsight {
-    snapshotId: string;
-    themeKey: string | null;
-    themeName: string | null;
-    status: string;
-    model: string | null;
-    promptId: string | null;
-    promptVersion: string | null;
-    analysis: any | null;
-    errorMessage: string | null;
-    createdAt: string | null;
-    updatedAt: string | null;
-}
+import { aggregateBreakdownSegments } from './breakdown-aggregator';
+import { mapAdMetricRow, mapAdSetMetricRow } from './metric-mappers';
+import type {
+    AdMetric,
+    AdSetMetric,
+    AdSetNameRow,
+    BreakdownSegment,
+    BusinessMetrics,
+    CopyInsight,
+    CreativeSnapshot,
+    TemporalAnalysisConfig,
+} from './types';
+export type {
+    AdMetric,
+    AdSetMetric,
+    AdSetNameRow,
+    BreakdownSegment,
+    BusinessMetrics,
+    CopyInsight,
+    CreativeSnapshot,
+    TemporalAnalysisConfig,
+} from './types';
 
 export class AnalyticsService {
     constructor(private prisma: PrismaClient) { }
@@ -179,50 +51,7 @@ export class AnalyticsService {
          ORDER BY date DESC
     `;
 
-        const segmentMap = new Map<
-            string,
-            { label: string; impressions: number; clicks: number; spend: number; reach: number; conversions: number }
-        >();
-
-        for (const row of result) {
-            const segments = typeof row.breakdown_data === 'string' ? JSON.parse(row.breakdown_data) : row.breakdown_data;
-            for (const seg of segments) {
-                const key = seg.label || 'unknown';
-                const existing = segmentMap.get(key) || {
-                    label: seg.label || key,
-                    impressions: 0,
-                    clicks: 0,
-                    spend: 0,
-                    reach: 0,
-                    conversions: 0,
-                };
-
-                existing.impressions += Number(seg.impressions) || 0;
-                existing.clicks += Number(seg.clicks) || 0;
-                existing.spend += Number(seg.spend) || 0;
-                existing.reach += Number(seg.reach) || 0;
-                const conversions = Number(
-                    (seg.conversions ?? seg.messaging_conversations) ?? 0
-                ) || 0;
-                existing.conversions += conversions;
-
-                segmentMap.set(key, existing);
-            }
-        }
-
-        const segments = Array.from(segmentMap.values()).map((seg) => ({
-            ...seg,
-            ctr: seg.impressions > 0 ? (seg.clicks / seg.impressions) * 100 : 0,
-            cpc: seg.clicks > 0 ? seg.spend / seg.clicks : 0,
-            cpm: seg.impressions > 0 ? (seg.spend / seg.impressions) * 1000 : 0,
-            conversionRate: seg.clicks > 0 ? (seg.conversions / seg.clicks) * 100 : 0,
-            shareOfSpend: 0,
-        }));
-
-        const totalSpend = segments.reduce((s, seg) => s + seg.spend, 0);
-        for (const seg of segments) {
-            seg.shareOfSpend = totalSpend > 0 ? (seg.spend / totalSpend) * 100 : 0;
-        }
+        const segments = aggregateBreakdownSegments(result);
 
         return {
             campaignId,
@@ -369,58 +198,9 @@ export class AnalyticsService {
             configByAdset.set(String(row.adset_id), row);
           });
   
-          const adsets = result.map((row: any) => {
-              const spend = parseFloat(row.total_spend) || 0;
-              const conversations = parseInt(row.total_messaging_conversations) || 0;
-              const config = configByAdset.get(String(row.adset_id));
-              const adsetName = (row.adset_name || config?.adset_name || row.adset_id) as string;
-              const optimizationGoal =
-                typeof config?.metadata?.optimizationGoal === 'string' ? config.metadata.optimizationGoal : null;
-              const destinationType =
-                typeof config?.metadata?.destinationType === 'string' ? config.metadata.destinationType : null;
-              const billingEvent =
-                typeof config?.metadata?.billingEvent === 'string' ? config.metadata.billingEvent : null;
-
-              const primary = resolvePrimaryResult({
-                objective: campaign?.objective ?? null,
-                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
-                metrics: {
-                  messagingConversations: conversations,
-                  leads: parseInt(row.total_leads) || 0,
-                  linkClicks: parseInt(row.total_link_clicks) || 0,
-                  landingPageViews: parseInt(row.total_landing_page_views) || 0,
-                  conversions: parseInt(row.total_conversions) || 0,
-                  clicks: parseInt(row.total_clicks) || 0,
-                },
-              });
-              const totalConversions = primary.value;
-              const cpl = totalConversions > 0 ? spend / totalConversions : 0;
-  
-              return {
-                  adsetId: row.adset_id,
-                  adsetName,
-                  totalImpressions: parseInt(row.total_impressions) || 0,
-                  totalReach: parseInt(row.total_reach) || 0,
-                  totalClicks: parseInt(row.total_clicks) || 0,
-                  totalLinkClicks: parseInt(row.total_link_clicks) || 0,
-                  totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
-                  totalSpend: spend,
-                  totalConversions,
-                  totalMessagingConversations: conversations,
-                  totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
-                  avgCtr: parseFloat(row.avg_ctr) || 0,
-                  avgCpc: parseFloat(row.avg_cpc) || 0,
-                  avgCpm: parseFloat(row.avg_cpm) || 0,
-                  avgFrequency: parseFloat(row.avg_frequency) || 0,
-                  cpl,
-                  status: config?.status ?? null,
-                  effectiveStatus: config?.effective_status ?? null,
-                  configuredStatus: config?.metadata?.configuredStatus ?? null,
-                  dailyBudget: config?.daily_budget != null ? Number(config.daily_budget) : null,
-                  lifetimeBudget: config?.lifetime_budget != null ? Number(config.lifetime_budget) : null,
-                  metadata: config?.metadata ?? null,
-              };
-          });
+          const adsets = result.map((row: any) =>
+              mapAdSetMetricRow(row, configByAdset.get(String(row.adset_id)), campaign?.objective ?? null)
+          );
   
           return { campaignId, total: adsets.length, adsets };
       }
@@ -527,102 +307,9 @@ export class AnalyticsService {
         ORDER BY m.total_spend DESC
     `;
 
-        const ads = result.map((row: any) => {
-            const spend = parseFloat(row.total_spend) || 0;
-            const impressions = parseInt(row.total_impressions) || 0;
-            const clicks = parseInt(row.total_clicks) || 0;
-            const conversations = parseInt(row.total_messaging_conversations) || 0;
-            const totalLeads = parseInt(row.total_leads) || 0;
-            const totalPurchases = parseInt(row.total_purchases) || 0;
-            const thruplay = parseInt(row.total_thruplay) || 0;
-            const views3sec = parseInt(row.total_3sec_views) || 0;
-            const hookRate = impressions > 0 ? (views3sec / impressions) * 100 : 0;
-            const holdRate = views3sec > 0 ? (thruplay / views3sec) * 100 : 0;
-            const adsetMeta = adsetMetaById.get(String(row.adset_id));
-            const optimizationGoal =
-                typeof adsetMeta?.optimizationGoal === 'string' ? adsetMeta.optimizationGoal : null;
-            const destinationType =
-                typeof adsetMeta?.destinationType === 'string' ? adsetMeta.destinationType : null;
-            const billingEvent =
-                typeof adsetMeta?.billingEvent === 'string' ? adsetMeta.billingEvent : null;
-
-            const primary = resolvePrimaryResult({
-                objective: campaign?.objective ?? null,
-                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
-                metrics: {
-                    messagingConversations: conversations,
-                    leads: totalLeads,
-                    linkClicks: parseInt(row.total_link_clicks) || 0,
-                    landingPageViews: parseInt(row.total_landing_page_views) || 0,
-                    purchases: totalPurchases,
-                    conversions: parseInt(row.total_conversions) || 0,
-                    clicks,
-                },
-            });
-
-            const conversions = primary.value;
-            const cpl = conversions > 0 ? spend / conversions : 0;
-            const avgCtr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-            const avgCpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
-
-            const creativeSnapshotId = row.creative_snapshot_id || null;
-            const creative = creativeSnapshotId
-                ? {
-                    snapshotId: creativeSnapshotId,
-                    creativeId: row.creative_id || null,
-                    capturedAt: row.snapshot_captured_at || null,
-                    headline: row.headline || null,
-                    primaryText: row.primary_text || null,
-                    description: row.description || null,
-                    ctaType: row.cta_type || null,
-                    destinationUrl: row.destination_url || null,
-                    imageUrl: row.image_url || null,
-                    thumbnailUrl: row.thumbnail_url || null,
-                    videoId: row.video_id || null,
-                    format: row.format || null,
-                    isDynamic: Boolean(row.is_dynamic),
-                    headlines: row.headlines || null,
-                    primaryTexts: row.primary_texts || null,
-                    descriptions: row.descriptions || null,
-                    ctaTypes: row.cta_types || null,
-                    destinationUrls: row.destination_urls || null,
-                    objectStorySpec: row.object_story_spec || null,
-                    assetFeedSpec: row.asset_feed_spec || null,
-                    raw: row.raw || null,
-                    visualAttributes: row.visual_attributes || null,
-                }
-                : null;
-
-            return {
-                adId: row.ad_id,
-                adName: row.ad_name,
-                adsetId: row.adset_id,
-                creativeId: row.creative_id || null,
-                creativeSnapshotId,
-                creative,
-                totalImpressions: impressions,
-                totalReach: parseInt(row.total_reach) || 0,
-                totalClicks: clicks,
-                totalLinkClicks: parseInt(row.total_link_clicks) || 0,
-                totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
-                totalSpend: spend,
-                totalConversions: conversions,
-                totalLeads,
-                totalPurchases,
-                totalMessagingConversations: conversations,
-                avgCtr: Number(avgCtr.toFixed(2)),
-                avgCpm: Number(avgCpm.toFixed(2)),
-                cpl,
-                videoThruplay: thruplay,
-                video3secViews: views3sec,
-                videoP25: parseInt(row.total_p25) || 0,
-                videoP50: parseInt(row.total_p50) || 0,
-                videoP75: parseInt(row.total_p75) || 0,
-                videoP100: parseInt(row.total_p100) || 0,
-                hookRate: Number(hookRate.toFixed(2)),
-                holdRate: Number(holdRate.toFixed(2)),
-            };
-        });
+        const ads = result.map((row: any) =>
+            mapAdMetricRow(row, adsetMetaById.get(String(row.adset_id)), campaign?.objective ?? null)
+        );
 
         return { campaignId, total: ads.length, ads };
     }
@@ -1050,7 +737,11 @@ export class AnalyticsService {
 
     async getClientRuleConfigs(clientId: string): Promise<Array<{ ruleId: string; enabled: boolean; parameters: any }>> {
         const rows = await this.prisma.clientRuleConfig.findMany({
-            where: { clientId },
+            where: {
+                clientId,
+                campaignId: null,
+                ruleProfileId: null,
+            },
             select: { ruleId: true, enabled: true, parameters: true },
         });
         return rows.map((row) => ({
@@ -1107,39 +798,120 @@ export class AnalyticsService {
       c.name as campaign_name,
       c.status as campaign_status,
       c.platform as platform,
+      c.objective as objective,
+      c.objective_class_key as objective_class_key,
+      c.channel_class_key as channel_class_key,
+      c.rule_profile_id as rule_profile_id,
       c.budget as budget,
       c.optimization_theme_key as optimization_theme_key,
       c.optimization_subtheme_key as optimization_subtheme_key,
       COALESCE(SUM(cm.spend), 0) as spend_total,
       COALESCE(SUM(cm.impressions), 0)::int as impressions_total,
+      COALESCE(SUM(cm.reach), 0)::int as reach_total,
       COALESCE(SUM(cm.clicks), 0)::int as clicks_total,
       COALESCE(SUM(cm.conversions), 0)::int as conversions_total,
       COALESCE(SUM(cm.leads), 0)::int as leads_total,
       COALESCE(SUM(cm.messaging_conversations), 0)::int as conversations_total,
       COALESCE(SUM(cm.messaging_first_reply), 0)::int as first_reply_total,
+      COALESCE(SUM(cm.link_clicks), 0)::int as link_clicks_total,
+      COALESCE(SUM(cm.landing_page_views), 0)::int as landing_page_views_total,
       COALESCE(AVG(cm.frequency), 0) as avg_frequency_total,
       COALESCE(AVG(cm.cpm), 0) as avg_cpm_total,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.spend ELSE 0 END), 0) as spend_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END), 0)::int as impressions_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0)::int as reach_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0)::int as conversions_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int as leads_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_first_reply ELSE 0 END), 0)::int as first_reply_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.frequency ELSE NULL END), 0) as avg_frequency_last7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_last7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.spend ELSE 0 END), 0) as spend_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END), 0)::int as impressions_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0)::int as reach_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0)::int as conversions_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int as leads_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
       COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_first_reply ELSE 0 END), 0)::int as first_reply_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+      COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
       COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.frequency ELSE NULL END), 0) as avg_frequency_prev7,
-      COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_prev7
+      COALESCE(AVG(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.cpm ELSE NULL END), 0) as avg_cpm_prev7,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages' THEN 'conversations'
+        WHEN COALESCE(c.objective_class_key, '') = 'lead' THEN 'leads'
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic' THEN 'traffic_results'
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness' THEN 'reach'
+        ELSE 'conversions'
+      END as primary_result_key,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(cm.messaging_conversations), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(cm.leads), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(SUM(cm.landing_page_views), 0), NULLIF(SUM(cm.link_clicks), 0), SUM(cm.clicks), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(SUM(cm.reach), 0), SUM(cm.impressions), 0)::int
+        ELSE COALESCE(NULLIF(SUM(cm.conversions), 0), NULLIF(SUM(cm.leads), 0), SUM(cm.messaging_conversations), 0)::int
+      END as primary_result_total,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.clicks ELSE 0 END),
+            0
+          )::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END),
+            0
+          )::int
+        ELSE COALESCE(
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0),
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0),
+          SUM(CASE WHEN cm.date >= ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END),
+          0
+        )::int
+      END as primary_result_last7,
+      CASE
+        WHEN COALESCE(c.objective_class_key, '') = 'messages'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'lead'
+          THEN COALESCE(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0)::int
+        WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.landing_page_views ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.link_clicks ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.clicks ELSE 0 END),
+            0
+          )::int
+        WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+          THEN COALESCE(
+            NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.reach ELSE 0 END), 0),
+            SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.impressions ELSE 0 END),
+            0
+          )::int
+        ELSE COALESCE(
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.conversions ELSE 0 END), 0),
+          NULLIF(SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.leads ELSE 0 END), 0),
+          SUM(CASE WHEN cm.date >= ${new Date(endMinus13)} AND cm.date < ${new Date(endMinus6)} THEN cm.messaging_conversations ELSE 0 END),
+          0
+        )::int
+      END as primary_result_prev7
     FROM campaigns c
     LEFT JOIN campaign_metrics cm ON cm.campaign_id = c.id AND cm.date >= ${new Date(start)} AND cm.date <= ${new Date(end)}
     WHERE c."clientId" = ${clientId}
       AND (${campaignId || null}::text IS NULL OR c.id = ${campaignId || null})
-    GROUP BY c.id, c.name, c.status, c.platform, c.budget, c.optimization_theme_key, c.optimization_subtheme_key
+    GROUP BY c.id, c.name, c.status, c.platform, c.objective, c.objective_class_key, c.channel_class_key, c.rule_profile_id, c.budget, c.optimization_theme_key, c.optimization_subtheme_key
     ORDER BY spend_total DESC`;
     }
 
@@ -1156,24 +928,104 @@ export class AnalyticsService {
         am.adset_id,
         am.adset_name,
         am.campaign_id,
+        c.objective_class_key as objective_class_key,
+        c.channel_class_key as channel_class_key,
         COALESCE(SUM(am.spend), 0)::float as spend_total,
         COALESCE(SUM(am.messaging_conversations), 0)::int as conversations_total,
+        COALESCE(SUM(am.leads), 0)::int as leads_total,
+        COALESCE(SUM(am.conversions), 0)::int as conversions_total,
+        COALESCE(SUM(am.link_clicks), 0)::int as link_clicks_total,
+        COALESCE(SUM(am.landing_page_views), 0)::int as landing_page_views_total,
+        COALESCE(SUM(am.clicks), 0)::int as clicks_total,
         COALESCE(SUM(am.impressions), 0)::int as impressions_total,
         COALESCE(SUM(am.reach), 0)::int as reach_total,
         COALESCE(AVG(am.frequency), 0)::float as avg_frequency,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.spend ELSE 0 END), 0)::float as spend_last7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int as leads_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0)::int as conversions_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.clicks ELSE 0 END), 0)::int as clicks_last7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0)::int as reach_last7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.spend ELSE 0 END), 0)::float as spend_prev7,
         COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int as leads_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0)::int as conversions_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.clicks ELSE 0 END), 0)::int as clicks_prev7,
+        COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0)::int as reach_prev7,
         COALESCE(AVG(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.frequency ELSE NULL END), 0)::float as avg_frequency_last7,
-        (SELECT COUNT(DISTINCT acm.ad_id) FROM ad_creative_metrics acm WHERE acm.adset_id = am.adset_id AND acm.date >= ${new Date(endMinus6)})::int as ad_count
+        (SELECT COUNT(DISTINCT acm.ad_id) FROM ad_creative_metrics acm WHERE acm.adset_id = am.adset_id AND acm.date >= ${new Date(endMinus6)})::int as ad_count,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(am.messaging_conversations), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(am.leads), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(NULLIF(SUM(am.landing_page_views), 0), NULLIF(SUM(am.link_clicks), 0), SUM(am.clicks), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(NULLIF(SUM(am.reach), 0), SUM(am.impressions), 0)::int
+          ELSE COALESCE(NULLIF(SUM(am.conversions), 0), NULLIF(SUM(am.leads), 0), SUM(am.messaging_conversations), 0)::int
+        END as primary_result_total,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0),
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.clicks ELSE 0 END),
+              0
+            )::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.impressions ELSE 0 END),
+              0
+            )::int
+          ELSE COALESCE(
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0),
+            SUM(CASE WHEN am.date >= ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END),
+            0
+          )::int
+        END as primary_result_last7,
+        CASE
+          WHEN COALESCE(c.objective_class_key, '') = 'messages'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'lead'
+            THEN COALESCE(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0)::int
+          WHEN COALESCE(c.objective_class_key, '') = 'traffic'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.landing_page_views ELSE 0 END), 0),
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.link_clicks ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.clicks ELSE 0 END),
+              0
+            )::int
+          WHEN COALESCE(c.objective_class_key, '') = 'awareness'
+            THEN COALESCE(
+              NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.reach ELSE 0 END), 0),
+              SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.impressions ELSE 0 END),
+              0
+            )::int
+          ELSE COALESCE(
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.conversions ELSE 0 END), 0),
+            NULLIF(SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.leads ELSE 0 END), 0),
+            SUM(CASE WHEN am.date >= ${new Date(endMinus13)} AND am.date < ${new Date(endMinus6)} THEN am.messaging_conversations ELSE 0 END),
+            0
+          )::int
+        END as primary_result_prev7
       FROM adset_metrics am
       JOIN campaigns c ON c.id = am.campaign_id
       WHERE c."clientId" = ${clientId}
         AND am.date >= ${new Date(start)}
         AND am.date <= ${new Date(end)}
         AND (${campaignId || null}::text IS NULL OR am.campaign_id = ${campaignId || null})
-      GROUP BY am.adset_id, am.adset_name, am.campaign_id
+      GROUP BY am.adset_id, am.adset_name, am.campaign_id, c.objective_class_key, c.channel_class_key
       ORDER BY spend_total DESC`;
     }
 
@@ -1249,6 +1101,8 @@ export class AnalyticsService {
       SELECT
         m.creative_snapshot_id,
         MAX(m.creative_id) as creative_id,
+        MAX(c.objective_class_key) as objective_class_key,
+        MAX(c.channel_class_key) as channel_class_key,
         array_agg(DISTINCT c.name) as campaigns,
         array_agg(DISTINCT c.optimization_theme_key) FILTER (WHERE c.optimization_theme_key IS NOT NULL) as optimization_theme_keys,
         array_agg(DISTINCT c.optimization_subtheme_key) FILTER (WHERE c.optimization_subtheme_key IS NOT NULL) as optimization_subtheme_keys,
@@ -1257,12 +1111,30 @@ export class AnalyticsService {
         COUNT(DISTINCT m.ad_id)::int as ads_count,
         COALESCE(SUM(m.spend), 0) as total_spend,
         COALESCE(SUM(m.messaging_conversations), 0)::int as total_conversations,
+        COALESCE(SUM(COALESCE((m.metadata->>'leads')::int, 0)), 0)::int as total_leads,
+        COALESCE(SUM(m.conversions), 0)::int as total_conversions,
+        COALESCE(SUM(m.link_clicks), 0)::int as total_link_clicks,
+        COALESCE(SUM(m.landing_page_views), 0)::int as total_landing_page_views,
+        COALESCE(SUM(m.clicks), 0)::int as total_clicks,
+        COALESCE(SUM(m.reach), 0)::int as total_reach,
         COALESCE(AVG(NULLIF(m.hook_rate, 0)), 0) as hook_rate_avg,
         COALESCE(AVG(NULLIF(m.hold_rate, 0)), 0) as hold_rate_avg,
         COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.spend ELSE 0 END), 0) as spend_last7,
-        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conv_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conversations_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN COALESCE((m.metadata->>'leads')::int, 0) ELSE 0 END), 0)::int as leads_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.conversions ELSE 0 END), 0)::int as conversions_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.link_clicks ELSE 0 END), 0)::int as link_clicks_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.landing_page_views ELSE 0 END), 0)::int as landing_page_views_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.clicks ELSE 0 END), 0)::int as clicks_last7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus6)} THEN m.reach ELSE 0 END), 0)::int as reach_last7,
         COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.spend ELSE 0 END), 0) as spend_prev7,
-        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conv_prev7
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.messaging_conversations ELSE 0 END), 0)::int as conversations_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN COALESCE((m.metadata->>'leads')::int, 0) ELSE 0 END), 0)::int as leads_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.conversions ELSE 0 END), 0)::int as conversions_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.link_clicks ELSE 0 END), 0)::int as link_clicks_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.landing_page_views ELSE 0 END), 0)::int as landing_page_views_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.clicks ELSE 0 END), 0)::int as clicks_prev7,
+        COALESCE(SUM(CASE WHEN m.date >= ${new Date(endMinus13)} AND m.date < ${new Date(endMinus6)} THEN m.reach ELSE 0 END), 0)::int as reach_prev7
       FROM ad_creative_metrics m
       JOIN campaigns c ON c.id = m.campaign_id
       WHERE c."clientId" = ${clientId}
@@ -1275,18 +1147,57 @@ export class AnalyticsService {
     SELECT
       a.creative_snapshot_id,
       a.creative_id,
+      a.objective_class_key,
+      a.channel_class_key,
       a.campaigns,
       a.objectives,
       a.ad_names,
       a.ads_count,
       a.total_spend,
       a.total_conversations,
+      a.total_leads,
+      a.total_conversions,
+      a.total_link_clicks,
+      a.total_landing_page_views,
+      a.total_clicks,
+      a.total_reach,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.total_conversations
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.total_leads
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.total_landing_page_views, 0), NULLIF(a.total_link_clicks, 0), a.total_clicks, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.total_reach, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.total_conversions, 0), NULLIF(a.total_leads, 0), a.total_conversations, 0)::int
+      END as primary_result_total,
       a.hook_rate_avg,
       a.hold_rate_avg,
       a.spend_last7,
-      a.conv_last7,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.conversations_last7
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.leads_last7
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.landing_page_views_last7, 0), NULLIF(a.link_clicks_last7, 0), a.clicks_last7, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.reach_last7, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.conversions_last7, 0), NULLIF(a.leads_last7, 0), a.conversations_last7, 0)::int
+      END as conv_last7,
       a.spend_prev7,
-      a.conv_prev7,
+      CASE
+        WHEN COALESCE(a.objective_class_key, '') = 'messages'
+          THEN a.conversations_prev7
+        WHEN COALESCE(a.objective_class_key, '') = 'lead'
+          THEN a.leads_prev7
+        WHEN COALESCE(a.objective_class_key, '') = 'traffic'
+          THEN COALESCE(NULLIF(a.landing_page_views_prev7, 0), NULLIF(a.link_clicks_prev7, 0), a.clicks_prev7, 0)::int
+        WHEN COALESCE(a.objective_class_key, '') = 'awareness'
+          THEN COALESCE(NULLIF(a.reach_prev7, 0), 0)::int
+        ELSE COALESCE(NULLIF(a.conversions_prev7, 0), NULLIF(a.leads_prev7, 0), a.conversations_prev7, 0)::int
+      END as conv_prev7,
       s.headline as headline,
       s.primary_text as primary_text,
       s.description as description,

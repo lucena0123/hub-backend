@@ -13,6 +13,7 @@ const meta: OptimizationCenterRule = {
   description: 'Alto gasto com pouco/nenhum resultado de conversas.',
   condition:
     'spend_total >= creativeMinSpendLoser AND (conversations_total=0 OR cpl >= median_cpl * creativeLoserCplMultiplier)',
+  appliesToObjectives: ['messages'],
 };
 
 export const creativeLoserRule: OptimizationRuleModule = {
