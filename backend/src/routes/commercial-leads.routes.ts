@@ -1,7 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth';
 import { requireRoles } from '../middleware/rbac';
-import { CommercialAreaPrincipal, CommercialFlowError, CommercialLeadStatus } from '../services/commercial-leads-service';
+import { CommercialAreaPrincipal, CommercialLeadStatus } from '../modules/commercial';
+import { handleCommercialRouteError } from './commercial/route-errors';
 
 const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', authenticate);
@@ -39,24 +40,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.dispatchStageCommunication(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -78,24 +62,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
 
       return await commercialLeads.ingestIntegrationEvent(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -116,20 +83,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.triggerFollowupDispatch(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -164,24 +118,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(201);
       return lead;
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -191,12 +128,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.getLead(request.params.leadId);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -241,12 +173,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.listLeadRequirements(request.params.leadId, request.query.stage);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -267,12 +194,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
         actor: request.user?.id,
       });
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -287,12 +209,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       });
       return { assets };
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -317,12 +234,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(201);
       return asset;
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -345,12 +257,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(201);
       return created;
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -368,12 +275,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.updateCalendarConfig(request.params.id, request.body || {});
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -381,12 +283,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.syncGoogleBookingEvents();
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -414,12 +311,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
         resolvedBy: request.user?.id,
       });
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -464,12 +356,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       reply.status(201);
       return created;
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -488,12 +375,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
         createdBy: request.user?.id,
       });
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -509,12 +391,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.publishTemplate(request.params.templateId, request.body || {});
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(error.code === 'NOT_FOUND' ? 404 : 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -522,12 +399,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.dispatchMeetingReminders();
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        reply.status(400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { statusByCode: {} });
     }
   });
 
@@ -542,16 +414,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.requestScheduleSlots(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -568,16 +431,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.confirmScheduledMeeting(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -595,16 +449,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.updateScheduledMeeting(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -615,16 +460,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.createHybridSchedulingInvite(request.params.leadId, request.body || {});
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -635,16 +471,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.createSchedulingLink(request.params.leadId, request.body || {});
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
 
@@ -659,16 +486,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.cancelScheduledMeeting(request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -680,24 +498,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       const formType = request.query.formType || 'briefing';
       return await commercialLeads.getLeadFormLink(request.params.leadId, formType);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -712,24 +513,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.submitLeadForm(request.params.leadId, request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -744,24 +528,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.updateLeadProofs(request.params.leadId, request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -779,24 +546,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.updateLeadOnboarding(request.params.leadId, request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -811,24 +561,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.updateLeadPrivacy(request.params.leadId, request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -843,25 +576,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       return await commercialLeads.deleteLeadPermanently(request.params.leadId, request.body);
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DELETE_GUARD: 400,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error);
     }
   });
 
@@ -893,24 +608,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
         actorRole: request.user?.role,
       });
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          DOR_BLOCKED: 409,
-          INVALID_TRANSITION: 409,
-          DUPLICATE_LEAD: 409,
-          VALIDATION_ERROR: 400,
-        };
-
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message, details: error.details };
-      }
-
-      reply.status(500);
-      return {
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
+      return handleCommercialRouteError(reply, error, { includeDetails: true });
     }
   });
   // ─── Update lead fields ─────────────────────────────────────────────────────
@@ -939,16 +637,7 @@ const commercialLeadsRoutes: FastifyPluginAsync = async (fastify) => {
       const lead = await commercialLeads.updateLead(request.params.leadId, request.body);
       return lead;
     } catch (error) {
-      if (error instanceof CommercialFlowError) {
-        const statusByCode: Record<string, number> = {
-          NOT_FOUND: 404,
-          VALIDATION_ERROR: 400,
-        };
-        reply.status(statusByCode[error.code] || 400);
-        return { error: error.code, message: error.message };
-      }
-      reply.status(500);
-      return { error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+      return handleCommercialRouteError(reply, error);
     }
   });
 };

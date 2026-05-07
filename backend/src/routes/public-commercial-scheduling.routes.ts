@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { CommercialFlowError } from '../services/commercial-leads-service';
+import { CommercialFlowError } from '../modules/commercial';
 
 const publicCommercialSchedulingRoutes: FastifyPluginAsync = async (fastify) => {
   const { commercialLeads } = fastify.services;

@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { CommercialLeadsService } from '../services/commercial-leads-service';
+import type { CommercialLeadsService } from '../modules/commercial';
 
 type CommercialJobRunnerInput = {
   enabled: boolean;

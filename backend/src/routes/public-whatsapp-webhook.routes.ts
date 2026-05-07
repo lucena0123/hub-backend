@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { CommercialFlowError, ProcessWhatsAppSchedulingReplyInput } from '../services/commercial-leads-service';
+import { CommercialFlowError, ProcessWhatsAppSchedulingReplyInput } from '../modules/commercial';
 
 function getNested(record: Record<string, unknown>, path: string[]): unknown {
   let current: unknown = record;

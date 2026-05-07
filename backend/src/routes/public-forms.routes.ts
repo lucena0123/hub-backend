@@ -10,7 +10,7 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
-import { CommercialFlowError } from '../services/commercial-leads-service';
+import { CommercialFlowError } from '../modules/commercial';
 
 const publicFormsRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify as any;
