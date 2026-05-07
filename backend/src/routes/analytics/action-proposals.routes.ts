@@ -3,140 +3,18 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { requireAuth } from '../../middleware/rbac';
 import { buildOptimizationCenter } from './optimization-center/handler';
-
-type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'expired';
-
-const toNullableString = (value: unknown) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const parseLimit = (raw: unknown) => {
-  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
-  const limit = Number.isFinite(parsed) ? parsed : 50;
-  return Math.max(1, Math.min(200, limit));
-};
-
-const parseOffset = (raw: unknown) => {
-  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN;
-  const offset = Number.isFinite(parsed) ? parsed : 0;
-  return Math.max(0, offset);
-};
-
-const mapProposalRow = (row: any) => ({
-  proposalId: String(row.id),
-  clientId: String(row.client_id),
-  platform: row.platform,
-  accountId: row.account_id ?? null,
-  source: row.source,
-  sourceItemId: row.source_item_id ?? null,
-  ruleId: row.rule_id ?? null,
-  playbookVersion: row.playbook_version ?? null,
-  severity: row.severity ?? null,
-  category: row.category ?? null,
-  action: row.action ?? null,
-  title: row.title ?? null,
-  description: row.description ?? null,
-  entity: row.entity_type && row.entity_id ? { type: row.entity_type, id: row.entity_id } : null,
-  recommendedPayload: row.recommended_payload ?? null,
-  status: row.status as ProposalStatus,
-  createdBy: {
-    type: row.created_by_type,
-    userId: row.created_by_user_id ?? null,
-  },
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  lastDecision: row.last_decision
-    ? {
-      decision: row.last_decision,
-      reason: row.last_decision_reason ?? null,
-      decidedByUserId: row.last_decided_by_user_id ?? null,
-      decidedAt: row.last_decided_at ?? null,
-    }
-    : null,
-});
-
-const mapApprovalRow = (row: any) => ({
-  approvalId: String(row.id),
-  proposalId: String(row.proposal_id),
-  decision: row.decision,
-  reason: row.reason ?? null,
-  decidedByUserId: row.decided_by_user_id,
-  decidedAt: row.decided_at,
-  createdAt: row.created_at,
-});
-
-const mapExecutionRow = (row: any) => ({
-  executionId: String(row.id),
-  proposalId: String(row.proposal_id),
-  status: row.status,
-  attempts: typeof row.attempts === 'number' ? row.attempts : 0,
-  idempotencyKey: row.idempotency_key ?? null,
-  dryRun: Boolean(row.dry_run),
-  requestPayload: row.request_payload ?? null,
-  metaResponse: row.meta_response ?? null,
-  error: row.error_message
-    ? {
-      message: row.error_message,
-      stack: row.error_stack ?? null,
-    }
-    : null,
-  startedAt: row.started_at ?? null,
-  completedAt: row.completed_at ?? null,
-  executedBy: {
-    type: row.executed_by_type,
-    userId: row.executed_by_user_id ?? null,
-  },
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
-
-const mapHistoryRow = (row: any) => {
-  const entityName =
-    row.campaign_name ??
-    row.adset_name ??
-    row.creative_headline ??
-    row.creative_primary_text ??
-    null;
-
-  return {
-    executionId: String(row.execution_id),
-    proposalId: String(row.proposal_id),
-    clientId: String(row.client_id),
-    status: row.execution_status,
-    attempts: typeof row.attempts === 'number' ? row.attempts : 0,
-    dryRun: Boolean(row.dry_run),
-    requestPayload: row.request_payload ?? null,
-    metaResponse: row.meta_response ?? null,
-    error: row.error_message
-      ? { message: row.error_message, stack: row.error_stack ?? null }
-      : null,
-    startedAt: row.started_at ?? null,
-    completedAt: row.completed_at ?? null,
-    createdAt: row.execution_created_at,
-    updatedAt: row.execution_updated_at,
-    executedBy: {
-      type: row.executed_by_type,
-      userId: row.executed_by_user_id ?? null,
-    },
-    action: row.action ?? null,
-    title: row.title ?? null,
-    description: row.description ?? null,
-    category: row.category ?? null,
-    severity: row.severity ?? null,
-    entity: row.entity_type && row.entity_id
-      ? {
-          type: row.entity_type,
-          id: row.entity_id,
-          name: entityName,
-        }
-      : null,
-    source: row.source ?? null,
-    proposalCreatedAt: row.proposal_created_at ?? null,
-    proposalUpdatedAt: row.proposal_updated_at ?? null,
-  };
-};
+import {
+  mapProposalRow,
+  parseLimit,
+  parseOffset,
+  toNullableString,
+} from './action-proposals/mappers';
+import {
+  getActionProposalDetail,
+  listActionExecutions,
+  listActionHistory,
+  listActionProposals,
+} from './action-proposals/repository';
 
 const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
   const { pool } = fastify;
@@ -163,31 +41,7 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const entityType = toNullableString(request.query.entityType);
         const limit = parseLimit(request.query.limit);
 
-        const result = await pool.query(
-          `SELECT
-            p.*,
-            a.decision AS last_decision,
-            a.reason AS last_decision_reason,
-            a.decided_by_user_id AS last_decided_by_user_id,
-            a.decided_at AS last_decided_at
-          FROM action_proposals p
-          LEFT JOIN LATERAL (
-            SELECT decision, reason, decided_by_user_id, decided_at
-            FROM action_approvals
-            WHERE proposal_id = p.id
-            ORDER BY decided_at DESC
-            LIMIT 1
-          ) a ON TRUE
-          WHERE p.client_id = $1
-            AND ($2::text IS NULL OR p.status = $2)
-            AND ($3::text IS NULL OR p.action = $3)
-            AND ($4::text IS NULL OR p.entity_type = $4)
-          ORDER BY p.created_at DESC
-          LIMIT $5`,
-          [clientId, status, action, entityType, limit]
-        );
-
-        const proposals = result.rows.map(mapProposalRow);
+        const proposals = await listActionProposals(pool, clientId, { status, action, entityType, limit });
         return { clientId, total: proposals.length, proposals };
       } catch (error) {
         reply.status(500);
@@ -228,97 +82,17 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
         const limit = parseLimit(request.query.limit);
         const offset = parseOffset(request.query.offset);
 
-        const params = [
-          clientId,
+        const { total, history } = await listActionHistory(pool, clientId, {
           status,
           action,
           entityType,
           entityId,
+          campaignId,
           startDate,
           endDate,
-          campaignId,
-        ];
-
-        const whereClause = `
-          p.client_id = $1
-          AND ($2::text IS NULL OR e.status = $2)
-          AND ($3::text IS NULL OR p.action = $3)
-          AND ($4::text IS NULL OR p.entity_type = $4)
-          AND ($5::text IS NULL OR p.entity_id = $5)
-          AND ($6::date IS NULL OR e.created_at::date >= $6::date)
-          AND ($7::date IS NULL OR e.created_at::date <= $7::date)
-          AND (
-            $8::text IS NULL OR (
-              (p.entity_type = 'campaign' AND p.entity_id = $8)
-              OR (p.entity_type = 'adset' AND EXISTS (
-                SELECT 1 FROM adsets a2 WHERE a2.adset_id = p.entity_id AND a2.campaign_id = $8
-              ))
-              OR (p.entity_type = 'creative' AND EXISTS (
-                SELECT 1 FROM ad_creative_metrics m WHERE m.creative_snapshot_id = p.entity_id AND m.campaign_id = $8
-              ))
-            )
-          )
-        `;
-
-        const countResult = await pool.query(
-          `SELECT COUNT(*)::int AS total
-           FROM action_executions e
-           JOIN action_proposals p ON p.id = e.proposal_id
-           WHERE ${whereClause}`,
-          params
-        );
-
-        const result = await pool.query(
-          `SELECT
-            e.id as execution_id,
-            e.status as execution_status,
-            e.attempts,
-            e.dry_run,
-            e.request_payload,
-            e.meta_response,
-            e.error_message,
-            e.error_stack,
-            e.started_at,
-            e.completed_at,
-            e.executed_by_type,
-            e.executed_by_user_id,
-            e.created_at as execution_created_at,
-            e.updated_at as execution_updated_at,
-            p.id as proposal_id,
-            p.client_id,
-            p.action,
-            p.title,
-            p.description,
-            p.category,
-            p.severity,
-            p.entity_type,
-            p.entity_id,
-            p.source,
-            p.created_at as proposal_created_at,
-            p.updated_at as proposal_updated_at,
-            c.name as campaign_name,
-            a.adset_name as adset_name,
-            s.headline as creative_headline,
-            s.primary_text as creative_primary_text
-          FROM action_executions e
-          JOIN action_proposals p ON p.id = e.proposal_id
-          LEFT JOIN campaigns c
-            ON p.entity_type = 'campaign'
-           AND (c.id = p.entity_id OR c."externalId" = p.entity_id)
-          LEFT JOIN adsets a
-            ON p.entity_type = 'adset'
-           AND a.adset_id = p.entity_id
-          LEFT JOIN ad_creative_snapshots s
-            ON p.entity_type = 'creative'
-           AND s.id = p.entity_id
-          WHERE ${whereClause}
-          ORDER BY e.created_at DESC
-          LIMIT $9 OFFSET $10`,
-          [...params, limit, offset]
-        );
-
-        const total = Number(countResult.rows?.[0]?.total ?? 0);
-        const history = result.rows.map(mapHistoryRow);
+          limit,
+          offset,
+        });
         return { clientId, total, history };
       } catch (error) {
         reply.status(500);
@@ -337,58 +111,14 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
       try {
         const { id } = request.params;
 
-        const proposalResult = await pool.query(
-          `SELECT
-            p.*,
-            a.decision AS last_decision,
-            a.reason AS last_decision_reason,
-            a.decided_by_user_id AS last_decided_by_user_id,
-            a.decided_at AS last_decided_at
-          FROM action_proposals p
-          LEFT JOIN LATERAL (
-            SELECT decision, reason, decided_by_user_id, decided_at
-            FROM action_approvals
-            WHERE proposal_id = p.id
-            ORDER BY decided_at DESC
-            LIMIT 1
-          ) a ON TRUE
-          WHERE p.id = $1
-          LIMIT 1`,
-          [id]
-        );
+        const detail = await getActionProposalDetail(pool, id);
 
-        if (proposalResult.rows.length === 0) {
+        if (!detail) {
           reply.status(404);
           return { error: 'Action proposal not found' };
         }
 
-        const approvalsResult = await pool.query(
-          `SELECT
-            id, proposal_id, decision, reason, decided_by_user_id, decided_at, created_at
-          FROM action_approvals
-          WHERE proposal_id = $1
-          ORDER BY decided_at DESC`,
-          [id]
-        );
-
-        const executionsResult = await pool.query(
-          `SELECT
-            id, proposal_id, status, attempts, idempotency_key, dry_run,
-            request_payload, meta_response, error_message, error_stack,
-            started_at, completed_at,
-            executed_by_type, executed_by_user_id,
-            created_at, updated_at
-          FROM action_executions
-          WHERE proposal_id = $1
-          ORDER BY created_at DESC`,
-          [id]
-        );
-
-        return {
-          proposal: mapProposalRow(proposalResult.rows[0]),
-          approvals: approvalsResult.rows.map(mapApprovalRow),
-          executions: executionsResult.rows.map(mapExecutionRow),
-        };
+        return detail;
       } catch (error) {
         reply.status(500);
         return {
@@ -707,23 +437,12 @@ const actionProposalsRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       try {
         const { id } = request.params;
-        const executionsResult = await pool.query(
-          `SELECT
-            id, proposal_id, status, attempts, idempotency_key, dry_run,
-            request_payload, meta_response, error_message, error_stack,
-            started_at, completed_at,
-            executed_by_type, executed_by_user_id,
-            created_at, updated_at
-          FROM action_executions
-          WHERE proposal_id = $1
-          ORDER BY created_at DESC`,
-          [id]
-        );
+        const executions = await listActionExecutions(pool, id);
 
         return {
           proposalId: id,
-          total: executionsResult.rows.length,
-          executions: executionsResult.rows.map(mapExecutionRow),
+          total: executions.length,
+          executions,
         };
       } catch (error) {
         reply.status(500);

@@ -1,154 +1,26 @@
 import { PrismaClient } from '@prisma/client';
-import { resolvePrimaryResult } from '../metrics/primary-result';
-
-export interface BreakdownSegment {
-    label: string;
-    impressions: number;
-    clicks: number;
-    spend: number;
-    reach: number;
-    conversions: number;
-    ctr: number;
-    cpc: number;
-    cpm: number;
-    conversionRate: number;
-    shareOfSpend: number;
-}
-
-export interface BusinessMetrics {
-    campaignId: string;
-    totalSpend: number;
-    totalConversations: number;
-    totalContracts: number;
-    totalRevenue: number;
-    avgTicket: number;
-    cac: number;
-    costPerLead: number;
-    conversionRate: number;
-    ltv: number;
-    ltvCacRatio: number;
-    ltvCacHealth: 'excellent' | 'good' | 'fair' | 'poor';
-    roi: number;
-    config: {
-        lifetimeMonths: number;
-        monthlyRevenue: number;
-    };
-}
-
-export interface AdSetMetric {
-  adsetId: string;
-  adsetName: string;
-  totalImpressions: number;
-  totalReach: number;
-  totalClicks: number;
-  totalLinkClicks: number;
-  totalLandingPageViews: number;
-  totalSpend: number;
-  totalConversions: number;
-  totalMessagingConversations: number;
-  totalMessagingFirstReply: number;
-  avgCtr: number;
-  avgCpc: number;
-  avgCpm: number;
-  avgFrequency: number;
-  cpl: number;
-  status?: string | null;
-  effectiveStatus?: string | null;
-  configuredStatus?: string | null;
-  dailyBudget?: number | null;
-  lifetimeBudget?: number | null;
-  metadata?: Record<string, unknown> | null;
-}
-
-export interface AdMetric {
-    adId: string;
-    adName: string;
-    adsetId: string;
-    creativeId: string | null;
-    creativeSnapshotId: string | null;
-    creative: any | null; // Typed loosely for now due to complex json structure potential
-    totalImpressions: number;
-    totalReach: number;
-    totalClicks: number;
-    totalLinkClicks: number;
-    totalLandingPageViews: number;
-    totalSpend: number;
-    totalConversions: number;
-    totalLeads?: number;
-    totalPurchases?: number;
-    totalMessagingConversations: number;
-    avgCtr: number;
-    avgCpm: number;
-    cpl: number;
-    videoThruplay: number;
-    video3secViews: number;
-    videoP25: number;
-    videoP50: number;
-    videoP75: number;
-    videoP100: number;
-    hookRate: number;
-    holdRate: number;
-}
-
-export interface TemporalAnalysisConfig {
-    dayOfWeek: number;
-    dayName: string;
-    totalImpressions: number;
-    totalClicks: number;
-    totalSpend: number;
-    totalConversions: number;
-    totalConversations: number;
-    avgCtr: number;
-    avgCpm: number;
-    cpl: number;
-    daysCount: number;
-}
-
-export interface CreativeSnapshot {
-    snapshotId: string;
-    creativeId: string;
-    platform: string;
-    contentHash: string;
-    capturedAt: string;
-    lastSeenAt: string;
-    headline: string | null;
-    primaryText: string | null;
-    description: string | null;
-    ctaType: string | null;
-    destinationUrl: string | null;
-    imageUrl: string | null;
-    thumbnailUrl: string | null;
-    videoId: string | null;
-    format: string | null;
-    isDynamic: boolean;
-    headlines: string[] | null;
-    primaryTexts: string[] | null;
-    descriptions: string[] | null;
-    ctaTypes: string[] | null;
-    destinationUrls: string[] | null;
-    objectStorySpec: any | null;
-    assetFeedSpec: any | null;
-    visualAttributes: any | null;
-}
-
-export interface AdSetNameRow {
-    adset_id: string;
-    adset_name: string | null;
-}
-
-export interface CopyInsight {
-    snapshotId: string;
-    themeKey: string | null;
-    themeName: string | null;
-    status: string;
-    model: string | null;
-    promptId: string | null;
-    promptVersion: string | null;
-    analysis: any | null;
-    errorMessage: string | null;
-    createdAt: string | null;
-    updatedAt: string | null;
-}
+import { aggregateBreakdownSegments } from './breakdown-aggregator';
+import { mapAdMetricRow, mapAdSetMetricRow } from './metric-mappers';
+import type {
+    AdMetric,
+    AdSetMetric,
+    AdSetNameRow,
+    BreakdownSegment,
+    BusinessMetrics,
+    CopyInsight,
+    CreativeSnapshot,
+    TemporalAnalysisConfig,
+} from './types';
+export type {
+    AdMetric,
+    AdSetMetric,
+    AdSetNameRow,
+    BreakdownSegment,
+    BusinessMetrics,
+    CopyInsight,
+    CreativeSnapshot,
+    TemporalAnalysisConfig,
+} from './types';
 
 export class AnalyticsService {
     constructor(private prisma: PrismaClient) { }
@@ -179,50 +51,7 @@ export class AnalyticsService {
          ORDER BY date DESC
     `;
 
-        const segmentMap = new Map<
-            string,
-            { label: string; impressions: number; clicks: number; spend: number; reach: number; conversions: number }
-        >();
-
-        for (const row of result) {
-            const segments = typeof row.breakdown_data === 'string' ? JSON.parse(row.breakdown_data) : row.breakdown_data;
-            for (const seg of segments) {
-                const key = seg.label || 'unknown';
-                const existing = segmentMap.get(key) || {
-                    label: seg.label || key,
-                    impressions: 0,
-                    clicks: 0,
-                    spend: 0,
-                    reach: 0,
-                    conversions: 0,
-                };
-
-                existing.impressions += Number(seg.impressions) || 0;
-                existing.clicks += Number(seg.clicks) || 0;
-                existing.spend += Number(seg.spend) || 0;
-                existing.reach += Number(seg.reach) || 0;
-                const conversions = Number(
-                    (seg.conversions ?? seg.messaging_conversations) ?? 0
-                ) || 0;
-                existing.conversions += conversions;
-
-                segmentMap.set(key, existing);
-            }
-        }
-
-        const segments = Array.from(segmentMap.values()).map((seg) => ({
-            ...seg,
-            ctr: seg.impressions > 0 ? (seg.clicks / seg.impressions) * 100 : 0,
-            cpc: seg.clicks > 0 ? seg.spend / seg.clicks : 0,
-            cpm: seg.impressions > 0 ? (seg.spend / seg.impressions) * 1000 : 0,
-            conversionRate: seg.clicks > 0 ? (seg.conversions / seg.clicks) * 100 : 0,
-            shareOfSpend: 0,
-        }));
-
-        const totalSpend = segments.reduce((s, seg) => s + seg.spend, 0);
-        for (const seg of segments) {
-            seg.shareOfSpend = totalSpend > 0 ? (seg.spend / totalSpend) * 100 : 0;
-        }
+        const segments = aggregateBreakdownSegments(result);
 
         return {
             campaignId,
@@ -369,58 +198,9 @@ export class AnalyticsService {
             configByAdset.set(String(row.adset_id), row);
           });
   
-          const adsets = result.map((row: any) => {
-              const spend = parseFloat(row.total_spend) || 0;
-              const conversations = parseInt(row.total_messaging_conversations) || 0;
-              const config = configByAdset.get(String(row.adset_id));
-              const adsetName = (row.adset_name || config?.adset_name || row.adset_id) as string;
-              const optimizationGoal =
-                typeof config?.metadata?.optimizationGoal === 'string' ? config.metadata.optimizationGoal : null;
-              const destinationType =
-                typeof config?.metadata?.destinationType === 'string' ? config.metadata.destinationType : null;
-              const billingEvent =
-                typeof config?.metadata?.billingEvent === 'string' ? config.metadata.billingEvent : null;
-
-              const primary = resolvePrimaryResult({
-                objective: campaign?.objective ?? null,
-                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
-                metrics: {
-                  messagingConversations: conversations,
-                  leads: parseInt(row.total_leads) || 0,
-                  linkClicks: parseInt(row.total_link_clicks) || 0,
-                  landingPageViews: parseInt(row.total_landing_page_views) || 0,
-                  conversions: parseInt(row.total_conversions) || 0,
-                  clicks: parseInt(row.total_clicks) || 0,
-                },
-              });
-              const totalConversions = primary.value;
-              const cpl = totalConversions > 0 ? spend / totalConversions : 0;
-  
-              return {
-                  adsetId: row.adset_id,
-                  adsetName,
-                  totalImpressions: parseInt(row.total_impressions) || 0,
-                  totalReach: parseInt(row.total_reach) || 0,
-                  totalClicks: parseInt(row.total_clicks) || 0,
-                  totalLinkClicks: parseInt(row.total_link_clicks) || 0,
-                  totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
-                  totalSpend: spend,
-                  totalConversions,
-                  totalMessagingConversations: conversations,
-                  totalMessagingFirstReply: parseInt(row.total_messaging_first_reply) || 0,
-                  avgCtr: parseFloat(row.avg_ctr) || 0,
-                  avgCpc: parseFloat(row.avg_cpc) || 0,
-                  avgCpm: parseFloat(row.avg_cpm) || 0,
-                  avgFrequency: parseFloat(row.avg_frequency) || 0,
-                  cpl,
-                  status: config?.status ?? null,
-                  effectiveStatus: config?.effective_status ?? null,
-                  configuredStatus: config?.metadata?.configuredStatus ?? null,
-                  dailyBudget: config?.daily_budget != null ? Number(config.daily_budget) : null,
-                  lifetimeBudget: config?.lifetime_budget != null ? Number(config.lifetime_budget) : null,
-                  metadata: config?.metadata ?? null,
-              };
-          });
+          const adsets = result.map((row: any) =>
+              mapAdSetMetricRow(row, configByAdset.get(String(row.adset_id)), campaign?.objective ?? null)
+          );
   
           return { campaignId, total: adsets.length, adsets };
       }
@@ -527,102 +307,9 @@ export class AnalyticsService {
         ORDER BY m.total_spend DESC
     `;
 
-        const ads = result.map((row: any) => {
-            const spend = parseFloat(row.total_spend) || 0;
-            const impressions = parseInt(row.total_impressions) || 0;
-            const clicks = parseInt(row.total_clicks) || 0;
-            const conversations = parseInt(row.total_messaging_conversations) || 0;
-            const totalLeads = parseInt(row.total_leads) || 0;
-            const totalPurchases = parseInt(row.total_purchases) || 0;
-            const thruplay = parseInt(row.total_thruplay) || 0;
-            const views3sec = parseInt(row.total_3sec_views) || 0;
-            const hookRate = impressions > 0 ? (views3sec / impressions) * 100 : 0;
-            const holdRate = views3sec > 0 ? (thruplay / views3sec) * 100 : 0;
-            const adsetMeta = adsetMetaById.get(String(row.adset_id));
-            const optimizationGoal =
-                typeof adsetMeta?.optimizationGoal === 'string' ? adsetMeta.optimizationGoal : null;
-            const destinationType =
-                typeof adsetMeta?.destinationType === 'string' ? adsetMeta.destinationType : null;
-            const billingEvent =
-                typeof adsetMeta?.billingEvent === 'string' ? adsetMeta.billingEvent : null;
-
-            const primary = resolvePrimaryResult({
-                objective: campaign?.objective ?? null,
-                objectiveMeta: { optimizationGoal, destinationType, billingEvent },
-                metrics: {
-                    messagingConversations: conversations,
-                    leads: totalLeads,
-                    linkClicks: parseInt(row.total_link_clicks) || 0,
-                    landingPageViews: parseInt(row.total_landing_page_views) || 0,
-                    purchases: totalPurchases,
-                    conversions: parseInt(row.total_conversions) || 0,
-                    clicks,
-                },
-            });
-
-            const conversions = primary.value;
-            const cpl = conversions > 0 ? spend / conversions : 0;
-            const avgCtr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-            const avgCpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
-
-            const creativeSnapshotId = row.creative_snapshot_id || null;
-            const creative = creativeSnapshotId
-                ? {
-                    snapshotId: creativeSnapshotId,
-                    creativeId: row.creative_id || null,
-                    capturedAt: row.snapshot_captured_at || null,
-                    headline: row.headline || null,
-                    primaryText: row.primary_text || null,
-                    description: row.description || null,
-                    ctaType: row.cta_type || null,
-                    destinationUrl: row.destination_url || null,
-                    imageUrl: row.image_url || null,
-                    thumbnailUrl: row.thumbnail_url || null,
-                    videoId: row.video_id || null,
-                    format: row.format || null,
-                    isDynamic: Boolean(row.is_dynamic),
-                    headlines: row.headlines || null,
-                    primaryTexts: row.primary_texts || null,
-                    descriptions: row.descriptions || null,
-                    ctaTypes: row.cta_types || null,
-                    destinationUrls: row.destination_urls || null,
-                    objectStorySpec: row.object_story_spec || null,
-                    assetFeedSpec: row.asset_feed_spec || null,
-                    raw: row.raw || null,
-                    visualAttributes: row.visual_attributes || null,
-                }
-                : null;
-
-            return {
-                adId: row.ad_id,
-                adName: row.ad_name,
-                adsetId: row.adset_id,
-                creativeId: row.creative_id || null,
-                creativeSnapshotId,
-                creative,
-                totalImpressions: impressions,
-                totalReach: parseInt(row.total_reach) || 0,
-                totalClicks: clicks,
-                totalLinkClicks: parseInt(row.total_link_clicks) || 0,
-                totalLandingPageViews: parseInt(row.total_landing_page_views) || 0,
-                totalSpend: spend,
-                totalConversions: conversions,
-                totalLeads,
-                totalPurchases,
-                totalMessagingConversations: conversations,
-                avgCtr: Number(avgCtr.toFixed(2)),
-                avgCpm: Number(avgCpm.toFixed(2)),
-                cpl,
-                videoThruplay: thruplay,
-                video3secViews: views3sec,
-                videoP25: parseInt(row.total_p25) || 0,
-                videoP50: parseInt(row.total_p50) || 0,
-                videoP75: parseInt(row.total_p75) || 0,
-                videoP100: parseInt(row.total_p100) || 0,
-                hookRate: Number(hookRate.toFixed(2)),
-                holdRate: Number(holdRate.toFixed(2)),
-            };
-        });
+        const ads = result.map((row: any) =>
+            mapAdMetricRow(row, adsetMetaById.get(String(row.adset_id)), campaign?.objective ?? null)
+        );
 
         return { campaignId, total: ads.length, ads };
     }
