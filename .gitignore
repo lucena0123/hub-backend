@@ -14,6 +14,7 @@ backend/node_modules/
 # Generated files
 backend/reports/
 backend/coverage/
+coverage/
 dist/
 build/
 .next/
@@ -47,16 +48,34 @@ yarn-error.log*
 # Temp files
 tmp/
 temp/
+tmp-*/
+codex-browser-app-backup/
+tmp-codex-*/
+tmp-browser-*/
 *.tmp
 
-# Arquivos de auditoria/sync (adicionado em 2026-04-29)
-audit-projects.ps1
-audit.json
-auditoria-projetos.csv
-auditoria-projetos.md
-sync-all-to-git.ps1
-sync-log.txt
-sync-log-utf8.txt
-.gitignore-additions.txt
-fix-and-retry.ps1
-backups/
+# Local screenshots / browser captures
+codex-*.png
+login-*.png
+*-screen.png
+*-window.png
+
+# Local dumps / backups
+*.dump
+*.sql.dump
+*.backup
+*.bak
+*.zip
+*.7z
+
+# Arquivos de auditoria/sync na raiz (adicionado em 2026-04-29)
+/audit-projects.ps1
+/audit.json
+/auditoria-projetos.csv
+/auditoria-projetos.md
+/sync-all-to-git.ps1
+/sync-log.txt
+/sync-log-utf8.txt
+/.gitignore-additions.txt
+/fix-and-retry.ps1
+/backups/
