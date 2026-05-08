@@ -22,6 +22,14 @@ export interface DashboardOverview {
     avgRoas: number;
     avgCtr: number;
     avgCpl: number;
+    delta: {
+      totalSpend:       { value: number; pct: number };
+      avgRoas:          { value: number; pct: number };
+      avgCpl:           { value: number; pct: number };
+      avgCtr:           { value: number; pct: number };
+      totalConversions: { value: number; pct: number };
+      totalLeads:       { value: number; pct: number };
+    };
   };
   bpmn: {
     clientsInExecution: number;
@@ -143,38 +151,72 @@ export class DashboardService {
   }
 
   private async getPerformanceOverview() {
-    // raw query is still efficient for complex aggregation across date ranges
-    const result = await this.prisma.$queryRaw<any[]>`
-      SELECT
-        COALESCE(SUM(spend), 0) as total_spend,
-        COALESCE(SUM(revenue), 0) as total_revenue,
-        COALESCE(SUM(conversions), 0) as total_conversions,
-        COALESCE(SUM(leads), 0) as total_leads,
-        CASE WHEN SUM(spend) > 0 THEN ROUND(SUM(revenue) / SUM(spend), 2) ELSE 0 END as avg_roas,
-        CASE WHEN SUM(impressions) > 0 THEN ROUND((SUM(clicks)::decimal / SUM(impressions)) * 100, 2) ELSE 0 END as avg_ctr,
-        CASE
-          WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2)
-          WHEN SUM(messaging_conversations) > 0 THEN ROUND(SUM(spend) / SUM(messaging_conversations), 2)
-          WHEN SUM(conversions) > 0 THEN ROUND(SUM(spend) / SUM(conversions), 2)
-          ELSE 0
-        END as avg_cpl
-      FROM campaign_metrics
-      WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-    `;
+    const [current, previous] = await Promise.all([
+      this.prisma.$queryRaw<any[]>`
+        SELECT
+          COALESCE(SUM(spend), 0)       as total_spend,
+          COALESCE(SUM(revenue), 0)     as total_revenue,
+          COALESCE(SUM(conversions), 0) as total_conversions,
+          COALESCE(SUM(leads), 0)       as total_leads,
+          CASE WHEN SUM(spend) > 0
+            THEN ROUND(SUM(revenue) / SUM(spend), 2) ELSE 0 END as avg_roas,
+          CASE WHEN SUM(impressions) > 0
+            THEN ROUND((SUM(clicks)::decimal / SUM(impressions)) * 100, 2) ELSE 0 END as avg_ctr,
+          CASE
+            WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2)
+            WHEN SUM(messaging_conversations) > 0 THEN ROUND(SUM(spend) / SUM(messaging_conversations), 2)
+            WHEN SUM(conversions) > 0 THEN ROUND(SUM(spend) / SUM(conversions), 2)
+            ELSE 0
+          END as avg_cpl
+        FROM campaign_metrics
+        WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+      `,
+      this.prisma.$queryRaw<any[]>`
+        SELECT
+          COALESCE(SUM(spend), 0)       as total_spend,
+          COALESCE(SUM(conversions), 0) as total_conversions,
+          COALESCE(SUM(leads), 0)       as total_leads,
+          CASE WHEN SUM(spend) > 0
+            THEN ROUND(SUM(revenue) / SUM(spend), 2) ELSE 0 END as avg_roas,
+          CASE WHEN SUM(impressions) > 0
+            THEN ROUND((SUM(clicks)::decimal / SUM(impressions)) * 100, 2) ELSE 0 END as avg_ctr,
+          CASE
+            WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2)
+            WHEN SUM(messaging_conversations) > 0 THEN ROUND(SUM(spend) / SUM(messaging_conversations), 2)
+            WHEN SUM(conversions) > 0 THEN ROUND(SUM(spend) / SUM(conversions), 2)
+            ELSE 0
+          END as avg_cpl
+        FROM campaign_metrics
+        WHERE date >= CURRENT_DATE - INTERVAL '60 days'
+          AND date < CURRENT_DATE - INTERVAL '30 days'
+      `,
+    ]);
 
-    // Prisma $queryRaw returns BigInt for totals usually, need to handle deserialization if needed, 
-    // or just map. Postgres sums are usually strings or numbers in JS driver. 
-    // Prisma returns array of objects.
+    const cur = current[0];
+    const prev = previous[0];
 
-    const row = result[0];
+    function delta(curVal: number, prevVal: number) {
+      const value = curVal - prevVal;
+      const pct = prevVal !== 0 ? Math.round((value / Math.abs(prevVal)) * 100) : 0;
+      return { value: Math.round(value * 100) / 100, pct };
+    }
+
     return {
-      totalSpend: Number(row.total_spend) || 0,
-      totalRevenue: Number(row.total_revenue) || 0,
-      totalConversions: Number(row.total_conversions) || 0,
-      totalLeads: Number(row.total_leads) || 0,
-      avgRoas: Number(row.avg_roas) || 0,
-      avgCtr: Number(row.avg_ctr) || 0,
-      avgCpl: Number(row.avg_cpl) || 0,
+      totalSpend:       Number(cur.total_spend) || 0,
+      totalRevenue:     Number(cur.total_revenue) || 0,
+      totalConversions: Number(cur.total_conversions) || 0,
+      totalLeads:       Number(cur.total_leads) || 0,
+      avgRoas:          Number(cur.avg_roas) || 0,
+      avgCtr:           Number(cur.avg_ctr) || 0,
+      avgCpl:           Number(cur.avg_cpl) || 0,
+      delta: {
+        totalSpend:       delta(Number(cur.total_spend) || 0,       Number(prev.total_spend) || 0),
+        avgRoas:          delta(Number(cur.avg_roas) || 0,           Number(prev.avg_roas) || 0),
+        avgCpl:           delta(Number(cur.avg_cpl) || 0,            Number(prev.avg_cpl) || 0),
+        avgCtr:           delta(Number(cur.avg_ctr) || 0,            Number(prev.avg_ctr) || 0),
+        totalConversions: delta(Number(cur.total_conversions) || 0, Number(prev.total_conversions) || 0),
+        totalLeads:       delta(Number(cur.total_leads) || 0,        Number(prev.total_leads) || 0),
+      },
     };
   }
 
