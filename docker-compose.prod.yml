@@ -1,0 +1,110 @@
+name: hub
+
+services:
+  hub-postgres:
+    image: postgres:16-alpine
+    container_name: hub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - hub_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hub-redis:
+    image: redis:7-alpine
+    container_name: hub-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - hub_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hub-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: hub-backend:local
+    container_name: hub-backend
+    restart: unless-stopped
+    env_file:
+      - ${HUB_ENV_FILE:-.env.production}
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@hub-postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://hub-redis:6379
+      FRONTEND_URL: https://${HUB_DOMAIN}
+      APP_BASE_URL: https://${HUB_DOMAIN}
+      HUB_FORMS_BASE_URL: https://${HUB_DOMAIN}
+      HUB_API_BASE_URL: https://${HUB_API_DOMAIN}
+    depends_on:
+      hub-postgres:
+        condition: service_healthy
+      hub-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  hub-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${HUB_API_DOMAIN}
+        NEXT_PUBLIC_API_TIMEOUT_MS: ${NEXT_PUBLIC_API_TIMEOUT_MS:-30000}
+    image: hub-frontend:local
+    container_name: hub-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      hub-backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  hub-caddy:
+    image: caddy:2-alpine
+    container_name: hub-caddy
+    restart: unless-stopped
+    env_file:
+      - ${HUB_ENV_FILE:-.env.production}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - hub_caddy_data:/data
+      - hub_caddy_config:/config
+    depends_on:
+      hub-frontend:
+        condition: service_started
+      hub-backend:
+        condition: service_started
+
+volumes:
+  hub_postgres_data:
+  hub_redis_data:
+  hub_caddy_data:
+  hub_caddy_config:

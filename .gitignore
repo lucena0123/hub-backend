@@ -1,6 +1,7 @@
 # IDE / Editor
 .claude/
 .agent/
+.mcp.json
 .vscode/
 .idea/
 *.swp

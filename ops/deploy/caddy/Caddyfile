@@ -1,0 +1,11 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$HUB_DOMAIN} {
+	reverse_proxy hub-frontend:3000
+}
+
+{$HUB_API_DOMAIN} {
+	reverse_proxy hub-backend:3001
+}
